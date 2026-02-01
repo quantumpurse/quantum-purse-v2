@@ -33,9 +33,7 @@ SPHINCS+ offers 12 parameter sets, grouped by three security parameters: 128-bit
 
 ### Key Derivation Function
 
-Pure Hash-based KDF is the top choice for this project. Although using [BIP32](https://en.bitcoin.it/wiki/BIP_0032) carefully (with only hardened key derivation and never generate public keys) can satisfy but a fresh start with HKDF seems better because it's simpler - meaning the implementation will be easier to audit.
-
-Also For the KDF Hierachy structure, BIP44 is the top choice as it has existed for many years and may still be the widely for post-quantum wallets. BIP44 is not adopted entirely in this project because concept like astrophe for hardened BIP32 KDF is simply not meaningful in this project.
+From the single master seed, quantum-purse-key-vault can derive many child keys using Key Derivation Function(KDF). Pure Hash-based KDF is the top choice for this project. Although using [BIP32](https://en.bitcoin.it/wiki/BIP_0032) carefully (with only hardened key derivation and never generate ECDSA public keys) can satisfy however the benefits of the tricky usage at this point(2025) is unclear. Thus, a fresh start with HKDF seems better because it's simpler - meaning the implementation will be easier to audit.
 
 ###### Key Tree:
 ```
