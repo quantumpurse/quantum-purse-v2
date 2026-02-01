@@ -1,0 +1,44 @@
+[package]
+name = "quantum-purse-key-vault"
+version = "0.1.0"
+edition = "2021"
+description = "A SPHINCS+ key management CLI for CKB blockchain."
+repository = "https://github.com/tea2x/quantum-purse-key-vault.git"
+license = "MIT"
+
+[[bin]]
+name = "qpkv"
+path = "src/main.rs"
+
+[dependencies]
+fips205 = { version ="0.4.1", default-features = false, features = [
+        "slh_dsa_sha2_128s",
+        "slh_dsa_shake_128s",
+        "slh_dsa_sha2_128f",
+        "slh_dsa_shake_128f",
+        "slh_dsa_sha2_192s",
+        "slh_dsa_shake_192s",
+        "slh_dsa_sha2_192f",
+        "slh_dsa_shake_192f",
+        "slh_dsa_sha2_256s",
+        "slh_dsa_shake_256s",
+        "slh_dsa_sha2_256f",
+        "slh_dsa_shake_256f"
+    ]}
+aes-gcm = { version = "0.10.3", features = ["aes", "zeroize"] }
+hex = "0.4.3"
+scrypt = { version = "0.11.0", default-features = false }
+zeroize = "1.8.1"
+getrandom = "0.2.15"
+bip39 = { version = "2.2.0", features = ["zeroize"] }
+hkdf = "0.12.4"
+sha2 = "0.10.9"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.142"
+ckb-fips205-utils = { path = "./crates/ckb-fips205-utils", features = ["signing"] }
+ckb-mock-tx-types = { version = "0.200.0" }
+clap = { version = "4.5.0", features = ["derive"] }
+rpassword = "7.3.1"
+anyhow = "1.0"
+thiserror = "2.0"
+dirs = "5.0"
