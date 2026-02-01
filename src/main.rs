@@ -7,7 +7,7 @@ use std::io::{self, Write};
 
 #[derive(Parser)]
 #[command(name = "qpkv")]
-#[command(about = "Quantum Purse Key Vault - SPHINCS+ key management CLI for CKB blockchain", long_about = None)]
+#[command(about = "A SPHINCS+-based key management CLI with integrated CKB blockchain address resolution.", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
