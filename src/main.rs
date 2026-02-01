@@ -21,25 +21,16 @@ enum Commands {
         #[arg(short, long)]
         variant: String,
     },
-    /// ImportMnemonic a wallet from a seed phrase
-    ImportMnemonic {
-        /// SPHINCS+ variant
-        #[arg(short, long)]
-        variant: String,
-        /// Path to file containing the seed phrase (optional, will prompt if not provided)
-        #[arg(short, long)]
-        seed_file: Option<String>,
+    /// Mnemonic operations (import/export)
+    Mnemonic {
+        #[command(subcommand)]
+        command: MnemonicCommands,
     },
-    /// ExportMnemonic the seed phrase
-    ExportMnemonic {
-        /// Output file path (optional, will print to stdout if not provided)
-        #[arg(short, long)]
-        output: Option<String>,
+    /// Account operations (new/list)
+    Account {
+        #[command(subcommand)]
+        command: AccountCommands,
     },
-    /// Generate a new account
-    NewAccount,
-    /// List all accounts
-    ListAccounts,
     /// Sign a message
     Sign {
         /// Lock args (account identifier)
@@ -74,6 +65,28 @@ enum Commands {
         #[arg(short, long)]
         tx_file: String,
     },
+}
+
+#[derive(Subcommand)]
+enum MnemonicCommands {
+    Import {
+        /// SPHINCS+ variant
+        #[arg(short, long)]
+        variant: String,
+
+        #[arg(short, long)]
+        seed_file: Option<String>,
+    },
+    Export {
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum AccountCommands {
+    New,
+    List,
 }
 
 fn parse_variant(variant_str: &str) -> Result<SpxVariant, String> {
@@ -133,80 +146,84 @@ fn main() -> Result<(), String> {
 
             vault.generate_master_seed(password)?;
             println!("✓ Master seed generated successfully");
-            println!("⚠️  Make sure to backup your seed phrase using the 'export-mnemonic' command");
+            println!("⚠️  Make sure to backup your seed phrase using the 'mnemonic export' command");
         }
 
-        Commands::ImportMnemonic { variant, seed_file } => {
-            let variant = parse_variant(&variant)?;
-            let vault = KeyVault::new(variant);
+        Commands::Mnemonic { command } => match command {
+            MnemonicCommands::Import { variant, seed_file } => {
+                let variant = parse_variant(&variant)?;
+                let vault = KeyVault::new(variant);
 
-            let mut seed_phrase = if let Some(file_path) = seed_file {
-                fs::read_to_string(file_path).map_err(|e| e.to_string())?
-            } else {
-                promt_for_input("Enter seed phrase: ")?
-            };
+                let mut seed_phrase = if let Some(file_path) = seed_file {
+                    fs::read_to_string(file_path).map_err(|e| e.to_string())?
+                } else {
+                    promt_for_input("Enter seed phrase: ")?
+                };
 
-            let mut password = promt_for_input("Enter password: ")?.into_bytes();
+                let mut password = promt_for_input("Enter password: ")?.into_bytes();
 
-            let mut confirm = promt_for_input("Confirm password: ")?.into_bytes();
-            if password != confirm {
-                password.zeroize();
-                confirm.zeroize();
-                seed_phrase.zeroize();
-                return Err("Passwords do not match".to_string());
-            }
-            confirm.zeroize();
-
-            match Util::password_checker(password.clone()) {
-                Ok(strength) => println!("Password strength: {} bits", strength),
-                Err(e) => {
+                let mut confirm = promt_for_input("Confirm password: ")?.into_bytes();
+                if password != confirm {
                     password.zeroize();
                     confirm.zeroize();
                     seed_phrase.zeroize();
-                    return Err(format!("Password validation failed: {}", e))
-                },
+                    return Err("Passwords do not match".to_string());
+                }
+                confirm.zeroize();
+
+                match Util::password_checker(password.clone()) {
+                    Ok(strength) => println!("Password strength: {} bits", strength),
+                    Err(e) => {
+                        password.zeroize();
+                        confirm.zeroize();
+                        seed_phrase.zeroize();
+                        return Err(format!("Password validation failed: {}", e))
+                    },
+                }
+
+                vault.import_seed_phrase(seed_phrase.into_bytes(), password)?;
+                println!("✓ Seed phrase imported successfully");
             }
 
-            vault.import_seed_phrase(seed_phrase.into_bytes(), password)?;
-            println!("✓ Seed phrase imported successfully");
-        }
+            MnemonicCommands::Export { output } => {
+                let variant = KeyVault::get_spx_variant()?;
+                let vault = KeyVault::new(variant);
 
-        Commands::ExportMnemonic { output } => {
-            let variant = KeyVault::get_spx_variant()?;
-            let vault = KeyVault::new(variant);
+                let password = promt_for_input("Enter password: ")?.into_bytes();
+                let seed_phrase = vault.export_seed_phrase(password)?;
+                let mut seed_str = String::from_utf8(seed_phrase).map_err(|e| e.to_string())?;
 
-            let password = promt_for_input("Enter password: ")?.into_bytes();
-            let seed_phrase = vault.export_seed_phrase(password)?;
-            let mut seed_str = String::from_utf8(seed_phrase).map_err(|e| e.to_string())?;
-
-            if let Some(output_path) = output {
-                fs::write(output_path, &seed_str).map_err(|e| e.to_string())?;
-                println!("✓ Seed phrase exported to file");
-            } else {
-                println!("Seed phrase:");
-                println!("{}", seed_str);
+                if let Some(output_path) = output {
+                    fs::write(output_path, &seed_str).map_err(|e| e.to_string())?;
+                    println!("✓ Seed phrase exported to file");
+                } else {
+                    println!("Seed phrase:");
+                    println!("{}", seed_str);
+                }
+                seed_str.zeroize();
             }
-            seed_str.zeroize();
         }
 
-        Commands::NewAccount => {
-            let variant = KeyVault::get_spx_variant()?;
-            let vault = KeyVault::new(variant);
+        Commands::Account { command } => match command {
+            AccountCommands::New => {
+                let variant = KeyVault::get_spx_variant()?;
+                let vault = KeyVault::new(variant);
 
-            let password = promt_for_input("Enter password: ")?.into_bytes();
-            let lock_args = vault.gen_new_account(password)?;
-            println!("✓ New account created");
-            println!("Lock args: {}", lock_args);
-        }
+                let password = promt_for_input("Enter password: ")?.into_bytes();
+                let lock_args = vault.gen_new_account(password)?;
+                println!("✓ New account created");
+                println!("Lock args: {}", lock_args);
+            }
 
-        Commands::ListAccounts => {
-            let accounts = KeyVault::get_all_sphincs_lock_args()?;
-            if accounts.is_empty() {
-                println!("No accounts found");
-            } else {
-                println!("Accounts ({}):", accounts.len());
-                for (idx, lock_args) in accounts.iter().enumerate() {
-                    println!("  [{}] {}", idx, lock_args);
+            AccountCommands::List => {
+                let accounts = KeyVault::get_all_sphincs_lock_args()?;
+                if accounts.is_empty() {
+                    println!("No accounts found");
+                } else {
+                    println!("Accounts ({}):", accounts.len());
+                    for (idx, lock_args) in accounts.iter().enumerate() {
+                        println!("  [{}] {}", idx, lock_args);
+                    }
                 }
             }
         }
