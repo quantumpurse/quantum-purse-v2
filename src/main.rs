@@ -133,7 +133,7 @@ fn main() -> Result<(), String> {
 
             vault.generate_master_seed(password)?;
             println!("✓ Master seed generated successfully");
-            println!("⚠️  Make sure to backup your seed phrase using the 'export' command");
+            println!("⚠️  Make sure to backup your seed phrase using the 'export-mnemonic' command");
         }
 
         Commands::ImportMnemonic { variant, seed_file } => {
