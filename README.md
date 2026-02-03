@@ -83,37 +83,34 @@ The CLI provides the following commands:
 
 ```shell
 # Initialize a new wallet
-qpkv init --variant Sha2256S
+qpkv init --variant <VARIANT> # example: qpkv init --variant Sha2256S
 
 # ImportMnemonic an existing wallet
-qpkv import-mnemonic --variant Sha2256S
+qpkv mnemonic import
 
 # ExportMnemonic seed phrase
-qpkv export-mnemonic --variant Sha2256S
+qpkv mnemonic export
 
 # Generate a new account
-qpkv new-account --variant Sha2256S
+qpkv account new
 
 # List all accounts
-qpkv list-accounts
+qpkv account list
 
 # Sign a message
-qpkv sign --variant Sha2256S --lock-args <LOCK_ARGS> --message <HEX_MESSAGE>
+qpkv sign --lock-args <LOCK_ARGS> --message <MESSAGE>
 
 # Recover accounts
-qpkv recover --variant Sha2256S --count 5
+qpkv recover --count <COUNT>
 
 # Generate account batch for discovery
-qpkv try-gen-batch --variant Sha2256S --start 0 --count 10
-
-# Check password strength
-qpkv check-password
+qpkv try-gen-batch --start <START> --count <COUNT> # example: qpkv try-gen-batch --start 0 --count 10
 
 # Clear all wallet data
 qpkv clear
 
 # Get CKB transaction message hash
-qpkv get-message --tx-file <PATH_TO_MOCK_TX>
+qpkv get-ckb-tx-message --tx-file <TX_FILE>
 
 # Show help
 qpkv --help
