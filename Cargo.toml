@@ -1,9 +1,9 @@
 [package]
-name = "quantum-purse-key-vault"
+name = "key-vault-cli"
 version = "0.1.0"
 edition = "2021"
 description = "A SPHINCS+ key management CLI for CKB blockchain."
-repository = "https://github.com/tea2x/quantum-purse-key-vault.git"
+repository = "https://github.com/quantumpurse/key-vault-cli.git"
 license = "MIT"
 
 [[bin]]
