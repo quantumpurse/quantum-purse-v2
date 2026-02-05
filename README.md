@@ -97,6 +97,9 @@ qpkv account new
 # List all accounts
 qpkv account list
 
+# Sign and generate a raw sphincs+ signature for any message
+qpkv sign --identifier <IDENTIFIER> --message <MESSAGE>
+
 # Sign a message - designed for CKB transaction
 qpkv ckb sign --lock-args <LOCK_ARGS> --message <MESSAGE>
 
