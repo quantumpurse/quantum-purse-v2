@@ -33,9 +33,9 @@ enum Commands {
     },
     /// Generate raw SPHINCS+ signature for any message (returns signature and public key)
     Sign {
-        /// Lock args (account identifier)
+        /// Account identifier (CKB quantum lock args)
         #[arg(short, long)]
-        lock_args: String,
+        identifier: String,
         /// Message to sign (hex-encoded)
         #[arg(short, long)]
         message: String,
@@ -92,7 +92,7 @@ enum AccountCommands {
 enum CkbCommands {
     /// Sign a CKB message
     Sign {
-        /// Lock args (account identifier)
+        /// CKB quantum lock script args (Account identifier)
         #[arg(short, long)]
         lock_args: String,
         /// Message to sign (hex-encoded)
@@ -230,7 +230,7 @@ fn main() -> Result<(), String> {
                 let password = promt_for_input("Enter password: ")?.into_bytes();
                 let lock_args = vault.gen_new_account(password)?;
                 println!("✓ New account created");
-                println!("Lock args: {}", lock_args);
+                println!("Identifier(CKB quantum lock script args): {}", lock_args);
             }
 
             AccountCommands::List => {
@@ -268,7 +268,7 @@ fn main() -> Result<(), String> {
                 let password = promt_for_input("Enter password: ")?.into_bytes();
                 let accounts = vault.try_gen_account_batch(password, start, count)?;
 
-                println!("Generated {} lock args:", accounts.len());
+                println!("Generated {} accounts:", accounts.len());
                 for (idx, lock_args) in accounts.iter().enumerate() {
                     println!("  [{}] {}", start + idx as u32, lock_args);
                 }
@@ -276,7 +276,7 @@ fn main() -> Result<(), String> {
         }
 
         Commands::Sign {
-            lock_args,
+            account_identifier,
             message
         } => {
             let variant = KeyVault::get_spx_variant()?;
@@ -285,7 +285,7 @@ fn main() -> Result<(), String> {
             let message_bytes = hex::decode(&message).map_err(|e| e.to_string())?;
             let password = promt_for_input("Enter password: ")?.into_bytes();
 
-            let (signature, pub_key) = vault.raw_sign(password, lock_args, message_bytes)?;
+            let (signature, pub_key) = vault.raw_sign(password, account_identifier, message_bytes)?;
             println!("Signature: {}", hex::encode(signature));
             println!("Public Key: {}", hex::encode(pub_key));
         }
