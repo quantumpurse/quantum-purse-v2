@@ -253,7 +253,7 @@ impl KeyVault {
     ///
     /// **Parameters**:
     /// - `seed_phrase: Vec<u8>` - The mnemonic phrase as a valid UTF-8 encoded byte array to import.
-    ///    There're only 3 options accepted: 36, 54 or 72 words.
+    ///   There're only 3 options accepted: 36, 54 or 72 words.
     /// - `password: Vec<u8>` - The password used to encrypt the translated master seed.
     ///
     /// **Returns**:
@@ -311,10 +311,8 @@ impl KeyVault {
         }
 
         let mut combined_entropy = SecureVec::new_with_length(0);
-        let mut index: u8 = 0;
         let size = self.variant.required_bip39_size_in_word_component();
-        for chunk in words.chunks(size) {
-            index += 1;
+        for (index, chunk) in (0_u8..).zip(words.chunks(size)) {
             let chunk_str = SecureString::from_string(chunk.join(" "));
             let mnemonic = Mnemonic::parse_in(Language::English, &*chunk_str)
                 .map_err(|e| format!("Invalid mnemonic: Chunk{} index {}: {}", size, index, e))?;
@@ -459,7 +457,6 @@ impl KeyVault {
     ///
     /// **Notes**:
     /// - The provided `password` buffer is cleared immediately after use.
-
     pub fn raw_sign(
         &self,
         password: Vec<u8>,
@@ -627,7 +624,7 @@ impl KeyVault {
         let mut script_args_hasher = Hasher::script_args_hasher();
         script_args_hasher.update(&all_in_one_config);
         script_args_hasher.update(&[sign_flag]);
-        script_args_hasher.update(&public_key);
+        script_args_hasher.update(public_key);
         script_args_hasher.hash()
     }
 }
