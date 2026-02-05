@@ -97,20 +97,20 @@ qpkv account new
 # List all accounts
 qpkv account list
 
-# Sign a message
-qpkv sign --lock-args <LOCK_ARGS> --message <MESSAGE>
+# Sign a message - designed for CKB transaction
+qpkv ckb sign --lock-args <LOCK_ARGS> --message <MESSAGE>
 
 # Recover accounts
-qpkv recover --count <COUNT>
+qpkv ckb recover --count <COUNT>
 
 # Generate account batch for discovery
-qpkv try-gen-batch --start <START> --count <COUNT> # example: qpkv try-gen-batch --start 0 --count 10
-
-# Clear all wallet data
-qpkv clear
+qpkv ckb try-gen-batch --start <START> --count <COUNT> # example: qpkv try-gen-batch --start 0 --count 10
 
 # Get CKB transaction message hash
-qpkv get-ckb-tx-message --tx-file <TX_FILE>
+qpkv ckb get-ckb-tx-message --tx-file <TX_FILE>
+
+# Clear all vault data
+qpkv clear
 
 # Show help
 qpkv --help

@@ -15,7 +15,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Initialize a new wallet by generating a master seed
+    /// Initialize a new vault by generating a seed
     Init {
         /// SPHINCS+ variant (Sha2128F, Sha2128S, Sha2192F, Sha2192S, Sha2256F, Sha2256S, Shake128F, Shake128S, Shake192F, Shake192S, Shake256F, Shake256S)
         #[arg(short, long)]
@@ -26,45 +26,20 @@ enum Commands {
         #[command(subcommand)]
         command: MnemonicCommands,
     },
-    /// Account operations (new/list)
+    /// Account operations (new/list/recover/try-gen-batch)
     Account {
         #[command(subcommand)]
         command: AccountCommands,
     },
-    /// Sign a message
-    Sign {
-        /// Lock args (account identifier)
-        #[arg(short, long)]
-        lock_args: String,
-        /// Message to sign (hex-encoded)
-        #[arg(short, long)]
-        message: String,
+    /// CKB blockchain operations (sign/get-tx-message)
+    Ckb {
+        #[command(subcommand)]
+        command: CkbCommands,
     },
-    /// Recover accounts
-    Recover {
-        /// Number of accounts to recover
-        #[arg(short, long)]
-        count: u32,
-    },
-    /// Generate account batch (for discovery)
-    TryGenBatch {
-        /// Start index
-        #[arg(short, long)]
-        start: u32,
-        /// Count
-        #[arg(short, long)]
-        count: u32,
-    },
-    /// Clear all wallet data
+    /// Clear all vault data
     Clear,
-    /// Display wallet information
+    /// Display vault information
     Info,
-    /// Get CKB transaction message hash from mock transaction
-    GetCkbTxMessage {
-        /// Path to serialized mock transaction file
-        #[arg(short, long)]
-        tx_file: String,
-    },
 }
 
 #[derive(Subcommand)]
@@ -87,6 +62,40 @@ enum MnemonicCommands {
 enum AccountCommands {
     New,
     List,
+    /// Recover accounts
+    Recover {
+        /// Number of accounts to recover
+        #[arg(short, long)]
+        count: u32,
+    },
+    /// Generate account batch (for discovery)
+    TryGenBatch {
+        /// Start index
+        #[arg(short, long)]
+        start: u32,
+        /// Count
+        #[arg(short, long)]
+        count: u32,
+    },
+}
+
+#[derive(Subcommand)]
+enum CkbCommands {
+    /// Sign a message
+    Sign {
+        /// Lock args (account identifier)
+        #[arg(short, long)]
+        lock_args: String,
+        /// Message to sign (hex-encoded)
+        #[arg(short, long)]
+        message: String,
+    },
+    /// Get CKB transaction message hash from mock transaction
+    GetTxMessage {
+        /// Path to serialized mock transaction file
+        #[arg(short, long)]
+        tx_file: String,
+    },
 }
 
 fn parse_variant(variant_str: &str) -> Result<SpxVariant, String> {
@@ -226,48 +235,56 @@ fn main() -> Result<(), String> {
                     }
                 }
             }
-        }
 
-        Commands::Sign {
-            lock_args,
-            message,
-        } => {
-            let variant = KeyVault::get_spx_variant()?;
-            let vault = KeyVault::new(variant);
+            AccountCommands::Recover { count } => {
+                let variant = KeyVault::get_spx_variant()?;
+                let vault = KeyVault::new(variant);
 
-            let message_bytes = hex::decode(&message).map_err(|e| e.to_string())?;
-            let password = promt_for_input("Enter password: ")?.into_bytes();
+                let password = promt_for_input("Enter password: ")?.into_bytes();
+                let accounts = vault.recover_accounts(password, count)?;
 
-            let signature = vault.sign(password, lock_args, message_bytes)?;
-            println!("Signature: {}", hex::encode(signature));
-        }
+                println!("✓ Recovered {} accounts:", accounts.len());
+                for (idx, lock_args) in accounts.iter().enumerate() {
+                    println!("  [{}] {}", idx, lock_args);
+                }
+            }
 
-        Commands::Recover { count } => {
-            let variant = KeyVault::get_spx_variant()?;
-            let vault = KeyVault::new(variant);
+            AccountCommands::TryGenBatch {
+                start,
+                count,
+            } => {
+                let variant = KeyVault::get_spx_variant()?;
+                let vault = KeyVault::new(variant);
 
-            let password = promt_for_input("Enter password: ")?.into_bytes();
-            let accounts = vault.recover_accounts(password, count)?;
+                let password = promt_for_input("Enter password: ")?.into_bytes();
+                let accounts = vault.try_gen_account_batch(password, start, count)?;
 
-            println!("✓ Recovered {} accounts:", accounts.len());
-            for (idx, lock_args) in accounts.iter().enumerate() {
-                println!("  [{}] {}", idx, lock_args);
+                println!("Generated {} lock args:", accounts.len());
+                for (idx, lock_args) in accounts.iter().enumerate() {
+                    println!("  [{}] {}", start + idx as u32, lock_args);
+                }
             }
         }
 
-        Commands::TryGenBatch {
-            start,
-            count,
-        } => {
-            let variant = KeyVault::get_spx_variant()?;
-            let vault = KeyVault::new(variant);
+        Commands::Ckb { command } => match command {
+            CkbCommands::Sign {
+                lock_args,
+                message,
+            } => {
+                let variant = KeyVault::get_spx_variant()?;
+                let vault = KeyVault::new(variant);
 
-            let password = promt_for_input("Enter password: ")?.into_bytes();
-            let accounts = vault.try_gen_account_batch(password, start, count)?;
+                let message_bytes = hex::decode(&message).map_err(|e| e.to_string())?;
+                let password = promt_for_input("Enter password: ")?.into_bytes();
 
-            println!("Generated {} lock args:", accounts.len());
-            for (idx, lock_args) in accounts.iter().enumerate() {
-                println!("  [{}] {}", start + idx as u32, lock_args);
+                let signature = vault.sign(password, lock_args, message_bytes)?;
+                println!("Signature: {}", hex::encode(signature));
+            }
+
+            CkbCommands::GetTxMessage { tx_file } => {
+                let tx_data = fs::read(tx_file).map_err(|e| e.to_string())?;
+                let message = Util::get_ckb_tx_message_all(tx_data)?;
+                println!("CKB Tx message hash: {}", hex::encode(message));
             }
         }
 
@@ -298,12 +315,6 @@ fn main() -> Result<(), String> {
             println!("  Mnemonic Words: {}", variant.required_bip39_size_in_word_total());
             println!("  Total Accounts: {}", accounts.len());
             println!("  Data Storage Path: {}", data_path.display());
-        }
-
-        Commands::GetCkbTxMessage { tx_file } => {
-            let tx_data = fs::read(tx_file).map_err(|e| e.to_string())?;
-            let message = Util::get_ckb_tx_message_all(tx_data)?;
-            println!("CKB Tx message hash: {}", hex::encode(message));
         }
     }
 
