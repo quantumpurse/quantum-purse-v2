@@ -355,19 +355,19 @@ impl KeyVault {
         Ok(result.to_vec())
     }
 
-    /// Sign and produce a valid signature for the Quantum Resistant lock script.
+    /// Sign and produce a valid signature for the CKB Blockchain Quantum Resistant Lock Script.
     ///
     /// **Parameters**:
     /// - `password: Vec<u8>` - The password used to decrypt the private key.
     /// - `lock_args: String` - The hex-encoded lock script's arguments corresponding to the SPHINCS+ public key of the account that signs.
-    /// - `message: Vec<u8>` - The message to be signed.
+    /// - `message: Vec<u8>` - The CKB transaction message all. For details check https://github.com/xxuejie/rfcs/blob/cighash-all/rfcs/0000-ckb-tx-message-all/0000-ckb-tx-message-all.md
     ///
     /// **Returns**:
     /// - `Result<Vec<u8>, String>` - The signature on success, or an error on failure.
     ///
     /// **Notes**:
     /// - The provided `password` buffer is cleared immediately after use.
-    pub fn sign(
+    pub fn ckb_sign(
         &self,
         password: Vec<u8>,
         lock_args: String,
@@ -393,18 +393,71 @@ impl KeyVault {
             .derive_spx_keys(&seed, account.index)?;
 
         match self.variant {
-            SpxVariant::Sha2128S => spx_sign!(slh_dsa_sha2_128s, pri_key, &message, self.variant),
-            SpxVariant::Sha2128F => spx_sign!(slh_dsa_sha2_128f, pri_key, &message, self.variant),
-            SpxVariant::Shake128S => spx_sign!(slh_dsa_shake_128s, pri_key, &message, self.variant),
-            SpxVariant::Shake128F => spx_sign!(slh_dsa_shake_128f, pri_key, &message, self.variant),
-            SpxVariant::Sha2192S => spx_sign!(slh_dsa_sha2_192s, pri_key, &message, self.variant),
-            SpxVariant::Sha2192F => spx_sign!(slh_dsa_sha2_192f, pri_key, &message, self.variant),
-            SpxVariant::Shake192S => spx_sign!(slh_dsa_shake_192s, pri_key, &message, self.variant),
-            SpxVariant::Shake192F => spx_sign!(slh_dsa_shake_192f, pri_key, &message, self.variant),
-            SpxVariant::Sha2256S => spx_sign!(slh_dsa_sha2_256s, pri_key, &message, self.variant),
-            SpxVariant::Sha2256F => spx_sign!(slh_dsa_sha2_256f, pri_key, &message, self.variant),
-            SpxVariant::Shake256S => spx_sign!(slh_dsa_shake_256s, pri_key, &message, self.variant),
-            SpxVariant::Shake256F => spx_sign!(slh_dsa_shake_256f, pri_key, &message, self.variant),
+            SpxVariant::Sha2128S => ckb_spx_sign!(slh_dsa_sha2_128s, pri_key, &message, self.variant),
+            SpxVariant::Sha2128F => ckb_spx_sign!(slh_dsa_sha2_128f, pri_key, &message, self.variant),
+            SpxVariant::Shake128S => ckb_spx_sign!(slh_dsa_shake_128s, pri_key, &message, self.variant),
+            SpxVariant::Shake128F => ckb_spx_sign!(slh_dsa_shake_128f, pri_key, &message, self.variant),
+            SpxVariant::Sha2192S => ckb_spx_sign!(slh_dsa_sha2_192s, pri_key, &message, self.variant),
+            SpxVariant::Sha2192F => ckb_spx_sign!(slh_dsa_sha2_192f, pri_key, &message, self.variant),
+            SpxVariant::Shake192S => ckb_spx_sign!(slh_dsa_shake_192s, pri_key, &message, self.variant),
+            SpxVariant::Shake192F => ckb_spx_sign!(slh_dsa_shake_192f, pri_key, &message, self.variant),
+            SpxVariant::Sha2256S => ckb_spx_sign!(slh_dsa_sha2_256s, pri_key, &message, self.variant),
+            SpxVariant::Sha2256F => ckb_spx_sign!(slh_dsa_sha2_256f, pri_key, &message, self.variant),
+            SpxVariant::Shake256S => ckb_spx_sign!(slh_dsa_shake_256s, pri_key, &message, self.variant),
+            SpxVariant::Shake256F => ckb_spx_sign!(slh_dsa_shake_256f, pri_key, &message, self.variant),
+        }
+    }
+
+    /// Raw SPHINCS+ sign
+    /// **Parameters**:
+    /// - `password: Vec<u8>` - The password used to decrypt the private key.
+    /// - `lock_args: String` - The hex-encoded lock script's arguments corresponding to the SPHINCS+ public key of the account that signs.
+    /// - `message: Vec<u8>` - The CKB transaction message all. For details check https://github.com/xxuejie/rfcs/blob/cighash-all/rfcs/0000-ckb-tx-message-all/0000-ckb-tx-message-all.md
+    ///
+    /// **Returns**:
+    /// - `Result<(Vec<u8>, Vec<u8>), String>` - A tuple of (signature, public_key) on success, or an error on failure.
+    ///
+    /// **Notes**:
+    /// - The provided `password` buffer is cleared immediately after use.
+
+    pub fn raw_sign(
+        &self,
+        password: Vec<u8>,
+        lock_args: String,
+        message: Vec<u8>,
+    ) -> Result<(Vec<u8>, Vec<u8>), String> {
+        let password = SecureString::from_utf8(password)?;
+
+        if password.is_empty() || password.is_uninitialized() {
+            return Err("Password cannot be empty or uninitialized".to_string());
+        }
+
+        let account = db::get_account(&lock_args)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "Account not found".to_string())?;
+
+        // Get and decrypt the master seed
+        let payload = db::get_encrypted_seed()
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| ("Master seed not found").to_string())?;
+        let seed = utilities::decrypt(password.as_ref(), payload)?;
+
+        let (_, pri_key) = self
+            .derive_spx_keys(&seed, account.index)?;
+
+        match self.variant {
+            SpxVariant::Sha2128S => raw_spx_sign!(slh_dsa_sha2_128s, pri_key, &message, self.variant),
+            SpxVariant::Sha2128F => raw_spx_sign!(slh_dsa_sha2_128f, pri_key, &message, self.variant),
+            SpxVariant::Shake128S => raw_spx_sign!(slh_dsa_shake_128s, pri_key, &message, self.variant),
+            SpxVariant::Shake128F => raw_spx_sign!(slh_dsa_shake_128f, pri_key, &message, self.variant),
+            SpxVariant::Sha2192S => raw_spx_sign!(slh_dsa_sha2_192s, pri_key, &message, self.variant),
+            SpxVariant::Sha2192F => raw_spx_sign!(slh_dsa_sha2_192f, pri_key, &message, self.variant),
+            SpxVariant::Shake192S => raw_spx_sign!(slh_dsa_shake_192s, pri_key, &message, self.variant),
+            SpxVariant::Shake192F => raw_spx_sign!(slh_dsa_shake_192f, pri_key, &message, self.variant),
+            SpxVariant::Sha2256S => raw_spx_sign!(slh_dsa_sha2_256s, pri_key, &message, self.variant),
+            SpxVariant::Sha2256F => raw_spx_sign!(slh_dsa_sha2_256f, pri_key, &message, self.variant),
+            SpxVariant::Shake256S => raw_spx_sign!(slh_dsa_shake_256s, pri_key, &message, self.variant),
+            SpxVariant::Shake256F => raw_spx_sign!(slh_dsa_shake_256f, pri_key, &message, self.variant),
         }
     }
 

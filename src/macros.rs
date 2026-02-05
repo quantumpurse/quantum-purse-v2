@@ -34,7 +34,7 @@ macro_rules! spx_keygen {
 }
 
 #[macro_export]
-macro_rules! spx_sign {
+macro_rules! ckb_spx_sign {
     ($module:ident, $pri_key:expr, $message_vec:expr, $variant:expr) => {{
         let pri_key_ref: &[u8; $module::SK_LEN] = $pri_key.as_ref().try_into()
             .map_err(|_| "Invalid private key length".to_string())?;
@@ -65,5 +65,25 @@ macro_rules! spx_sign {
         .concat();
 
         Ok(ckb_qr_full_signature)
+    }};
+}
+
+#[macro_export]
+macro_rules! raw_spx_sign {
+    ($module:ident, $pri_key:expr, $message_vec:expr, $variant:expr) => {{
+        let pri_key_ref: &[u8; $module::SK_LEN] = $pri_key.as_ref().try_into()
+            .map_err(|_| "Invalid private key length".to_string())?;
+
+        let signing_key = $module::PrivateKey::try_from_bytes(&pri_key_ref)
+            .map_err(|e| format!("Unable to construct private key: {:?}", e))?;
+        let signature = signing_key
+            .try_sign($message_vec, &[], true)
+            .map_err(|e| format!("Signing error: {:?}", e))?;
+
+        // The sphincs+ public key is the second half of the private key
+        // [sk_seed][sk_prf] [pk_seed][pk_root]
+        let pub_key_slice: &[u8] = &pri_key_ref[$module::PK_LEN..$module::SK_LEN];
+
+        Ok((signature.as_slice().to_vec(), pub_key_slice.to_vec()))
     }};
 }

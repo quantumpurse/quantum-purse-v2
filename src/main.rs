@@ -31,6 +31,15 @@ enum Commands {
         #[command(subcommand)]
         command: AccountCommands,
     },
+    /// Generate raw SPHINCS+ signature for any message (returns signature and public key)
+    Sign {
+        /// Lock args (account identifier)
+        #[arg(short, long)]
+        lock_args: String,
+        /// Message to sign (hex-encoded)
+        #[arg(short, long)]
+        message: String,
+    },
     /// CKB blockchain operations (sign/get-tx-message)
     Ckb {
         #[command(subcommand)]
@@ -81,7 +90,7 @@ enum AccountCommands {
 
 #[derive(Subcommand)]
 enum CkbCommands {
-    /// Sign a message
+    /// Sign a CKB message
     Sign {
         /// Lock args (account identifier)
         #[arg(short, long)]
@@ -266,6 +275,21 @@ fn main() -> Result<(), String> {
             }
         }
 
+        Commands::Sign {
+            lock_args,
+            message
+        } => {
+            let variant = KeyVault::get_spx_variant()?;
+            let vault = KeyVault::new(variant);
+
+            let message_bytes = hex::decode(&message).map_err(|e| e.to_string())?;
+            let password = promt_for_input("Enter password: ")?.into_bytes();
+
+            let (signature, pub_key) = vault.raw_sign(password, lock_args, message_bytes)?;
+            println!("Signature: {}", hex::encode(signature));
+            println!("Public Key: {}", hex::encode(pub_key));
+        }
+
         Commands::Ckb { command } => match command {
             CkbCommands::Sign {
                 lock_args,
@@ -277,7 +301,7 @@ fn main() -> Result<(), String> {
                 let message_bytes = hex::decode(&message).map_err(|e| e.to_string())?;
                 let password = promt_for_input("Enter password: ")?.into_bytes();
 
-                let signature = vault.sign(password, lock_args, message_bytes)?;
+                let signature = vault.ckb_sign(password, lock_args, message_bytes)?;
                 println!("Signature: {}", hex::encode(signature));
             }
 

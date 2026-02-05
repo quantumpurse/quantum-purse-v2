@@ -1,4 +1,4 @@
-# Quantum Purse key vault
+# QPKV CLI
 
 A cross-platform CLI tool for managing FIPS205 (formerly SPHINCS+) cryptographic keys with CKB blockchain address resolution integrated.
 
