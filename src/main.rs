@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use quantum_purse_key_vault::{types::SpxVariant, KeyVault, Util};
+use key_vault_cli::{types::SpxVariant, KeyVault, Util};
 use rpassword::read_password;
 use std::fs;
 use std::io::{self, Write};
@@ -338,7 +338,7 @@ fn main() -> Result<(), String> {
             let variant = KeyVault::get_spx_variant()?;
             let accounts = KeyVault::get_all_sphincs_lock_args()?;
             let data_path =
-                quantum_purse_key_vault::db::get_data_dir().map_err(|e| e.to_string())?;
+                key_vault_cli::db::get_data_dir().map_err(|e| e.to_string())?;
 
             println!("\n╔════════════════════════════════════════════════════════════════╗");
             println!("║                     Wallet Information                         ║");

@@ -768,6 +768,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "key-vault-cli"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "anyhow",
+ "bip39",
+ "ckb-fips205-utils",
+ "ckb-mock-tx-types",
+ "clap",
+ "dirs",
+ "fips205",
+ "getrandom 0.2.15",
+ "hex",
+ "hkdf",
+ "rpassword",
+ "scrypt",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.12",
+ "zeroize",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.172"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -929,30 +953,6 @@ dependencies = [
  "quote",
  "syn 2.0.100",
  "version_check",
-]
-
-[[package]]
-name = "quantum-purse-key-vault"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "anyhow",
- "bip39",
- "ckb-fips205-utils",
- "ckb-mock-tx-types",
- "clap",
- "dirs",
- "fips205",
- "getrandom 0.2.15",
- "hex",
- "hkdf",
- "rpassword",
- "scrypt",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.12",
- "zeroize",
 ]
 
 [[package]]
