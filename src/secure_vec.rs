@@ -1,11 +1,10 @@
+use aes_gcm::aead::{Buffer, Error as AeadError};
 /// A secure vector that zeroizes its contents when dropped.
 /// Used in containing sensitive bytes like passwords or master seed.
-
 use std::ops::{Deref, DerefMut};
-use zeroize::Zeroize;
 #[cfg(test)]
 use std::sync::atomic::{AtomicBool, Ordering};
-use aes_gcm::aead::{Buffer, Error as AeadError};
+use zeroize::Zeroize;
 #[cfg(test)]
 pub static ZEROIZED: AtomicBool = AtomicBool::new(false);
 
@@ -18,7 +17,7 @@ impl SecureVec {
     }
 
     pub fn from_vec(vec: Vec<u8>) -> Self {
-      SecureVec(vec)
+        SecureVec(vec)
     }
 
     pub fn extend(&mut self, slice: &[u8]) {

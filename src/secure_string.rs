@@ -1,8 +1,7 @@
 /// A secure string type for custom BIP39 menmonic seed words
 /// Used in containing BIP39 component/elemental mnemonic word string
 /// facilitating custom BIP39 for quantumPurse Keyvault
-
-use std::ops::{Deref, /*DerefMut*/};
+use std::ops::{Deref /*DerefMut*/};
 use zeroize::Zeroize;
 
 #[derive(Debug)]
@@ -20,7 +19,7 @@ impl SecureString {
                 let mut leaked_handle = e.into_bytes();
                 leaked_handle.zeroize();
                 Err("Invalid UTF-8 input".to_string())
-            },
+            }
         }
     }
 

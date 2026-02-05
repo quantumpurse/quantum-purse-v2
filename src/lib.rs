@@ -20,17 +20,16 @@ use hex::encode;
 mod constants;
 pub mod db;
 mod macros;
-mod secure_vec;
 mod secure_string;
+mod secure_vec;
 pub mod types;
 pub mod utilities;
 
 use crate::constants::{
-    KDF_PATH_PREFIX, MULTISIG_RESERVED_FIELD_VALUE,
-    PUBKEY_NUM, REQUIRED_FIRST_N, THRESHOLD,
+    KDF_PATH_PREFIX, MULTISIG_RESERVED_FIELD_VALUE, PUBKEY_NUM, REQUIRED_FIRST_N, THRESHOLD,
 };
-use secure_vec::SecureVec;
 use secure_string::SecureString;
+use secure_vec::SecureVec;
 use types::*;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -60,24 +59,44 @@ impl KeyVault {
     /// - `Result<(SecureVec, SecureVec), String>` - The SPHINCS+ key pair on success, or an error message on failure.
     ///
     /// Warning: Proper zeroization of the input seed is the responsibility of the caller.
-    fn derive_spx_keys(
-        &self,
-        seed: &[u8],
-        index: u32,
-    ) -> Result<(SecureVec, SecureVec), String> {
+    fn derive_spx_keys(&self, seed: &[u8], index: u32) -> Result<(SecureVec, SecureVec), String> {
         match self.variant {
-            SpxVariant::Sha2128S => spx_keygen!(slh_dsa_sha2_128s::KG, slh_dsa_sha2_128s::N, seed, index),
-            SpxVariant::Sha2128F => spx_keygen!(slh_dsa_sha2_128f::KG, slh_dsa_sha2_128f::N, seed, index),
-            SpxVariant::Sha2192S => spx_keygen!(slh_dsa_sha2_192s::KG, slh_dsa_sha2_192s::N, seed, index),
-            SpxVariant::Sha2192F => spx_keygen!(slh_dsa_sha2_192f::KG, slh_dsa_sha2_192f::N, seed, index),
-            SpxVariant::Sha2256S => spx_keygen!(slh_dsa_sha2_256s::KG, slh_dsa_sha2_256s::N, seed, index),
-            SpxVariant::Sha2256F => spx_keygen!(slh_dsa_sha2_256f::KG, slh_dsa_sha2_256f::N, seed, index),
-            SpxVariant::Shake128S => spx_keygen!(slh_dsa_shake_128s::KG, slh_dsa_shake_128s::N, seed, index),
-            SpxVariant::Shake128F => spx_keygen!(slh_dsa_shake_128f::KG, slh_dsa_shake_128f::N, seed, index),
-            SpxVariant::Shake192S => spx_keygen!(slh_dsa_shake_192s::KG, slh_dsa_shake_192s::N, seed, index),
-            SpxVariant::Shake192F => spx_keygen!(slh_dsa_shake_192f::KG, slh_dsa_shake_192f::N, seed, index),
-            SpxVariant::Shake256S => spx_keygen!(slh_dsa_shake_256s::KG, slh_dsa_shake_256s::N, seed, index),
-            SpxVariant::Shake256F => spx_keygen!(slh_dsa_shake_256f::KG, slh_dsa_shake_256f::N, seed, index),
+            SpxVariant::Sha2128S => {
+                spx_keygen!(slh_dsa_sha2_128s::KG, slh_dsa_sha2_128s::N, seed, index)
+            }
+            SpxVariant::Sha2128F => {
+                spx_keygen!(slh_dsa_sha2_128f::KG, slh_dsa_sha2_128f::N, seed, index)
+            }
+            SpxVariant::Sha2192S => {
+                spx_keygen!(slh_dsa_sha2_192s::KG, slh_dsa_sha2_192s::N, seed, index)
+            }
+            SpxVariant::Sha2192F => {
+                spx_keygen!(slh_dsa_sha2_192f::KG, slh_dsa_sha2_192f::N, seed, index)
+            }
+            SpxVariant::Sha2256S => {
+                spx_keygen!(slh_dsa_sha2_256s::KG, slh_dsa_sha2_256s::N, seed, index)
+            }
+            SpxVariant::Sha2256F => {
+                spx_keygen!(slh_dsa_sha2_256f::KG, slh_dsa_sha2_256f::N, seed, index)
+            }
+            SpxVariant::Shake128S => {
+                spx_keygen!(slh_dsa_shake_128s::KG, slh_dsa_shake_128s::N, seed, index)
+            }
+            SpxVariant::Shake128F => {
+                spx_keygen!(slh_dsa_shake_128f::KG, slh_dsa_shake_128f::N, seed, index)
+            }
+            SpxVariant::Shake192S => {
+                spx_keygen!(slh_dsa_shake_192s::KG, slh_dsa_shake_192s::N, seed, index)
+            }
+            SpxVariant::Shake192F => {
+                spx_keygen!(slh_dsa_shake_192f::KG, slh_dsa_shake_192f::N, seed, index)
+            }
+            SpxVariant::Shake256S => {
+                spx_keygen!(slh_dsa_shake_256s::KG, slh_dsa_shake_256s::N, seed, index)
+            }
+            SpxVariant::Shake256F => {
+                spx_keygen!(slh_dsa_shake_256f::KG, slh_dsa_shake_256f::N, seed, index)
+            }
         }
     }
 
@@ -99,7 +118,9 @@ impl KeyVault {
     pub fn get_spx_variant() -> Result<SpxVariant, String> {
         let wallet_info = db::get_wallet_info()
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| "Wallet not initialized. Run 'init' or 'import-mnemonic' first.".to_string())?;
+            .ok_or_else(|| {
+                "Wallet not initialized. Run 'init' or 'import-mnemonic' first.".to_string()
+            })?;
         Ok(wallet_info.spx_variant)
     }
 
@@ -295,12 +316,8 @@ impl KeyVault {
         for chunk in words.chunks(size) {
             index += 1;
             let chunk_str = SecureString::from_string(chunk.join(" "));
-            let mnemonic = Mnemonic::parse_in(Language::English, &*chunk_str).map_err(|e| {
-                format!(
-                    "Invalid mnemonic: Chunk{} index {}: {}",
-                    size, index, e
-                )
-            })?;
+            let mnemonic = Mnemonic::parse_in(Language::English, &*chunk_str)
+                .map_err(|e| format!("Invalid mnemonic: Chunk{} index {}: {}", size, index, e))?;
             combined_entropy.extend(&mnemonic.to_entropy());
         }
 
@@ -389,22 +406,45 @@ impl KeyVault {
             .ok_or_else(|| ("Master seed not found").to_string())?;
         let seed = utilities::decrypt(password.as_ref(), payload)?;
 
-        let (_, pri_key) = self
-            .derive_spx_keys(&seed, account.index)?;
+        let (_, pri_key) = self.derive_spx_keys(&seed, account.index)?;
 
         match self.variant {
-            SpxVariant::Sha2128S => ckb_spx_sign!(slh_dsa_sha2_128s, pri_key, &message, self.variant),
-            SpxVariant::Sha2128F => ckb_spx_sign!(slh_dsa_sha2_128f, pri_key, &message, self.variant),
-            SpxVariant::Shake128S => ckb_spx_sign!(slh_dsa_shake_128s, pri_key, &message, self.variant),
-            SpxVariant::Shake128F => ckb_spx_sign!(slh_dsa_shake_128f, pri_key, &message, self.variant),
-            SpxVariant::Sha2192S => ckb_spx_sign!(slh_dsa_sha2_192s, pri_key, &message, self.variant),
-            SpxVariant::Sha2192F => ckb_spx_sign!(slh_dsa_sha2_192f, pri_key, &message, self.variant),
-            SpxVariant::Shake192S => ckb_spx_sign!(slh_dsa_shake_192s, pri_key, &message, self.variant),
-            SpxVariant::Shake192F => ckb_spx_sign!(slh_dsa_shake_192f, pri_key, &message, self.variant),
-            SpxVariant::Sha2256S => ckb_spx_sign!(slh_dsa_sha2_256s, pri_key, &message, self.variant),
-            SpxVariant::Sha2256F => ckb_spx_sign!(slh_dsa_sha2_256f, pri_key, &message, self.variant),
-            SpxVariant::Shake256S => ckb_spx_sign!(slh_dsa_shake_256s, pri_key, &message, self.variant),
-            SpxVariant::Shake256F => ckb_spx_sign!(slh_dsa_shake_256f, pri_key, &message, self.variant),
+            SpxVariant::Sha2128S => {
+                ckb_spx_sign!(slh_dsa_sha2_128s, pri_key, &message, self.variant)
+            }
+            SpxVariant::Sha2128F => {
+                ckb_spx_sign!(slh_dsa_sha2_128f, pri_key, &message, self.variant)
+            }
+            SpxVariant::Shake128S => {
+                ckb_spx_sign!(slh_dsa_shake_128s, pri_key, &message, self.variant)
+            }
+            SpxVariant::Shake128F => {
+                ckb_spx_sign!(slh_dsa_shake_128f, pri_key, &message, self.variant)
+            }
+            SpxVariant::Sha2192S => {
+                ckb_spx_sign!(slh_dsa_sha2_192s, pri_key, &message, self.variant)
+            }
+            SpxVariant::Sha2192F => {
+                ckb_spx_sign!(slh_dsa_sha2_192f, pri_key, &message, self.variant)
+            }
+            SpxVariant::Shake192S => {
+                ckb_spx_sign!(slh_dsa_shake_192s, pri_key, &message, self.variant)
+            }
+            SpxVariant::Shake192F => {
+                ckb_spx_sign!(slh_dsa_shake_192f, pri_key, &message, self.variant)
+            }
+            SpxVariant::Sha2256S => {
+                ckb_spx_sign!(slh_dsa_sha2_256s, pri_key, &message, self.variant)
+            }
+            SpxVariant::Sha2256F => {
+                ckb_spx_sign!(slh_dsa_sha2_256f, pri_key, &message, self.variant)
+            }
+            SpxVariant::Shake256S => {
+                ckb_spx_sign!(slh_dsa_shake_256s, pri_key, &message, self.variant)
+            }
+            SpxVariant::Shake256F => {
+                ckb_spx_sign!(slh_dsa_shake_256f, pri_key, &message, self.variant)
+            }
         }
     }
 
@@ -442,22 +482,45 @@ impl KeyVault {
             .ok_or_else(|| ("Master seed not found").to_string())?;
         let seed = utilities::decrypt(password.as_ref(), payload)?;
 
-        let (_, pri_key) = self
-            .derive_spx_keys(&seed, account.index)?;
+        let (_, pri_key) = self.derive_spx_keys(&seed, account.index)?;
 
         match self.variant {
-            SpxVariant::Sha2128S => raw_spx_sign!(slh_dsa_sha2_128s, pri_key, &message, self.variant),
-            SpxVariant::Sha2128F => raw_spx_sign!(slh_dsa_sha2_128f, pri_key, &message, self.variant),
-            SpxVariant::Shake128S => raw_spx_sign!(slh_dsa_shake_128s, pri_key, &message, self.variant),
-            SpxVariant::Shake128F => raw_spx_sign!(slh_dsa_shake_128f, pri_key, &message, self.variant),
-            SpxVariant::Sha2192S => raw_spx_sign!(slh_dsa_sha2_192s, pri_key, &message, self.variant),
-            SpxVariant::Sha2192F => raw_spx_sign!(slh_dsa_sha2_192f, pri_key, &message, self.variant),
-            SpxVariant::Shake192S => raw_spx_sign!(slh_dsa_shake_192s, pri_key, &message, self.variant),
-            SpxVariant::Shake192F => raw_spx_sign!(slh_dsa_shake_192f, pri_key, &message, self.variant),
-            SpxVariant::Sha2256S => raw_spx_sign!(slh_dsa_sha2_256s, pri_key, &message, self.variant),
-            SpxVariant::Sha2256F => raw_spx_sign!(slh_dsa_sha2_256f, pri_key, &message, self.variant),
-            SpxVariant::Shake256S => raw_spx_sign!(slh_dsa_shake_256s, pri_key, &message, self.variant),
-            SpxVariant::Shake256F => raw_spx_sign!(slh_dsa_shake_256f, pri_key, &message, self.variant),
+            SpxVariant::Sha2128S => {
+                raw_spx_sign!(slh_dsa_sha2_128s, pri_key, &message, self.variant)
+            }
+            SpxVariant::Sha2128F => {
+                raw_spx_sign!(slh_dsa_sha2_128f, pri_key, &message, self.variant)
+            }
+            SpxVariant::Shake128S => {
+                raw_spx_sign!(slh_dsa_shake_128s, pri_key, &message, self.variant)
+            }
+            SpxVariant::Shake128F => {
+                raw_spx_sign!(slh_dsa_shake_128f, pri_key, &message, self.variant)
+            }
+            SpxVariant::Sha2192S => {
+                raw_spx_sign!(slh_dsa_sha2_192s, pri_key, &message, self.variant)
+            }
+            SpxVariant::Sha2192F => {
+                raw_spx_sign!(slh_dsa_sha2_192f, pri_key, &message, self.variant)
+            }
+            SpxVariant::Shake192S => {
+                raw_spx_sign!(slh_dsa_shake_192s, pri_key, &message, self.variant)
+            }
+            SpxVariant::Shake192F => {
+                raw_spx_sign!(slh_dsa_shake_192f, pri_key, &message, self.variant)
+            }
+            SpxVariant::Sha2256S => {
+                raw_spx_sign!(slh_dsa_sha2_256s, pri_key, &message, self.variant)
+            }
+            SpxVariant::Sha2256F => {
+                raw_spx_sign!(slh_dsa_sha2_256f, pri_key, &message, self.variant)
+            }
+            SpxVariant::Shake256S => {
+                raw_spx_sign!(slh_dsa_shake_256s, pri_key, &message, self.variant)
+            }
+            SpxVariant::Shake256F => {
+                raw_spx_sign!(slh_dsa_shake_256f, pri_key, &message, self.variant)
+            }
         }
     }
 
@@ -514,11 +577,7 @@ impl KeyVault {
     ///
     /// **Notes**:
     /// - The provided `password` buffer is cleared immediately after use.
-    pub fn recover_accounts(
-        &self,
-        password: Vec<u8>,
-        count: u32,
-    ) -> Result<Vec<String>, String> {
+    pub fn recover_accounts(&self, password: Vec<u8>, count: u32) -> Result<Vec<String>, String> {
         let password = SecureString::from_utf8(password)?;
 
         if password.is_empty() || password.is_uninitialized() {

@@ -12,8 +12,9 @@ use std::path::PathBuf;
 /// **Returns**:
 /// - `Result<PathBuf, KeyVaultDBError>` - The data directory path on success, or an error if it cannot be determined.
 pub fn get_data_dir() -> Result<PathBuf, KeyVaultDBError> {
-    let home_dir = dirs::home_dir()
-        .ok_or_else(|| KeyVaultDBError::DatabaseError("Cannot determine home directory".to_string()))?;
+    let home_dir = dirs::home_dir().ok_or_else(|| {
+        KeyVaultDBError::DatabaseError("Cannot determine home directory".to_string())
+    })?;
 
     let data_dir = home_dir.join(".quantum-purse");
 

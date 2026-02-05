@@ -1,9 +1,9 @@
 use clap::{Parser, Subcommand};
 use quantum_purse_key_vault::{types::SpxVariant, KeyVault, Util};
 use rpassword::read_password;
-use zeroize::Zeroize;
 use std::fs;
 use std::io::{self, Write};
+use zeroize::Zeroize;
 
 #[derive(Parser)]
 #[command(name = "qpkv")]
@@ -143,7 +143,10 @@ fn main() -> Result<(), String> {
             let vault = KeyVault::new(variant);
 
             println!("Initializing wallet with variant: {}", variant);
-            println!("Required mnemonic words: {}", variant.required_bip39_size_in_word_total());
+            println!(
+                "Required mnemonic words: {}",
+                variant.required_bip39_size_in_word_total()
+            );
 
             let mut password = promt_for_input("Enter password: ")?.into_bytes();
 
@@ -160,13 +163,15 @@ fn main() -> Result<(), String> {
                 Err(e) => {
                     password.zeroize();
                     confirm.zeroize();
-                    return Err(format!("Password validation failed: {}", e))
-                },
+                    return Err(format!("Password validation failed: {}", e));
+                }
             }
 
             vault.generate_master_seed(password)?;
             println!("✓ Master seed generated successfully");
-            println!("⚠️  Make sure to backup your seed phrase using the 'mnemonic export' command");
+            println!(
+                "⚠️  Make sure to backup your seed phrase using the 'mnemonic export' command"
+            );
         }
 
         Commands::Mnemonic { command } => match command {
@@ -197,8 +202,8 @@ fn main() -> Result<(), String> {
                         password.zeroize();
                         confirm.zeroize();
                         seed_phrase.zeroize();
-                        return Err(format!("Password validation failed: {}", e))
-                    },
+                        return Err(format!("Password validation failed: {}", e));
+                    }
                 }
 
                 vault.import_seed_phrase(seed_phrase.into_bytes(), password)?;
@@ -222,66 +227,65 @@ fn main() -> Result<(), String> {
                 }
                 seed_str.zeroize();
             }
-        }
+        },
 
-        Commands::Account { command } => match command {
-            AccountCommands::New => {
-                let variant = KeyVault::get_spx_variant()?;
-                let vault = KeyVault::new(variant);
+        Commands::Account { command } => {
+            match command {
+                AccountCommands::New => {
+                    let variant = KeyVault::get_spx_variant()?;
+                    let vault = KeyVault::new(variant);
 
-                let password = promt_for_input("Enter password: ")?.into_bytes();
-                let lock_args = vault.gen_new_account(password)?;
-                println!("✓ New account created");
-                println!("Identifier(CKB quantum lock script args): {}", lock_args);
-            }
+                    let password = promt_for_input("Enter password: ")?.into_bytes();
+                    let lock_args = vault.gen_new_account(password)?;
+                    println!("✓ New account created");
+                    println!("Identifier(CKB quantum lock script args): {}", lock_args);
+                }
 
-            AccountCommands::List => {
-                let accounts = KeyVault::get_all_sphincs_lock_args()?;
-                if accounts.is_empty() {
-                    println!("No accounts found. Run `qpkv account new` to generate a new SPHINCS+ account");
-                } else {
-                    println!("Accounts ({}):", accounts.len());
-                    println!("  Index  Account Identifier (CKB Quantum Lock Args)");
-                    println!("  ─────────────────────────────────────────────────────────────────────");
-                    for (idx, lock_args) in accounts.iter().enumerate() {
-                        println!("  [{}]    {}", idx, lock_args);
+                AccountCommands::List => {
+                    let accounts = KeyVault::get_all_sphincs_lock_args()?;
+                    if accounts.is_empty() {
+                        println!("No accounts found. Run `qpkv account new` to generate a new SPHINCS+ account");
+                    } else {
+                        println!("Accounts ({}):", accounts.len());
+                        println!("  Index  Account Identifier (CKB Quantum Lock Args)");
+                        println!("  ─────────────────────────────────────────────────────────────────────");
+                        for (idx, lock_args) in accounts.iter().enumerate() {
+                            println!("  [{}]    {}", idx, lock_args);
+                        }
                     }
                 }
-            }
 
-            AccountCommands::Recover { count } => {
-                let variant = KeyVault::get_spx_variant()?;
-                let vault = KeyVault::new(variant);
+                AccountCommands::Recover { count } => {
+                    let variant = KeyVault::get_spx_variant()?;
+                    let vault = KeyVault::new(variant);
 
-                let password = promt_for_input("Enter password: ")?.into_bytes();
-                let accounts = vault.recover_accounts(password, count)?;
+                    let password = promt_for_input("Enter password: ")?.into_bytes();
+                    let accounts = vault.recover_accounts(password, count)?;
 
-                println!("✓ Recovered {} accounts:", accounts.len());
-                for (idx, lock_args) in accounts.iter().enumerate() {
-                    println!("  [{}] {}", idx, lock_args);
+                    println!("✓ Recovered {} accounts:", accounts.len());
+                    for (idx, lock_args) in accounts.iter().enumerate() {
+                        println!("  [{}] {}", idx, lock_args);
+                    }
                 }
-            }
 
-            AccountCommands::TryGenBatch {
-                start,
-                count,
-            } => {
-                let variant = KeyVault::get_spx_variant()?;
-                let vault = KeyVault::new(variant);
+                AccountCommands::TryGenBatch { start, count } => {
+                    let variant = KeyVault::get_spx_variant()?;
+                    let vault = KeyVault::new(variant);
 
-                let password = promt_for_input("Enter password: ")?.into_bytes();
-                let accounts = vault.try_gen_account_batch(password, start, count)?;
+                    let password = promt_for_input("Enter password: ")?.into_bytes();
+                    let accounts = vault.try_gen_account_batch(password, start, count)?;
 
-                println!("Generated {} accounts:", accounts.len());
-                for (idx, lock_args) in accounts.iter().enumerate() {
-                    println!("  [{}] {}", start + idx as u32, lock_args);
+                    println!("Generated {} accounts:", accounts.len());
+                    for (idx, lock_args) in accounts.iter().enumerate() {
+                        println!("  [{}] {}", start + idx as u32, lock_args);
+                    }
                 }
             }
         }
 
         Commands::Sign {
             identifier,
-            message
+            message,
         } => {
             let variant = KeyVault::get_spx_variant()?;
             let vault = KeyVault::new(variant);
@@ -295,10 +299,7 @@ fn main() -> Result<(), String> {
         }
 
         Commands::Ckb { command } => match command {
-            CkbCommands::Sign {
-                lock_args,
-                message,
-            } => {
+            CkbCommands::Sign { lock_args, message } => {
                 let variant = KeyVault::get_spx_variant()?;
                 let vault = KeyVault::new(variant);
 
@@ -314,14 +315,16 @@ fn main() -> Result<(), String> {
                 let message = Util::get_ckb_tx_message_all(tx_data)?;
                 println!("CKB Tx message hash: {}", hex::encode(message));
             }
-        }
+        },
 
         Commands::Clear => {
             print!("Are you sure you want to clear all wallet data? (yes/no): ");
             io::stdout().flush().map_err(|e| e.to_string())?;
 
             let mut confirmation = String::new();
-            io::stdin().read_line(&mut confirmation).map_err(|e| e.to_string())?;
+            io::stdin()
+                .read_line(&mut confirmation)
+                .map_err(|e| e.to_string())?;
 
             if confirmation.trim().to_lowercase() == "yes" {
                 KeyVault::clear_database()?;
@@ -334,16 +337,22 @@ fn main() -> Result<(), String> {
         Commands::Info => {
             let variant = KeyVault::get_spx_variant()?;
             let accounts = KeyVault::get_all_sphincs_lock_args()?;
-            let data_path = quantum_purse_key_vault::db::get_data_dir()
-                .map_err(|e| e.to_string())?;
+            let data_path =
+                quantum_purse_key_vault::db::get_data_dir().map_err(|e| e.to_string())?;
 
             println!("\n╔════════════════════════════════════════════════════════════════╗");
             println!("║                     Wallet Information                         ║");
             println!("╚════════════════════════════════════════════════════════════════╝");
             println!();
             println!("  SPHINCS+ Variant      : {}", variant);
-            println!("  Security Level        : {} bits", variant.required_entropy_size_component() * 8);
-            println!("  Mnemonic Words        : {}", variant.required_bip39_size_in_word_total());
+            println!(
+                "  Security Level        : {} bits",
+                variant.required_entropy_size_component() * 8
+            );
+            println!(
+                "  Mnemonic Words        : {}",
+                variant.required_bip39_size_in_word_total()
+            );
             println!("  Total Accounts        : {}", accounts.len());
             println!("  Data Storage Path     : {}", data_path.display());
             println!();
