@@ -276,7 +276,7 @@ fn main() -> Result<(), String> {
         }
 
         Commands::Sign {
-            account_identifier,
+            identifier,
             message
         } => {
             let variant = KeyVault::get_spx_variant()?;
@@ -285,7 +285,7 @@ fn main() -> Result<(), String> {
             let message_bytes = hex::decode(&message).map_err(|e| e.to_string())?;
             let password = promt_for_input("Enter password: ")?.into_bytes();
 
-            let (signature, pub_key) = vault.raw_sign(password, account_identifier, message_bytes)?;
+            let (signature, pub_key) = vault.raw_sign(password, identifier, message_bytes)?;
             println!("Signature: {}", hex::encode(signature));
             println!("Public Key: {}", hex::encode(pub_key));
         }
@@ -333,12 +333,16 @@ fn main() -> Result<(), String> {
             let data_path = quantum_purse_key_vault::db::get_data_dir()
                 .map_err(|e| e.to_string())?;
 
-            println!("Wallet Information:");
-            println!("  SPHINCS+ Variant: {}", variant);
-            println!("  Security Level: {} bits", variant.required_entropy_size_component() * 8);
-            println!("  Mnemonic Words: {}", variant.required_bip39_size_in_word_total());
-            println!("  Total Accounts: {}", accounts.len());
-            println!("  Data Storage Path: {}", data_path.display());
+            println!("\n╔════════════════════════════════════════════════════════════════╗");
+            println!("║                     Wallet Information                         ║");
+            println!("╚════════════════════════════════════════════════════════════════╝");
+            println!();
+            println!("  SPHINCS+ Variant      : {}", variant);
+            println!("  Security Level        : {} bits", variant.required_entropy_size_component() * 8);
+            println!("  Mnemonic Words        : {}", variant.required_bip39_size_in_word_total());
+            println!("  Total Accounts        : {}", accounts.len());
+            println!("  Data Storage Path     : {}", data_path.display());
+            println!();
         }
     }
 
