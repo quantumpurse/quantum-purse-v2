@@ -337,8 +337,7 @@ fn main() -> Result<(), String> {
         Commands::Info => {
             let variant = KeyVault::get_spx_variant()?;
             let accounts = KeyVault::get_all_sphincs_lock_args()?;
-            let data_path =
-                key_vault_cli::db::get_data_dir().map_err(|e| e.to_string())?;
+            let data_path = key_vault_cli::db::get_data_dir().map_err(|e| e.to_string())?;
 
             println!("\n╔════════════════════════════════════════════════════════════════╗");
             println!("║                     Wallet Information                         ║");
