@@ -33,7 +33,7 @@ enum Commands {
     },
     /// Generate raw SPHINCS+ signature for any message (returns signature and public key)
     Sign {
-        /// Account identifier (CKB quantum lock args)
+        /// Account identifier (CKB quantum lock args). Run `qpkv account list` to see all accounts
         #[arg(short, long)]
         identifier: String,
         /// Message to sign (hex-encoded)
@@ -69,7 +69,9 @@ enum MnemonicCommands {
 
 #[derive(Subcommand)]
 enum AccountCommands {
+    /// Generate a new SPHINCS+ account
     New,
+    /// List all SPHINCS+ accounts
     List,
     /// Recover accounts
     Recover {
@@ -236,11 +238,13 @@ fn main() -> Result<(), String> {
             AccountCommands::List => {
                 let accounts = KeyVault::get_all_sphincs_lock_args()?;
                 if accounts.is_empty() {
-                    println!("No accounts found");
+                    println!("No accounts found. Run `qpkv account new` to generate a new SPHINCS+ account");
                 } else {
                     println!("Accounts ({}):", accounts.len());
+                    println!("  Index  Account Identifier (CKB Quantum Lock Args)");
+                    println!("  ─────────────────────────────────────────────────────────────────────");
                     for (idx, lock_args) in accounts.iter().enumerate() {
-                        println!("  [{}] {}", idx, lock_args);
+                        println!("  [{}]    {}", idx, lock_args);
                     }
                 }
             }
