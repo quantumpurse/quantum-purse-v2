@@ -36,7 +36,7 @@ sha2 = "0.10.9"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.142"
 ckb-fips205-utils = { path = "./crates/ckb-fips205-utils", features = ["signing"] }
-ckb-mock-tx-types = { version = "0.200.0" }
+ckb-mock-tx-types = { version = "1.0.0" }
 clap = { version = "4.5.0", features = ["derive"] }
 rpassword = "7.3.1"
 anyhow = "1.0"
