@@ -2,6 +2,9 @@
 
 A cross-platform CLI tool for managing FIPS205 (formerly SPHINCS+) cryptographic keys with CKB blockchain address resolution integrated.
 
+<img width="768" height="274" alt="Screenshot 2026-02-06 at 3 22 34 PM" src="https://github.com/user-attachments/assets/35608cda-48bf-41e3-b84b-20ad5c43ca32" />
+
+
 ###### <u>Feature list</u>:
 
 | Feature               | Details              |
