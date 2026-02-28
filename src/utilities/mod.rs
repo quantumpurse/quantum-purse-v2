@@ -1,6 +1,6 @@
 use super::constants::{ENC_SCRYPT, IV_LENGTH, SALT_LENGTH};
 use super::types::{CipherPayload, ScryptParam};
-use crate::secure_vec::SecureVec;
+use crate::containers::SecureVec;
 use aes_gcm::{
     aead::{Aead, KeyInit},
     AeadInPlace, Aes256Gcm, Key, Nonce,

@@ -22,7 +22,7 @@ fn test_fail_encrypt_decrypt() {
 
 #[test]
 fn test_zeroize_on_drop_decrypt_output() {
-    use crate::secure_vec::ZEROIZED;
+    use crate::containers::ZEROIZED;
     ZEROIZED.store(false, Ordering::SeqCst);
     let password = vec![1, 2, 3];
     let data = b"test";

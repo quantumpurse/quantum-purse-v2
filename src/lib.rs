@@ -18,18 +18,16 @@ use fips205::{
 use hex::encode;
 
 mod constants;
+mod containers;
 pub mod db;
 mod macros;
-mod secure_string;
-mod secure_vec;
 pub mod types;
 pub mod utilities;
 
 use crate::constants::{
     KDF_PATH_PREFIX, MULTISIG_RESERVED_FIELD_VALUE, PUBKEY_NUM, REQUIRED_FIRST_N, THRESHOLD,
 };
-use secure_string::SecureString;
-use secure_vec::SecureVec;
+pub use containers::{SecureString, SecureVec};
 use types::*;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -150,13 +148,10 @@ impl KeyVault {
     /// Errors if the master seed already exists.
     ///
     /// **Parameters**:
-    /// - `password: Vec<u8>` - The password used to encrypt the generated master seed.
+    /// - `password: SecureString` - The password used to encrypt the generated master seed.
     ///
     /// **Returns**:
     /// - `Result<(), String>` - Ok on success, or an error on failure.
-    ///
-    /// **Notes**:
-    /// - The provided `password` buffer is cleared immediately after use.
     ///
     /// **Security Considerations**:
     ///
@@ -178,9 +173,7 @@ impl KeyVault {
     ///  - Scrypt with param {log_n = 17, r = 8, p = 1, len 32} make each effort to guess a password even harder for the attacker.
     ///
     /// The theoretical security for this setup, thus starts at level 1) and is not upper limited following how long users passwords can be.
-    pub fn generate_master_seed(&self, password: Vec<u8>) -> Result<(), String> {
-        let password = SecureString::from_utf8(password)?;
-
+    pub fn generate_master_seed(&self, password: SecureString) -> Result<(), String> {
         if password.is_empty() || password.is_uninitialized() {
             return Err("Password cannot be empty or uninitialized".to_string());
         }
@@ -209,16 +202,11 @@ impl KeyVault {
     /// Generates a new SPHINCS+ account - a SPHINCS+ child account derived from the master seed, encrypts the private key with the password, and stores it.
     ///
     /// **Parameters**:
-    /// - `password: Vec<u8>` - The password used to decrypt the master seed and encrypt the child private key.
+    /// - `password: SecureString` - The password used to decrypt the master seed and encrypt the child private key.
     ///
     /// **Returns**:
     /// - `Result<String, String>` - The hex-encoded SPHINCS+ lock argument (processed SPHINCS+ public key) of the account on success, or an error on failure.
-    ///
-    /// **Notes**:
-    /// - The provided `password` buffer is cleared immediately after use.
-    pub fn gen_new_account(&self, password: Vec<u8>) -> Result<String, String> {
-        let password = SecureString::from_utf8(password)?;
-
+    pub fn gen_new_account(&self, password: SecureString) -> Result<String, String> {
         if password.is_empty() || password.is_uninitialized() {
             return Err("Password cannot be empty or uninitialized".to_string());
         }
@@ -252,9 +240,9 @@ impl KeyVault {
     /// Overwrites the existing master seed.
     ///
     /// **Parameters**:
-    /// - `seed_phrase: Vec<u8>` - The mnemonic phrase as a valid UTF-8 encoded byte array to import.
+    /// - `seed_phrase: SecureString` - The mnemonic phrase to import.
     ///   There're only 3 options accepted: 36, 54 or 72 words.
-    /// - `password: Vec<u8>` - The password used to encrypt the translated master seed.
+    /// - `password: SecureString` - The password used to encrypt the translated master seed.
     ///
     /// **Returns**:
     /// - `Result<(), String>` - Ok on success, or an error on failure.
@@ -284,21 +272,18 @@ impl KeyVault {
     /// The theoretical security for this setup, thus starts at level 1) and is not upper limited following how long users passwords can be.
     pub fn import_seed_phrase(
         &self,
-        seed_phrase: Vec<u8>,
-        password: Vec<u8>,
+        seed_phrase: SecureString,
+        password: SecureString,
     ) -> Result<(), String> {
-        let password = SecureString::from_utf8(password)?;
-        let seed_phrase_str = SecureString::from_utf8(seed_phrase)?;
-
         if password.is_empty() || password.is_uninitialized() {
             return Err("Password cannot be empty or uninitialized".to_string());
         }
 
-        if seed_phrase_str.is_empty() || seed_phrase_str.is_uninitialized() {
+        if seed_phrase.is_empty() || seed_phrase.is_uninitialized() {
             return Err("Seed phrase cannot be empty or uninitialized".to_string());
         }
 
-        let words: Vec<&str> = seed_phrase_str.split_whitespace().collect();
+        let words: Vec<&str> = seed_phrase.split_whitespace().collect();
         let word_count = words.len();
 
         if word_count != self.variant.required_bip39_size_in_word_total() {
@@ -334,18 +319,13 @@ impl KeyVault {
     /// Exports the master seed in the form of a custom bip39 mnemonic phrase. There're only 3 options: 36, 54 or 72 words.
     ///
     /// **Parameters**:
-    /// - `password: Vec<u8>` - The password used to decrypt the master seed.
+    /// - `password: SecureString` - The password used to decrypt the master seed.
     ///
     /// **Returns**:
     /// - `Result<Vec<u8>, String>` - The mnemonic as a UTF-8 encoded byte array on success, or an error on failure.
     ///
     /// **Warning**: Exporting the mnemonic exposes it and may pose a security risk.
-    ///
-    /// **Notes**:
-    /// - The provided `password` buffer is cleared immediately after use.
-    pub fn export_seed_phrase(&self, password: Vec<u8>) -> Result<Vec<u8>, String> {
-        let password = SecureString::from_utf8(password)?;
-
+    pub fn export_seed_phrase(&self, password: SecureString) -> Result<SecureString, String> {
         if password.is_empty() || password.is_uninitialized() {
             return Err("Password cannot be empty or uninitialized".to_string());
         }
@@ -366,30 +346,25 @@ impl KeyVault {
                 combined_mnemonic.extend(word);
             }
         }
-        let result: &[u8] = combined_mnemonic.as_ref();
-        Ok(result.to_vec())
+        
+        Ok(combined_mnemonic)
     }
 
     /// Sign and produce a valid signature for the CKB Blockchain Quantum Resistant Lock Script.
     ///
     /// **Parameters**:
-    /// - `password: Vec<u8>` - The password used to decrypt the private key.
+    /// - `password: SecureString` - The password used to decrypt the private key.
     /// - `lock_args: String` - The hex-encoded lock script's arguments corresponding to the SPHINCS+ public key of the account that signs.
     /// - `message: Vec<u8>` - The CKB transaction message all. For details check https://github.com/xxuejie/rfcs/blob/cighash-all/rfcs/0000-ckb-tx-message-all/0000-ckb-tx-message-all.md
     ///
     /// **Returns**:
     /// - `Result<Vec<u8>, String>` - The signature on success, or an error on failure.
-    ///
-    /// **Notes**:
-    /// - The provided `password` buffer is cleared immediately after use.
     pub fn ckb_sign(
         &self,
-        password: Vec<u8>,
+        password: SecureString,
         lock_args: String,
         message: Vec<u8>,
     ) -> Result<Vec<u8>, String> {
-        let password = SecureString::from_utf8(password)?;
-
         if password.is_empty() || password.is_uninitialized() {
             return Err("Password cannot be empty or uninitialized".to_string());
         }
@@ -448,23 +423,18 @@ impl KeyVault {
 
     /// Raw SPHINCS+ sign
     /// **Parameters**:
-    /// - `password: Vec<u8>` - The password used to decrypt the private key.
+    /// - `password: SecureString` - The password used to decrypt the private key.
     /// - `lock_args: String` - The hex-encoded lock script's arguments corresponding to the SPHINCS+ public key of the account that signs.
     /// - `message: Vec<u8>` - The CKB transaction message all. For details check https://github.com/xxuejie/rfcs/blob/cighash-all/rfcs/0000-ckb-tx-message-all/0000-ckb-tx-message-all.md
     ///
     /// **Returns**:
     /// - `Result<(Vec<u8>, Vec<u8>), String>` - A tuple of (signature, public_key) on success, or an error on failure.
-    ///
-    /// **Notes**:
-    /// - The provided `password` buffer is cleared immediately after use.
     pub fn raw_sign(
         &self,
-        password: Vec<u8>,
+        password: SecureString,
         lock_args: String,
         message: Vec<u8>,
     ) -> Result<(Vec<u8>, Vec<u8>), String> {
-        let password = SecureString::from_utf8(password)?;
-
         if password.is_empty() || password.is_uninitialized() {
             return Err("Password cannot be empty or uninitialized".to_string());
         }
@@ -524,23 +494,18 @@ impl KeyVault {
     /// Supporting wallet recovery - quickly derives a list of lock script arguments (processed public keys).
     ///
     /// **Parameters**:
-    /// - `password: Vec<u8>` - The password used to decrypt the master seed used for account generation.
+    /// - `password: SecureString` - The password used to decrypt the master seed used for account generation.
     /// - `start_index: u32` - The starting index for derivation.
     /// - `count: u32` - The number of sequential lock scripts arguments to derive.
     ///
     /// **Returns**:
     /// - `Result<Vec<String>, String>` - A list of lock script arguments on success, or an error on failure.
-    ///
-    /// **Notes**:
-    /// - The provided `password` buffer is cleared immediately after use.
     pub fn try_gen_account_batch(
         &self,
-        password: Vec<u8>,
+        password: SecureString,
         start_index: u32,
         count: u32,
     ) -> Result<Vec<String>, String> {
-        let password = SecureString::from_utf8(password)?;
-
         if password.is_empty() || password.is_uninitialized() {
             return Err("Password cannot be empty or uninitialized".to_string());
         }
@@ -566,17 +531,16 @@ impl KeyVault {
     /// Supporting wallet recovery - Recovers the wallet by deriving and storing private keys for the first N accounts.
     ///
     /// **Parameters**:
-    /// - `password: Vec<u8>` - The password used to decrypt the master seed.
+    /// - `password: SecureString` - The password used to decrypt the master seed.
     /// - `count: u32` - The number of accounts to recover (from index 0 to count-1).
     ///
     /// **Returns**:
     /// - `Result<Vec<String>, String>` - A list of newly generated sphincs+ lock script arguments (processed public keys) on success, or an error on failure.
-    ///
-    /// **Notes**:
-    /// - The provided `password` buffer is cleared immediately after use.
-    pub fn recover_accounts(&self, password: Vec<u8>, count: u32) -> Result<Vec<String>, String> {
-        let password = SecureString::from_utf8(password)?;
-
+    pub fn recover_accounts(
+        &self,
+        password: SecureString,
+        count: u32,
+    ) -> Result<Vec<String>, String> {
         if password.is_empty() || password.is_uninitialized() {
             return Err("Password cannot be empty or uninitialized".to_string());
         }
@@ -664,16 +628,11 @@ impl Util {
     /// By default will require at least 20 characters
     ///
     /// **Parameters**:
-    /// - `password: Vec<u8>` - utf8 serialized password.
+    /// - `password: SecureString` - the password.
     ///
     /// **Returns**:
     /// - `Result<u32, String>` - The strength of the password measured in bit on success, or an error on failure.
-    ///
-    /// **Notes**:
-    /// - The provided `password` buffer is cleared immediately after use.
-    pub fn password_checker(password: Vec<u8>) -> Result<u32, String> {
-        let password = SecureString::from_utf8(password)?;
-
+    pub fn password_checker(password: &SecureString) -> Result<u32, String> {
         if password.is_empty() || password.is_uninitialized() {
             return Err("Password cannot be empty or uninitialized".to_string());
         }
