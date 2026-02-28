@@ -21,7 +21,7 @@ mod tests;
 /// - `Result<SecureVec, String>` - A Secure vector of random bytes on success, or an error message on failure.
 pub fn get_random_bytes(length: usize) -> Result<SecureVec, getrandom::Error> {
     let mut buffer = SecureVec::new_with_length(length);
-    getrandom::getrandom(&mut buffer)?;
+    getrandom::fill(&mut buffer)?;
     Ok(buffer)
 }
 

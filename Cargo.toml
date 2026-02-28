@@ -28,17 +28,17 @@ fips205 = { version ="0.4.1", default-features = false, features = [
 aes-gcm = { version = "0.10.3", features = ["aes", "zeroize"] }
 hex = "0.4.3"
 scrypt = { version = "0.11.0", default-features = false }
-zeroize = "1.8.1"
-getrandom = "0.2.15"
-bip39 = { version = "2.2.0", features = ["zeroize"] }
+zeroize = "1.8.2"
+getrandom = "0.4.1"
+bip39 = { version = "2.2.2", features = ["zeroize"] }
 hkdf = "0.12.4"
 sha2 = "0.10.9"
-serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.142"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
 ckb-fips205-utils = { path = "./crates/ckb-fips205-utils", features = ["signing"] }
 ckb-mock-tx-types = { version = "1.0.0" }
-clap = { version = "4.5.0", features = ["derive"] }
-rpassword = "7.3.1"
-anyhow = "1.0"
-thiserror = "2.0"
-dirs = "5.0"
+clap = { version = "4.5.60", features = ["derive"] }
+rpassword = "7.4.0"
+anyhow = "1.0.102"
+thiserror = "2.0.18"
+dirs = "6.0.0"
