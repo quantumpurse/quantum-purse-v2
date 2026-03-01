@@ -573,6 +573,94 @@ impl KeyVault {
         Ok(lock_args_array)
     }
 
+    /// Checks whether a wallet exists (i.e. a master seed is stored).
+    ///
+    /// **Returns**:
+    /// - `bool` - `true` if a wallet exists.
+    pub fn wallet_exists(&self) -> bool {
+        self.has_master_seed().unwrap_or(false)
+    }
+
+    /// Generates master seed, encrypts it with a pre-derived key, and stores it.
+    /// Returns the BIP39 mnemonic seed phrase for backup.
+    ///
+    /// **Parameters**:
+    /// - `variant: SpxVariant` - The SPHINCS+ variant to use.
+    /// - `key: &SecureVec` - The 32-byte AES-256 encryption key (e.g. from PRF).
+    /// - `auth_method: AuthMethod` - The authentication method to record in wallet info.
+    ///
+    /// **Returns**:
+    /// - `Result<String, String>` - The mnemonic seed phrase on success, or an error on failure.
+    pub fn generate_master_seed_with_key(
+        &self,
+        variant: SpxVariant,
+        key: &SecureVec,
+        auth_method: AuthMethod,
+    ) -> Result<String, String> {
+        if self.has_master_seed()? {
+            return Err("Master seed already exists".to_string());
+        }
+
+        let size = variant.required_entropy_size_total();
+        let entropy = utilities::get_random_bytes(size)
+            .map_err(|e| format!("Failed generating master seed: {}", e))?;
+        let encrypted_seed = utilities::encrypt_with_key(key, entropy.as_ref())
+            .map_err(|e| format!("Encryption error: {}", e))?;
+
+        db::set_encrypted_seed(encrypted_seed).map_err(|e| e.to_string())?;
+
+        let wallet_info = types::WalletInfo {
+            spx_variant: variant,
+            auth_method,
+        };
+        db::set_wallet_info(wallet_info).map_err(|e| e.to_string())?;
+
+        // Generate the BIP39 mnemonic from the entropy for backup.
+        let component_size = variant.required_entropy_size_component();
+        let chunks = entropy.chunks(component_size);
+        let mut words: Vec<String> = Vec::new();
+        for chunk in chunks {
+            let mnemonic = Mnemonic::from_entropy_in(Language::English, chunk)
+                .map_err(|e| format!("Mnemonic generation error: {}", e))?;
+            for word in mnemonic.words() {
+                words.push(word.to_string());
+            }
+        }
+        Ok(words.join(" "))
+    }
+
+    /// Reads and returns the stored wallet info.
+    ///
+    /// **Returns**:
+    /// - `Result<WalletInfo, String>` - The wallet info on success, or an error if not found.
+    pub fn read_wallet_info(&self) -> Result<WalletInfo, String> {
+        db::get_wallet_info()
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| {
+                "Wallet not initialized. Run 'init' or 'import-mnemonic' first.".to_string()
+            })
+    }
+
+    /// Decrypts the master seed with a pre-derived key and returns the first account's
+    /// CKB lock script args (hex-encoded) as the wallet address.
+    ///
+    /// **Parameters**:
+    /// - `key: &SecureVec` - The 32-byte AES-256 decryption key.
+    ///
+    /// **Returns**:
+    /// - `Result<String, String>` - The hex-encoded lock args on success, or an error on failure.
+    pub fn get_address_with_key(&self, key: &SecureVec) -> Result<String, String> {
+        let payload = db::get_encrypted_seed()
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "Master seed not found".to_string())?;
+        let seed = utilities::decrypt_with_key(key, payload)?;
+        let (pub_key, _) = self
+            .derive_spx_keys(&seed, 0)
+            .map_err(|e| format!("Key derivation error: {}", e))?;
+        let lock_script_args = self.get_lock_scrip_arg(&pub_key);
+        Ok(encode(lock_script_args))
+    }
+
     /// Building CKB SPHINCS+ all-in-one lockscript arguments
     ///
     /// **Parameters**:
@@ -623,6 +711,17 @@ impl Util {
         .map_err(|e| format!("CKB_TX_MESSAGE_ALL error: {:?}", e))?;
         let message = message_hasher.hash();
         Ok(message.to_vec())
+    }
+
+    /// Derives an AES-256 key from passkey PRF output using HKDF-SHA256.
+    ///
+    /// **Parameters**:
+    /// - `prf_output: &[u8]` - The 32-byte PRF output from passkey assertion.
+    ///
+    /// **Returns**:
+    /// - `Result<SecureVec, String>` - The derived 32-byte AES key on success, or an error on failure.
+    pub fn derive_key_from_prf(prf_output: &[u8]) -> Result<SecureVec, String> {
+        utilities::derive_key_from_prf(prf_output)
     }
 
     /// Check strength of a password.

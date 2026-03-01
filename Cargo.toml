@@ -3,6 +3,7 @@ members = [
 	".",
 	"crates/ckb-fips205-utils",
 	"crates/key-vault-core",
+	"crates/key-vault-gui",
 	"crates/passkey-prf",
 ]
 resolver = "2"

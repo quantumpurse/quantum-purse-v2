@@ -66,7 +66,7 @@ pub struct WalletInfo {
 }
 
 /// ID of all 12 SPHINCS+ variants following https://github.com/cryptape/quantum-resistant-lock-script/pull/14
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpxVariant {
     Sha2128F = 48,
     Sha2128S,
