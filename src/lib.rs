@@ -302,7 +302,7 @@ impl KeyVault {
             let chunk_str = SecureString::from_string(chunk.join(" "));
             let mnemonic = Mnemonic::parse_in(Language::English, &*chunk_str)
                 .map_err(|e| format!("Invalid mnemonic: Chunk{} index {}: {}", size, index, e))?;
-            combined_entropy.extend(&mnemonic.to_entropy());
+            combined_entropy.extend(SecureVec::from_vec(mnemonic.to_entropy()));
         }
 
         let payload = utilities::encrypt(password.as_ref(), &combined_entropy)?;

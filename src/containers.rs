@@ -82,8 +82,8 @@ impl SecureVec {
         SecureVec(vec)
     }
 
-    pub fn extend(&mut self, slice: &[u8]) {
-        self.0.extend_from_slice(slice);
+    pub fn extend(&mut self, other: SecureVec) {
+        self.0.extend_from_slice(&other);
     }
 
     pub fn is_uninitialized(&self) -> bool {
