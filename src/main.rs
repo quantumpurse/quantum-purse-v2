@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
-use key_vault_cli::SecureString;
-use key_vault_cli::{types::SpxVariant, KeyVault, Util};
+use key_vault_core::SecureString;
+use key_vault_core::{types::SpxVariant, KeyVault, Util};
 use rpassword::read_password;
 use std::fs;
 use std::io::{self, Write};
@@ -324,7 +324,7 @@ fn main() -> Result<(), String> {
         Commands::Info => {
             let variant = KeyVault::get_spx_variant()?;
             let accounts = KeyVault::get_all_sphincs_lock_args()?;
-            let data_path = key_vault_cli::db::get_data_dir().map_err(|e| e.to_string())?;
+            let data_path = key_vault_core::db::get_data_dir().map_err(|e| e.to_string())?;
 
             println!("\n╔════════════════════════════════════════════════════════════════╗");
             println!("║                     Wallet Information                         ║");

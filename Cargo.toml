@@ -1,3 +1,11 @@
+[workspace]
+members = [
+	".",
+	"crates/ckb-fips205-utils",
+	"crates/key-vault-core",
+]
+resolver = "2"
+
 [package]
 name = "key-vault-cli"
 version = "0.1.0"
@@ -11,34 +19,7 @@ name = "qpkv"
 path = "src/main.rs"
 
 [dependencies]
-fips205 = { version ="0.4.1", default-features = false, features = [
-        "slh_dsa_sha2_128s",
-        "slh_dsa_shake_128s",
-        "slh_dsa_sha2_128f",
-        "slh_dsa_shake_128f",
-        "slh_dsa_sha2_192s",
-        "slh_dsa_shake_192s",
-        "slh_dsa_sha2_192f",
-        "slh_dsa_shake_192f",
-        "slh_dsa_sha2_256s",
-        "slh_dsa_shake_256s",
-        "slh_dsa_sha2_256f",
-        "slh_dsa_shake_256f"
-    ]}
-aes-gcm = { version = "0.10.3", features = ["aes", "zeroize"] }
-hex = "0.4.3"
-scrypt = { version = "0.11.0", default-features = false }
-zeroize = "1.8.2"
-getrandom = "0.4.1"
-bip39 = { version = "2.2.2", features = ["zeroize"] }
-hkdf = "0.12.4"
-sha2 = "0.10.9"
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
-ckb-fips205-utils = { path = "./crates/ckb-fips205-utils", features = ["signing"] }
-ckb-mock-tx-types = { version = "1.0.0" }
+key-vault-core = { path = "crates/key-vault-core" }
 clap = { version = "4.5.60", features = ["derive"] }
 rpassword = "7.4.0"
-anyhow = "1.0.102"
-thiserror = "2.0.18"
-dirs = "6.0.0"
+hex = "0.4.3"

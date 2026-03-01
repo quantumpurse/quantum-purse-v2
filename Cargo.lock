@@ -233,6 +233,11 @@ dependencies = [
  "int-enum",
  "molecule",
  "rand_core 0.6.4",
+ "serde",
+ "serde_string_enum",
+ "sha2",
+ "sha3",
+ "unicase",
 ]
 
 [[package]]
@@ -826,18 +831,26 @@ dependencies = [
 name = "key-vault-cli"
 version = "0.1.0"
 dependencies = [
+ "clap",
+ "hex",
+ "key-vault-core",
+ "rpassword",
+]
+
+[[package]]
+name = "key-vault-core"
+version = "0.1.0"
+dependencies = [
  "aes-gcm",
  "anyhow",
  "bip39",
  "ckb-fips205-utils",
  "ckb-mock-tx-types",
- "clap",
  "dirs",
  "fips205",
  "getrandom 0.4.1",
  "hex",
  "hkdf",
- "rpassword",
  "scrypt",
  "serde",
  "serde_json",
@@ -1259,6 +1272,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_string_enum"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc057e156c7ee0eecf104019415e2089fe55f4e8fc92d49059bcb22548b97028"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde",
+ "syn 2.0.114",
+ "unicase",
+]
+
+[[package]]
 name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1412,6 +1438,12 @@ name = "typenum"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
+
+[[package]]
+name = "unicase"
+version = "2.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dbc4bc3a9f746d862c45cb89d705aa10f187bb96c76001afab07a0d35ce60142"
 
 [[package]]
 name = "unicode-ident"
