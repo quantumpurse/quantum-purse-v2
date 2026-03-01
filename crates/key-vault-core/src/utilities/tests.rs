@@ -39,7 +39,10 @@ fn test_encrypt_decrypt_with_key() {
     let key = derive_key_from_prf(&prf_output).unwrap();
     let data = b"test key-based encryption";
     let payload = encrypt_with_key(&key, data).unwrap();
-    assert!(payload.salt.is_empty(), "Salt should be empty for key-based encryption");
+    assert!(
+        payload.salt.is_empty(),
+        "Salt should be empty for key-based encryption"
+    );
     let decrypted = decrypt_with_key(&key, payload).unwrap();
     assert_eq!(decrypted.as_ref(), data);
 }
@@ -61,5 +64,9 @@ fn test_derive_key_from_prf_deterministic() {
     let prf_output = vec![0xABu8; 32];
     let key_1 = derive_key_from_prf(&prf_output).unwrap();
     let key_2 = derive_key_from_prf(&prf_output).unwrap();
-    assert_eq!(key_1.as_ref(), key_2.as_ref(), "Same PRF output should derive same key");
+    assert_eq!(
+        key_1.as_ref(),
+        key_2.as_ref(),
+        "Same PRF output should derive same key"
+    );
 }

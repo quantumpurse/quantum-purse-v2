@@ -1,0 +1,52 @@
+[package]
+name = "passkey-prf"
+version = "0.1.0"
+edition = "2021"
+description = "macOS Passkey PRF bridge via AuthenticationServices framework."
+license = "MIT"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = [
+	"NSArray",
+	"NSData",
+	"NSDictionary",
+	"NSError",
+	"NSObject",
+	"NSString",
+] }
+objc2-app-kit = { version = "0.3", features = [
+	"NSApplication",
+	"NSResponder",
+	"NSRunningApplication",
+	"NSWindow",
+] }
+objc2-authentication-services = { version = "0.3", default-features = false, features = [
+	"std",
+	"block2",
+	"ASAuthorization",
+	"ASAuthorizationController",
+	"ASAuthorizationCredential",
+	"ASAuthorizationError",
+	"ASAuthorizationRequest",
+	"ASAuthorizationPlatformPublicKeyCredentialAssertion",
+	"ASAuthorizationPlatformPublicKeyCredentialAssertionRequest",
+	"ASAuthorizationPlatformPublicKeyCredentialDescriptor",
+	"ASAuthorizationPlatformPublicKeyCredentialProvider",
+	"ASAuthorizationPlatformPublicKeyCredentialRegistration",
+	"ASAuthorizationPlatformPublicKeyCredentialRegistrationRequest",
+	"ASAuthorizationProvider",
+	"ASAuthorizationPublicKeyCredentialAssertion",
+	"ASAuthorizationPublicKeyCredentialAssertionRequest",
+	"ASAuthorizationPublicKeyCredentialConstants",
+	"ASAuthorizationPublicKeyCredentialPRFAssertionInput",
+	"ASAuthorizationPublicKeyCredentialPRFAssertionOutput",
+	"ASAuthorizationPublicKeyCredentialPRFRegistrationInput",
+	"ASAuthorizationPublicKeyCredentialPRFRegistrationOutput",
+	"ASAuthorizationPublicKeyCredentialRegistration",
+	"ASAuthorizationPublicKeyCredentialRegistrationRequest",
+	"ASPublicKeyCredential",
+	"ASFoundation",
+] }
+block2 = "0.6"
+getrandom = "0.4"
