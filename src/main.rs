@@ -127,11 +127,12 @@ fn parse_variant(variant_str: &str) -> Result<SpxVariant, String> {
     }
 }
 
-fn promt_for_input(prompt: &str) -> Result<String, String> {
+fn promt_for_input(prompt: &str) -> Result<SecureString, String> {
     print!("{}", prompt);
     io::stdout().flush().map_err(|e| e.to_string())?;
     let input = read_password().map_err(|e| e.to_string())?;
-    Ok(input)
+    let result = SecureString::from_utf8(input.into_bytes())?;
+    Ok(result)
 }
 
 fn main() -> Result<(), String> {
@@ -148,10 +149,8 @@ fn main() -> Result<(), String> {
                 variant.required_bip39_size_in_word_total()
             );
 
-            let password =
-                SecureString::from_utf8(promt_for_input("Enter password: ")?.into_bytes())?;
-            let confirm =
-                SecureString::from_utf8(promt_for_input("Confirm password: ")?.into_bytes())?;
+            let password = promt_for_input("Enter password: ")?;
+            let confirm = promt_for_input("Confirm password: ")?;
             if password != confirm {
                 return Err("Passwords do not match".to_string());
             }
@@ -180,13 +179,11 @@ fn main() -> Result<(), String> {
                         fs::read_to_string(file_path).map_err(|e| e.to_string())?,
                     )
                 } else {
-                    SecureString::from_string(promt_for_input("Enter seed phrase: ")?)
+                    promt_for_input("Enter seed phrase: ")?
                 };
 
-                let password =
-                    SecureString::from_utf8(promt_for_input("Enter password: ")?.into_bytes())?;
-                let confirm =
-                    SecureString::from_utf8(promt_for_input("Confirm password: ")?.into_bytes())?;
+                let password = promt_for_input("Enter password: ")?;
+                let confirm = promt_for_input("Confirm password: ")?;
                 if password != confirm {
                     return Err("Passwords do not match".to_string());
                 }
@@ -206,8 +203,7 @@ fn main() -> Result<(), String> {
                 let variant = KeyVault::get_spx_variant()?;
                 let vault = KeyVault::new(variant);
 
-                let password =
-                    SecureString::from_utf8(promt_for_input("Enter password: ")?.into_bytes())?;
+                let password = promt_for_input("Enter password: ")?;
                 let seed_phrase = vault.export_seed_phrase(password)?;
 
                 if let Some(output_path) = output {
@@ -226,8 +222,7 @@ fn main() -> Result<(), String> {
                     let variant = KeyVault::get_spx_variant()?;
                     let vault = KeyVault::new(variant);
 
-                    let password =
-                        SecureString::from_utf8(promt_for_input("Enter password: ")?.into_bytes())?;
+                    let password = promt_for_input("Enter password: ")?;
                     let lock_args = vault.gen_new_account(password)?;
                     println!("✓ New account created");
                     println!("Identifier(CKB quantum lock script args): {}", lock_args);
@@ -251,8 +246,7 @@ fn main() -> Result<(), String> {
                     let variant = KeyVault::get_spx_variant()?;
                     let vault = KeyVault::new(variant);
 
-                    let password =
-                        SecureString::from_utf8(promt_for_input("Enter password: ")?.into_bytes())?;
+                    let password = promt_for_input("Enter password: ")?;
                     let accounts = vault.recover_accounts(password, count)?;
 
                     println!("✓ Recovered {} accounts:", accounts.len());
@@ -265,8 +259,7 @@ fn main() -> Result<(), String> {
                     let variant = KeyVault::get_spx_variant()?;
                     let vault = KeyVault::new(variant);
 
-                    let password =
-                        SecureString::from_utf8(promt_for_input("Enter password: ")?.into_bytes())?;
+                    let password = promt_for_input("Enter password: ")?;
                     let accounts = vault.try_gen_account_batch(password, start, count)?;
 
                     println!("Generated {} accounts:", accounts.len());
@@ -285,8 +278,7 @@ fn main() -> Result<(), String> {
             let vault = KeyVault::new(variant);
 
             let message_bytes = hex::decode(&message).map_err(|e| e.to_string())?;
-            let password =
-                SecureString::from_utf8(promt_for_input("Enter password: ")?.into_bytes())?;
+            let password = promt_for_input("Enter password: ")?;
 
             let (signature, pub_key) = vault.raw_sign(password, identifier, message_bytes)?;
             println!("Signature: {}", hex::encode(signature));
@@ -299,8 +291,7 @@ fn main() -> Result<(), String> {
                 let vault = KeyVault::new(variant);
 
                 let message_bytes = hex::decode(&message).map_err(|e| e.to_string())?;
-                let password =
-                    SecureString::from_utf8(promt_for_input("Enter password: ")?.into_bytes())?;
+                let password = promt_for_input("Enter password: ")?;
 
                 let signature = vault.ckb_sign(password, lock_args, message_bytes)?;
                 println!("Signature: {}", hex::encode(signature));
