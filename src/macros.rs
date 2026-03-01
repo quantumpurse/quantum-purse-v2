@@ -38,10 +38,18 @@ macro_rules! spx_keygen {
         let (pub_key, pri_key) =
             <$kg>::keygen_with_seeds(sk_seed_kd_ref, sk_prf_kd_ref, pk_seed_kd_ref);
 
-        Ok((
-            SecureVec::from_vec(pub_key.into_bytes().to_vec()),
-            SecureVec::from_vec(pri_key.into_bytes().to_vec()),
-        ))
+        let mut pub_bytes = pub_key.into_bytes();
+        let mut pri_bytes = pri_key.into_bytes();
+
+        let result = Ok((
+            SecureVec::from_vec(pub_bytes.to_vec()),
+            SecureVec::from_vec(pri_bytes.to_vec()),
+        ));
+
+        pub_bytes.zeroize();
+        pri_bytes.zeroize();
+
+        result
     }};
 }
 

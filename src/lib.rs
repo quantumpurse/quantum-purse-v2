@@ -16,6 +16,7 @@ use fips205::{
     *,
 };
 use hex::encode;
+use zeroize::Zeroize;
 
 mod constants;
 mod containers;
