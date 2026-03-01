@@ -344,7 +344,7 @@ impl KeyVault {
             let mnemonic = Mnemonic::from_entropy_in(Language::English, chunk)
                 .map_err(|e| format!("Export seed error: {}", e))?;
             for word in mnemonic.words() {
-                combined_mnemonic.extend(word);
+                combined_mnemonic.extend(word); //TODO: Pre-allocate SecureString capacity to prevent push_str reallocation from leaking unzeroized copies of the mnemonic in freed heap memory.
             }
         }
 
