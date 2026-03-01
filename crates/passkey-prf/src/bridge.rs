@@ -3,7 +3,7 @@
 #![allow(non_snake_case)]
 
 use std::fmt;
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Mutex};
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, NSObject, ProtocolObject};
@@ -12,6 +12,7 @@ use objc2::{
 };
 use objc2_app_kit::NSWindow;
 use objc2_authentication_services::*;
+use objc2_core_foundation::{kCFRunLoopDefaultMode, CFRunLoop};
 use objc2_foundation::*;
 
 /// Result of a successful passkey registration.
@@ -63,7 +64,7 @@ enum AuthResult {
 
 /// Ivars for the Objective-C delegate class.
 struct DelegateIvars {
-    result: Arc<(Mutex<AuthResult>, Condvar)>,
+    result: Arc<Mutex<AuthResult>>,
     window: Retained<NSWindow>,
 }
 
@@ -84,10 +85,8 @@ define_class!(
             _controller: &ASAuthorizationController,
             authorization: &ASAuthorization,
         ) {
-            let (lock, cvar) = &*self.ivars().result;
-            let mut result = lock.lock().unwrap();
+            let mut result = self.ivars().result.lock().unwrap();
             *result = AuthResult::Success(authorization.retain());
-            cvar.notify_one();
         }
 
         #[unsafe(method(authorizationController:didCompleteWithError:))]
@@ -96,11 +95,9 @@ define_class!(
             _controller: &ASAuthorizationController,
             error: &NSError,
         ) {
-            let (lock, cvar) = &*self.ivars().result;
-            let mut result = lock.lock().unwrap();
+            let mut result = self.ivars().result.lock().unwrap();
             let description = error.localizedDescription().to_string();
             *result = AuthResult::Failure(description);
-            cvar.notify_one();
         }
     }
 
@@ -118,14 +115,31 @@ define_class!(
 );
 
 impl AuthDelegate {
-    fn new(
-        window: Retained<NSWindow>,
-        result: Arc<(Mutex<AuthResult>, Condvar)>,
-    ) -> Retained<Self> {
+    fn new(window: Retained<NSWindow>, result: Arc<Mutex<AuthResult>>) -> Retained<Self> {
         let mtm = MainThreadMarker::from(&*window);
         let delegate = mtm.alloc::<Self>();
         let delegate = delegate.set_ivars(DelegateIvars { result, window });
         unsafe { msg_send![super(delegate), init] }
+    }
+}
+
+/// Pumps the main run loop until the delegate callback sets a result.
+///
+/// This avoids blocking the main thread (which would deadlock, since
+/// ASAuthorizationController delivers callbacks on the main run loop).
+fn wait_for_result(result_arc: &Arc<Mutex<AuthResult>>) -> AuthResult {
+    loop {
+        // Run the main run loop for a short interval to let callbacks fire.
+        CFRunLoop::run_in_mode(
+            unsafe { kCFRunLoopDefaultMode },
+            0.1,  // 100ms per iteration
+            true, // return after handling one source
+        );
+
+        let mut guard = result_arc.lock().unwrap();
+        if !matches!(*guard, AuthResult::Pending) {
+            return std::mem::replace(&mut *guard, AuthResult::Pending);
+        }
     }
 }
 
@@ -180,7 +194,7 @@ pub fn register_passkey(
             &requests,
         );
 
-        let result_arc = Arc::new((Mutex::new(AuthResult::Pending), Condvar::new()));
+        let result_arc = Arc::new(Mutex::new(AuthResult::Pending));
         let delegate = AuthDelegate::new(window.retain(), result_arc.clone());
         let delegate_proto: &ProtocolObject<dyn ASAuthorizationControllerDelegate> =
             ProtocolObject::from_ref(&*delegate);
@@ -192,14 +206,8 @@ pub fn register_passkey(
 
         controller.performRequests();
 
-        // Wait for the delegate callback.
-        let (lock, cvar) = &*result_arc;
-        let mut auth_result = lock.lock().unwrap();
-        while matches!(*auth_result, AuthResult::Pending) {
-            auth_result = cvar.wait(auth_result).unwrap();
-        }
-
-        match std::mem::replace(&mut *auth_result, AuthResult::Pending) {
+        // Pump the run loop until the delegate callback fires.
+        match wait_for_result(&result_arc) {
             AuthResult::Success(authorization) => {
                 let credential = authorization.credential();
                 let obj: &AnyObject = AsRef::as_ref(&*credential);
@@ -301,7 +309,7 @@ pub fn assert_prf(
             &requests,
         );
 
-        let result_arc = Arc::new((Mutex::new(AuthResult::Pending), Condvar::new()));
+        let result_arc = Arc::new(Mutex::new(AuthResult::Pending));
         let delegate = AuthDelegate::new(window.retain(), result_arc.clone());
         let delegate_proto: &ProtocolObject<dyn ASAuthorizationControllerDelegate> =
             ProtocolObject::from_ref(&*delegate);
@@ -313,14 +321,8 @@ pub fn assert_prf(
 
         controller.performRequests();
 
-        // Wait for the delegate callback.
-        let (lock, cvar) = &*result_arc;
-        let mut auth_result = lock.lock().unwrap();
-        while matches!(*auth_result, AuthResult::Pending) {
-            auth_result = cvar.wait(auth_result).unwrap();
-        }
-
-        match std::mem::replace(&mut *auth_result, AuthResult::Pending) {
+        // Pump the run loop until the delegate callback fires.
+        match wait_for_result(&result_arc) {
             AuthResult::Success(authorization) => {
                 let credential = authorization.credential();
                 let obj: &AnyObject = AsRef::as_ref(&*credential);
