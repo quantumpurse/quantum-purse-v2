@@ -110,13 +110,18 @@ else
 fi
 
 echo "==> Signing with identity: $SIGNING_IDENTITY"
-codesign --force --deep --sign "$SIGNING_IDENTITY" \
+# Sign the binary first, then the bundle (Apple recommends against --deep).
+codesign --force --sign "$SIGNING_IDENTITY" \
+	--entitlements "$ENTITLEMENTS" \
+	--options runtime \
+	"$APP_BUNDLE/Contents/MacOS/$BINARY_NAME"
+codesign --force --sign "$SIGNING_IDENTITY" \
 	--entitlements "$ENTITLEMENTS" \
 	--options runtime \
 	"$APP_BUNDLE"
 
 echo "==> Verifying signature..."
-codesign --verify --deep --strict "$APP_BUNDLE"
+codesign --verify --strict "$APP_BUNDLE"
 echo "==> Signature valid."
 
 echo ""
