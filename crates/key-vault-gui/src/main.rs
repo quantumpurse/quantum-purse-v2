@@ -180,7 +180,7 @@ impl App {
             };
 
             // Step 1: Register a passkey.
-            let rp_id = "quantumpurse.github.io";
+            let rp_id = "quantumpurse.org";
             let user_id = b"qpkv-user";
             let user_name = "Key Vault User";
 
@@ -273,7 +273,7 @@ impl App {
             };
 
             // Assert PRF to derive the encryption key.
-            let rp_id = "quantumpurse.github.io";
+            let rp_id = "quantumpurse.org";
             let salt = b"quantumpurse-kv-seed-encryption\0";
             let prf_output = match passkey_prf::assert_prf(&window, rp_id, &credential_id, salt) {
                 Ok(o) => o,

@@ -7,10 +7,10 @@
 #      installed at ~/Library/Developer/Xcode/Provisioning Profiles/ or
 #      embedded manually (see PROVISIONING_PROFILE below).
 #   3. The apple-app-site-association file must be deployed to:
-#      https://quantumpurse.github.io/.well-known/apple-app-site-association
+#      https://quantumpurse.org/.well-known/apple-app-site-association
 #
 # Usage:
-#   ./crates/key-vault-gui/scripts/build-and-sign.sh [--release]
+#   ./crates/key-vault-gui/scripts/build-and-sign.sh [--release] [--profile <path>]
 
 set -euo pipefail
 
@@ -20,7 +20,7 @@ PROJECT_ROOT="$(cd "$GUI_DIR/../.." && pwd)"
 
 # Configuration.
 BINARY_NAME="qpkv-gui"
-BUNDLE_ID="io.github.quantumpurse.key-vault-gui"
+BUNDLE_ID="org.quantumpurse.wallet"
 APP_NAME="Key Vault"
 SIGNING_IDENTITY="Developer ID Application: Pham Tung (KPSL53752R)"
 TEAM_ID="KPSL53752R"
@@ -29,10 +29,25 @@ ENTITLEMENTS="$GUI_DIR/entitlements.plist"
 # Parse arguments.
 BUILD_TYPE="debug"
 CARGO_FLAGS=""
-if [[ "${1:-}" == "--release" ]]; then
-	BUILD_TYPE="release"
-	CARGO_FLAGS="--release"
-fi
+PROFILE_PATH=""
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		--release)
+			BUILD_TYPE="release"
+			CARGO_FLAGS="--release"
+			shift
+			;;
+		--profile)
+			PROFILE_PATH="$2"
+			shift 2
+			;;
+		*)
+			echo "Unknown argument: $1"
+			echo "Usage: $0 [--release] [--profile <path>]"
+			exit 1
+			;;
+	esac
+done
 
 TARGET_DIR="$PROJECT_ROOT/target/$BUILD_TYPE"
 APP_BUNDLE="$TARGET_DIR/$APP_NAME.app"
@@ -80,26 +95,18 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << PLIST
 </plist>
 PLIST
 
-# Embed provisioning profile if available.
-PROVISIONING_PROFILE=""
-for profile in ~/Library/Developer/Xcode/Provisioning\ Profiles/*.provisionprofile; do
-	if [ -f "$profile" ]; then
-		# Check if this profile matches our bundle ID.
-		if security cms -D -i "$profile" 2>/dev/null | grep -q "$BUNDLE_ID"; then
-			PROVISIONING_PROFILE="$profile"
-			break
-		fi
+# Embed provisioning profile.
+if [ -n "$PROFILE_PATH" ]; then
+	if [ ! -f "$PROFILE_PATH" ]; then
+		echo "ERROR: Provisioning profile not found: $PROFILE_PATH"
+		exit 1
 	fi
-done
-
-if [ -n "$PROVISIONING_PROFILE" ]; then
-	echo "==> Embedding provisioning profile: $PROVISIONING_PROFILE"
-	cp "$PROVISIONING_PROFILE" "$APP_BUNDLE/Contents/embedded.provisionprofile"
+	echo "==> Embedding provisioning profile: $PROFILE_PATH"
+	cp "$PROFILE_PATH" "$APP_BUNDLE/Contents/embedded.provisionprofile"
 else
-	echo "==> WARNING: No provisioning profile found for $BUNDLE_ID."
+	echo "==> WARNING: No provisioning profile specified."
 	echo "    Passkey operations will fail without a provisioning profile."
-	echo "    Create one at https://developer.apple.com/account/resources/profiles/"
-	echo "    with Associated Domains capability for App ID: $TEAM_ID.$BUNDLE_ID"
+	echo "    Use --profile <path> to provide one."
 fi
 
 echo "==> Signing with identity: $SIGNING_IDENTITY"
