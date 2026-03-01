@@ -1,4 +1,4 @@
-use super::constants::{ENC_SCRYPT, IV_LENGTH, SALT_LENGTH};
+use super::constants::{ENC_SCRYPT, IV_LENGTH, PRF_HKDF_INFO, SALT_LENGTH};
 use super::types::{CipherPayload, ScryptParam};
 use crate::containers::SecureVec;
 use aes_gcm::{
@@ -65,7 +65,60 @@ pub fn derive_hkdf_key(ikm: &[u8], info: &[u8], output_len: usize) -> Result<Sec
     Ok(okm)
 }
 
-/// Encrypts data using AES-GCM with a password-derived key.
+/// Encrypts data using AES-256-GCM with a pre-derived key.
+///
+/// **Parameters**:
+/// - `key: &SecureVec` - The 32-byte AES-256 encryption key.
+/// - `input: &[u8]` - The plaintext data to encrypt.
+///
+/// **Returns**:
+/// - `Result<CipherPayload, String>` - A `CipherPayload` containing the encrypted data, salt (empty), and IV on success, or an error message on failure.
+///
+/// Warning: Proper zeroization of the key and input is the responsibility of the caller.
+pub fn encrypt_with_key(key: &SecureVec, input: &[u8]) -> Result<CipherPayload, String> {
+    let iv_bytes = get_random_bytes(IV_LENGTH).map_err(|e| e.to_string())?;
+
+    let aes_key: &Key<Aes256Gcm> = Key::<Aes256Gcm>::from_slice(key);
+    let cipher = Aes256Gcm::new(aes_key);
+    let nonce = Nonce::from_slice(&iv_bytes);
+    let cipher_text = cipher
+        .encrypt(nonce, input)
+        .map_err(|e| format!("Encryption error: {:?}", e))?;
+
+    Ok(CipherPayload {
+        salt: String::new(),
+        iv: encode(&*iv_bytes),
+        cipher_text: encode(cipher_text),
+    })
+}
+
+/// Decrypts data using AES-256-GCM with a pre-derived key.
+///
+/// **Parameters**:
+/// - `key: &SecureVec` - The 32-byte AES-256 decryption key.
+/// - `payload: CipherPayload` - The encrypted data payload containing IV and ciphertext.
+///
+/// **Returns**:
+/// - `Result<SecureVec, String>` - The decrypted plaintext on success, or an error message on failure.
+///
+/// Warning: Proper zeroization of the key is the responsibility of the caller.
+pub fn decrypt_with_key(key: &SecureVec, payload: CipherPayload) -> Result<SecureVec, String> {
+    let iv = decode(payload.iv).map_err(|e| format!("IV decode error: {:?}", e))?;
+    let cipher_text =
+        decode(payload.cipher_text).map_err(|e| format!("Ciphertext decode error: {:?}", e))?;
+
+    let aes_key: &Key<Aes256Gcm> = Key::<Aes256Gcm>::from_slice(key);
+    let cipher = Aes256Gcm::new(aes_key);
+    let nonce = Nonce::from_slice(&iv);
+
+    let mut secure_decipher = SecureVec::from_vec(cipher_text);
+    cipher
+        .decrypt_in_place(nonce, b"", &mut secure_decipher)
+        .map_err(|e| format!("Decryption error: {:?}", e))?;
+    Ok(secure_decipher)
+}
+
+/// Encrypts data using AES-GCM with a password-derived key (scrypt).
 ///
 /// **Parameters**:
 /// - `password: &[u8]` - The password used to derive the encryption key.
@@ -75,7 +128,7 @@ pub fn derive_hkdf_key(ikm: &[u8], info: &[u8], output_len: usize) -> Result<Sec
 /// - `Result<CipherPayload, String>` - A `CipherPayload` containing the encrypted data, salt, and IV on success, or an error message on failure.
 ///
 /// Warning: Proper zeroization of the password and input is the responsibility of the caller.
-pub fn encrypt(password: &[u8], input: &[u8]) -> Result<CipherPayload, String> {
+pub fn encrypt_with_password(password: &[u8], input: &[u8]) -> Result<CipherPayload, String> {
     let mut salt = vec![0u8; SALT_LENGTH];
     let mut iv = vec![0u8; IV_LENGTH];
     let random_bytes = get_random_bytes(SALT_LENGTH + IV_LENGTH).map_err(|e| e.to_string())?;
@@ -97,17 +150,17 @@ pub fn encrypt(password: &[u8], input: &[u8]) -> Result<CipherPayload, String> {
     })
 }
 
-/// Decrypts data using AES-GCM with a password-derived key.
+/// Decrypts data using AES-GCM with a password-derived key (scrypt).
 ///
 /// **Parameters**:
 /// - `password: &[u8]` - The password used to derive the decryption key.
 /// - `payload: CipherPayload` - The encrypted data payload containing salt, IV, and ciphertext.
 ///
 /// **Returns**:
-/// - `Result<Vec<u8>, String>` - The decrypted plaintext on success, or an error message on failure.
+/// - `Result<SecureVec, String>` - The decrypted plaintext on success, or an error message on failure.
 ///
 /// Warning: Proper zeroization of the password and input is the responsibility of the caller.
-pub fn decrypt(password: &[u8], payload: CipherPayload) -> Result<SecureVec, String> {
+pub fn decrypt_with_password(password: &[u8], payload: CipherPayload) -> Result<SecureVec, String> {
     let salt = decode(payload.salt).map_err(|e| format!("Salt decode error: {:?}", e))?;
     let iv = decode(payload.iv).map_err(|e| format!("IV decode error: {:?}", e))?;
     let cipher_text =
@@ -123,4 +176,15 @@ pub fn decrypt(password: &[u8], payload: CipherPayload) -> Result<SecureVec, Str
         .decrypt_in_place(nonce, b"", &mut secure_decipher)
         .map_err(|e| format!("Decryption error: {:?}", e))?;
     Ok(secure_decipher)
+}
+
+/// Derives an AES-256 key from PRF output using HKDF-SHA256.
+///
+/// **Parameters**:
+/// - `prf_output: &[u8]` - The 32-byte PRF output from passkey assertion.
+///
+/// **Returns**:
+/// - `Result<SecureVec, String>` - The derived 32-byte AES key on success, or an error on failure.
+pub fn derive_key_from_prf(prf_output: &[u8]) -> Result<SecureVec, String> {
+    derive_hkdf_key(prf_output, PRF_HKDF_INFO, 32)
 }

@@ -34,13 +34,35 @@ pub struct SphincsPlusAccount {
     pub lock_args: String,
 }
 
+/// Authentication method used to protect the vault.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "type")]
+pub enum AuthMethod {
+    /// Password-based authentication using scrypt key derivation.
+    Password,
+    /// Passkey PRF-based authentication using HKDF key derivation.
+    Prf {
+        /// The WebAuthn credential ID used for PRF assertion.
+        credential_id: Vec<u8>,
+    },
+}
+
+impl Default for AuthMethod {
+    fn default() -> Self {
+        AuthMethod::Password
+    }
+}
+
 /// Represents wallet metadata information.
 ///
 /// **Fields**:
-/// - `variant: SpxVariant` - The SPHINCS+ variant used for this wallet.
+/// - `spx_variant: SpxVariant` - The SPHINCS+ variant used for this wallet.
+/// - `auth_method: AuthMethod` - The authentication method protecting this wallet.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct WalletInfo {
     pub spx_variant: SpxVariant,
+    #[serde(default)]
+    pub auth_method: AuthMethod,
 }
 
 /// ID of all 12 SPHINCS+ variants following https://github.com/cryptape/quantum-resistant-lock-script/pull/14

@@ -186,7 +186,7 @@ impl KeyVault {
         let size = self.variant.required_entropy_size_total();
         let entropy = utilities::get_random_bytes(size)
             .map_err(|e| format!("Failed generating master seed: {}", e))?;
-        let encrypted_seed = utilities::encrypt(password.as_ref(), entropy.as_ref())
+        let encrypted_seed = utilities::encrypt_with_password(password.as_ref(), entropy.as_ref())
             .map_err(|e| format!("Encryption error: {}", e))?;
 
         db::set_encrypted_seed(encrypted_seed).map_err(|e| e.to_string())?;
@@ -194,6 +194,7 @@ impl KeyVault {
         // Store wallet info with SPHINCS+ variant
         let wallet_info = types::WalletInfo {
             spx_variant: self.variant,
+            auth_method: types::AuthMethod::Password,
         };
         db::set_wallet_info(wallet_info).map_err(|e| e.to_string())?;
 
@@ -216,7 +217,7 @@ impl KeyVault {
         let payload = db::get_encrypted_seed()
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "Master seed not found".to_string())?;
-        let seed = utilities::decrypt(password.as_ref(), payload)?;
+        let seed = utilities::decrypt_with_password(password.as_ref(), payload)?;
 
         let index = Self::get_all_sphincs_lock_args()?.len() as u32;
         let (pub_key, _) = self
@@ -305,12 +306,13 @@ impl KeyVault {
             combined_entropy.extend(SecureVec::from_vec(mnemonic.to_entropy()));
         }
 
-        let payload = utilities::encrypt(password.as_ref(), &combined_entropy)?;
+        let payload = utilities::encrypt_with_password(password.as_ref(), &combined_entropy)?;
         db::set_encrypted_seed(payload).map_err(|e| e.to_string())?;
 
         // Store wallet info with SPHINCS+ variant
         let wallet_info = types::WalletInfo {
             spx_variant: self.variant,
+            auth_method: types::AuthMethod::Password,
         };
         db::set_wallet_info(wallet_info).map_err(|e| e.to_string())?;
 
@@ -335,7 +337,7 @@ impl KeyVault {
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "Master seed not found".to_string())?;
 
-        let entropy = utilities::decrypt(password.as_ref(), payload)?;
+        let entropy = utilities::decrypt_with_password(password.as_ref(), payload)?;
         let size = self.variant.required_entropy_size_component();
         let chunks = entropy.chunks(size);
 
@@ -378,7 +380,7 @@ impl KeyVault {
         let payload = db::get_encrypted_seed()
             .map_err(|e| e.to_string())?
             .ok_or_else(|| ("Master seed not found").to_string())?;
-        let seed = utilities::decrypt(password.as_ref(), payload)?;
+        let seed = utilities::decrypt_with_password(password.as_ref(), payload)?;
 
         let (_, pri_key) = self.derive_spx_keys(&seed, account.index)?;
 
@@ -448,7 +450,7 @@ impl KeyVault {
         let payload = db::get_encrypted_seed()
             .map_err(|e| e.to_string())?
             .ok_or_else(|| ("Master seed not found").to_string())?;
-        let seed = utilities::decrypt(password.as_ref(), payload)?;
+        let seed = utilities::decrypt_with_password(password.as_ref(), payload)?;
 
         let (_, pri_key) = self.derive_spx_keys(&seed, account.index)?;
 
@@ -515,7 +517,7 @@ impl KeyVault {
         let payload = db::get_encrypted_seed()
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "Master seed not found".to_string())?;
-        let seed = utilities::decrypt(password.as_ref(), payload)?;
+        let seed = utilities::decrypt_with_password(password.as_ref(), payload)?;
         let mut lock_args_array: Vec<String> = Vec::new();
         for index in start_index..(start_index + count) {
             let (pub_key, _) = self
@@ -551,7 +553,7 @@ impl KeyVault {
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "Master seed not found".to_string())?;
         let mut lock_args_array: Vec<String> = Vec::new();
-        let seed = utilities::decrypt(password.as_ref(), payload)?;
+        let seed = utilities::decrypt_with_password(password.as_ref(), payload)?;
         for index in 0..count {
             let (pub_key, _) = self
                 .derive_spx_keys(&seed, index)
