@@ -1,9 +1,15 @@
+use aes_gcm::aead::{Buffer, Error as AeadError};
+use std::ops::DerefMut;
+use std::ops::{Deref /*DerefMut*/};
+#[cfg(test)]
+use std::sync::atomic::{AtomicBool, Ordering};
+use zeroize::Zeroize;
+#[cfg(test)]
+pub static ZEROIZED: AtomicBool = AtomicBool::new(false);
+
 /// A secure string type for custom BIP39 menmonic seed words
 /// Used in containing BIP39 component/elemental mnemonic word string
 /// facilitating custom BIP39 for quantumPurse Keyvault
-use std::ops::{Deref /*DerefMut*/};
-use zeroize::Zeroize;
-
 #[derive(Debug, PartialEq)]
 pub struct SecureString(String);
 
@@ -61,15 +67,8 @@ impl Deref for SecureString {
 //     }
 // }
 
-use aes_gcm::aead::{Buffer, Error as AeadError};
 /// A secure vector that zeroizes its contents when dropped.
 /// Used in containing sensitive bytes like passwords or master seed.
-use std::ops::DerefMut;
-#[cfg(test)]
-use std::sync::atomic::{AtomicBool, Ordering};
-#[cfg(test)]
-pub static ZEROIZED: AtomicBool = AtomicBool::new(false);
-
 #[derive(Debug, PartialEq)]
 pub struct SecureVec(Vec<u8>);
 

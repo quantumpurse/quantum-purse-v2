@@ -347,7 +347,7 @@ impl KeyVault {
                 combined_mnemonic.extend(word);
             }
         }
-        
+
         Ok(combined_mnemonic)
     }
 
