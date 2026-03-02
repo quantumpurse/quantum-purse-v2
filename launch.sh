@@ -1,1 +1,1 @@
-open "target/debug/Key Vault.app"
+open "target/debug/qpv2.app"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build, bundle, and sign the Key Vault GUI app for macOS.
+# Build, bundle, and sign the QPV2 GUI app for macOS.
 #
 # Prerequisites:
 #   1. Apple Developer identity: "Developer ID Application: Pham Tung (KPSL53752R)"
@@ -21,7 +21,7 @@ PROJECT_ROOT="$(cd "$GUI_DIR/../.." && pwd)"
 # Configuration.
 BINARY_NAME="qpkv-gui"
 BUNDLE_ID="org.quantumpurse.wallet"
-APP_NAME="Key Vault"
+APP_NAME="qpv2"
 SIGNING_IDENTITY="Developer ID Application: Pham Tung (KPSL53752R)"
 TEAM_ID="KPSL53752R"
 ENTITLEMENTS="$GUI_DIR/entitlements.plist"

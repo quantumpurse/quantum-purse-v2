@@ -274,7 +274,7 @@ impl App {
 
             let rp_id = "quantumpurse.org";
             let user_id = b"qpkv-user";
-            let user_name = "Key Vault User";
+            let user_name = "tea";
 
             match passkey_prf::register_passkey_async(&window, rp_id, user_id, user_name) {
                 Ok(pending) => {
@@ -533,7 +533,7 @@ fn main() -> eframe::Result {
     };
 
     eframe::run_native(
-        "Key Vault",
+        "qpv2",
         native_options,
         Box::new(|cc| Ok(Box::new(App::new(cc)))),
     )
