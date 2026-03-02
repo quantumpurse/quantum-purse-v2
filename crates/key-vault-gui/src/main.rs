@@ -104,9 +104,17 @@ impl App {
             .show_ui(ui, |ui| {
                 for variant in &[
                     SpxVariant::Sha2128S,
-                    SpxVariant::Shake128S,
                     SpxVariant::Sha2128F,
+                    SpxVariant::Sha2192S,
+                    SpxVariant::Sha2192F,
+                    SpxVariant::Sha2256S,
+                    SpxVariant::Sha2256F,
+                    SpxVariant::Shake128S,
                     SpxVariant::Shake128F,
+                    SpxVariant::Shake192S,
+                    SpxVariant::Shake192F,
+                    SpxVariant::Shake256S,
+                    SpxVariant::Shake256F,
                 ] {
                     ui.selectable_value(
                         &mut self.selected_variant,
@@ -126,9 +134,9 @@ impl App {
         let button = ui.add_enabled(
             !is_busy,
             egui::Button::new(if is_busy {
-                "Waiting for Touch ID..."
+                "Creating wallet..."
             } else {
-                "Register Passkey & Create Wallet"
+                "Create Wallet"
             }),
         );
         if button.clicked() {
@@ -519,7 +527,7 @@ impl eframe::App for App {
 fn main() -> eframe::Result {
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([420.0, 480.0])
+            .with_inner_size([720.0, 480.0])
             .with_min_inner_size([360.0, 400.0]),
         ..Default::default()
     };
