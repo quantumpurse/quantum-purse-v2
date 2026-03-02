@@ -105,14 +105,14 @@ impl App {
                 for variant in &[
                     SpxVariant::Sha2128S,
                     SpxVariant::Sha2128F,
-                    SpxVariant::Sha2192S,
-                    SpxVariant::Sha2192F,
-                    SpxVariant::Sha2256S,
-                    SpxVariant::Sha2256F,
                     SpxVariant::Shake128S,
                     SpxVariant::Shake128F,
+                    SpxVariant::Sha2192S,
+                    SpxVariant::Sha2192F,
                     SpxVariant::Shake192S,
                     SpxVariant::Shake192F,
+                    SpxVariant::Sha2256S,
+                    SpxVariant::Sha2256F,
                     SpxVariant::Shake256S,
                     SpxVariant::Shake256F,
                 ] {

@@ -1,1 +1,1 @@
-./crates/key-vault-gui/scripts/build-and-sign.sh && open "target/debug/Key Vault.app"
+./crates/key-vault-gui/scripts/build-and-sign.sh --profile ~/Desktop/Quantum_Purse_Wallet_Developer_ID.provisionprofile && open "target/debug/Key Vault.app"
