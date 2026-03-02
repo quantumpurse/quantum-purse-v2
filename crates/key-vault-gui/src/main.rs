@@ -26,6 +26,28 @@ enum Status {
     Error(String),
 }
 
+/// Tracks in-flight passkey operations so the UI doesn't block.
+#[cfg(target_os = "macos")]
+enum PendingOp {
+    /// Waiting for passkey registration to complete.
+    Registration {
+        pending: passkey_prf::PendingRegistration,
+        variant: SpxVariant,
+        window: objc2::rc::Retained<objc2_app_kit::NSWindow>,
+    },
+    /// Registration done; waiting for PRF assertion to get the encryption key.
+    PostRegistrationAssert {
+        pending: passkey_prf::PendingAssertion,
+        variant: SpxVariant,
+        credential_id: Vec<u8>,
+    },
+    /// Waiting for unlock PRF assertion.
+    UnlockAssert {
+        pending: passkey_prf::PendingAssertion,
+        variant: SpxVariant,
+    },
+}
+
 struct App {
     screen: Screen,
     status: Status,
@@ -36,6 +58,10 @@ struct App {
 
     // Unlocked screen state.
     address: Option<String>,
+
+    // In-flight passkey operation (macOS only).
+    #[cfg(target_os = "macos")]
+    pending_op: Option<PendingOp>,
 }
 
 impl App {
@@ -53,6 +79,8 @@ impl App {
             selected_variant: SpxVariant::Sha2128S,
             seed_phrase_display: None,
             address: None,
+            #[cfg(target_os = "macos")]
+            pending_op: None,
         }
     }
 
@@ -88,8 +116,21 @@ impl App {
 
         ui.add_space(12.0);
 
-        if ui.button("Register Passkey & Create Wallet").clicked() {
-            self.create_wallet_with_passkey(frame);
+        #[cfg(target_os = "macos")]
+        let is_busy = self.pending_op.is_some();
+        #[cfg(not(target_os = "macos"))]
+        let is_busy = false;
+
+        let button = ui.add_enabled(
+            !is_busy,
+            egui::Button::new(if is_busy {
+                "Waiting for Touch ID..."
+            } else {
+                "Register Passkey & Create Wallet"
+            }),
+        );
+        if button.clicked() {
+            self.start_registration(frame);
         }
 
         if let Some(ref phrase) = self.seed_phrase_display {
@@ -122,8 +163,21 @@ impl App {
         ui.heading("Wallet Locked");
         ui.add_space(12.0);
 
-        if ui.button("Unlock with Touch ID").clicked() {
-            self.unlock_with_passkey(frame);
+        #[cfg(target_os = "macos")]
+        let is_busy = self.pending_op.is_some();
+        #[cfg(not(target_os = "macos"))]
+        let is_busy = false;
+
+        let button = ui.add_enabled(
+            !is_busy,
+            egui::Button::new(if is_busy {
+                "Waiting for Touch ID..."
+            } else {
+                "Unlock with Touch ID"
+            }),
+        );
+        if button.clicked() {
+            self.start_unlock(frame);
         }
 
         self.show_status(ui);
@@ -168,7 +222,8 @@ impl App {
         }
     }
 
-    fn create_wallet_with_passkey(&mut self, frame: &mut eframe::Frame) {
+    /// Kick off async passkey registration.
+    fn start_registration(&mut self, frame: &mut eframe::Frame) {
         #[cfg(target_os = "macos")]
         {
             let window = match Self::get_ns_window(frame) {
@@ -179,56 +234,21 @@ impl App {
                 }
             };
 
-            // Step 1: Register a passkey.
             let rp_id = "quantumpurse.org";
             let user_id = b"qpkv-user";
             let user_name = "Key Vault User";
 
-            let registration =
-                match passkey_prf::register_passkey(&window, rp_id, user_id, user_name) {
-                    Ok(r) => r,
-                    Err(e) => {
-                        self.status = Status::Error(format!("Passkey registration failed: {}", e));
-                        return;
-                    }
-                };
-
-            if !registration.prf_supported {
-                self.status = Status::Error("PRF not supported by this authenticator.".to_string());
-                return;
-            }
-
-            // Step 2: Assert PRF to get the encryption key.
-            let salt = b"quantumpurse-kv-seed-encryption\0";
-            let prf_output =
-                match passkey_prf::assert_prf(&window, rp_id, &registration.credential_id, salt) {
-                    Ok(o) => o,
-                    Err(e) => {
-                        self.status = Status::Error(format!("PRF assertion failed: {}", e));
-                        return;
-                    }
-                };
-
-            let key = match key_vault_core::Util::derive_key_from_prf(&prf_output) {
-                Ok(k) => k,
-                Err(e) => {
-                    self.status = Status::Error(format!("Key derivation failed: {}", e));
-                    return;
-                }
-            };
-
-            // Step 3: Generate wallet seed with the PRF-derived key.
-            let vault = KeyVault::new(self.selected_variant);
-            let auth = AuthMethod::Prf {
-                credential_id: registration.credential_id,
-            };
-            match vault.generate_master_seed_with_key(self.selected_variant, &key, auth) {
-                Ok(phrase) => {
-                    self.seed_phrase_display = Some(phrase);
-                    self.status = Status::Info("Wallet created with Touch ID.".to_string());
+            match passkey_prf::register_passkey_async(&window, rp_id, user_id, user_name) {
+                Ok(pending) => {
+                    self.pending_op = Some(PendingOp::Registration {
+                        pending,
+                        variant: self.selected_variant,
+                        window,
+                    });
+                    self.status = Status::Info("Touch ID prompt should appear...".to_string());
                 }
                 Err(e) => {
-                    self.status = Status::Error(format!("Failed to create wallet: {}", e));
+                    self.status = Status::Error(format!("Passkey registration failed: {}", e));
                 }
             }
         }
@@ -240,7 +260,8 @@ impl App {
         }
     }
 
-    fn unlock_with_passkey(&mut self, frame: &mut eframe::Frame) {
+    /// Kick off async passkey unlock (PRF assertion).
+    fn start_unlock(&mut self, frame: &mut eframe::Frame) {
         #[cfg(target_os = "macos")]
         {
             let window = match Self::get_ns_window(frame) {
@@ -251,9 +272,6 @@ impl App {
                 }
             };
 
-            // Read wallet info to get the credential_id and variant.
-            // The variant used here is arbitrary — wallet_exists / read_wallet_info
-            // do not depend on the variant stored in the KeyVault struct.
             let temp_vault = KeyVault::new(SpxVariant::Sha2128S);
             let wallet_info = match temp_vault.read_wallet_info() {
                 Ok(info) => info,
@@ -272,39 +290,21 @@ impl App {
                 }
             };
 
-            // Assert PRF to derive the encryption key.
             let rp_id = "quantumpurse.org";
             let salt = b"quantumpurse-kv-seed-encryption\0";
-            let prf_output = match passkey_prf::assert_prf(&window, rp_id, &credential_id, salt) {
-                Ok(o) => o,
+            match passkey_prf::assert_prf_async(&window, rp_id, &credential_id, salt) {
+                Ok(pending) => {
+                    self.pending_op = Some(PendingOp::UnlockAssert {
+                        pending,
+                        variant: wallet_info.spx_variant,
+                    });
+                    self.status = Status::Info("Touch ID prompt should appear...".to_string());
+                }
                 Err(passkey_prf::PrfError::Cancelled) => {
                     self.status = Status::Info("Cancelled.".to_string());
-                    return;
                 }
                 Err(e) => {
                     self.status = Status::Error(format!("PRF assertion failed: {}", e));
-                    return;
-                }
-            };
-
-            let key = match key_vault_core::Util::derive_key_from_prf(&prf_output) {
-                Ok(k) => k,
-                Err(e) => {
-                    self.status = Status::Error(format!("Key derivation failed: {}", e));
-                    return;
-                }
-            };
-
-            // Decrypt and derive the CKB lock args using the correct variant.
-            let vault = KeyVault::new(wallet_info.spx_variant);
-            match vault.get_address_with_key(&key) {
-                Ok(addr) => {
-                    self.address = Some(addr);
-                    self.screen = Screen::Unlocked;
-                    self.status = Status::None;
-                }
-                Err(e) => {
-                    self.status = Status::Error(format!("Failed to unlock: {}", e));
                 }
             }
         }
@@ -315,10 +315,160 @@ impl App {
             self.status = Status::Error("Passkey PRF is only supported on macOS.".to_string());
         }
     }
+
+    /// Poll pending passkey operations each frame (macOS only).
+    #[cfg(target_os = "macos")]
+    fn poll_pending(&mut self) {
+        let op = match self.pending_op.take() {
+            Some(op) => op,
+            None => return,
+        };
+
+        match op {
+            PendingOp::Registration {
+                pending,
+                variant,
+                window,
+            } => {
+                match pending.poll() {
+                    None => {
+                        // Still waiting — put it back.
+                        self.pending_op = Some(PendingOp::Registration {
+                            pending,
+                            variant,
+                            window,
+                        });
+                    }
+                    Some(Ok(registration)) => {
+                        if !registration.prf_supported {
+                            self.status = Status::Error(
+                                "PRF not supported by this authenticator.".to_string(),
+                            );
+                            return;
+                        }
+
+                        // Registration succeeded — now assert PRF to get the key.
+                        let rp_id = "quantumpurse.org";
+                        let salt = b"quantumpurse-kv-seed-encryption\0";
+                        let credential_id = registration.credential_id.clone();
+                        match passkey_prf::assert_prf_async(&window, rp_id, &credential_id, salt) {
+                            Ok(assert_pending) => {
+                                self.pending_op = Some(PendingOp::PostRegistrationAssert {
+                                    pending: assert_pending,
+                                    variant,
+                                    credential_id,
+                                });
+                                self.status = Status::Info(
+                                    "Passkey registered. Now authenticate with Touch ID..."
+                                        .to_string(),
+                                );
+                            }
+                            Err(e) => {
+                                self.status = Status::Error(format!("PRF assertion failed: {}", e));
+                            }
+                        }
+                    }
+                    Some(Err(e)) => {
+                        self.status = Status::Error(format!("Passkey registration failed: {}", e));
+                    }
+                }
+            }
+            PendingOp::PostRegistrationAssert {
+                pending,
+                variant,
+                credential_id,
+            } => match pending.poll() {
+                None => {
+                    self.pending_op = Some(PendingOp::PostRegistrationAssert {
+                        pending,
+                        variant,
+                        credential_id,
+                    });
+                }
+                Some(Ok(prf_output)) => {
+                    self.finish_wallet_creation(variant, &credential_id, &prf_output);
+                }
+                Some(Err(e)) => {
+                    self.status = Status::Error(format!("PRF assertion failed: {}", e));
+                }
+            },
+            PendingOp::UnlockAssert { pending, variant } => match pending.poll() {
+                None => {
+                    self.pending_op = Some(PendingOp::UnlockAssert { pending, variant });
+                }
+                Some(Ok(prf_output)) => {
+                    self.finish_unlock(variant, &prf_output);
+                }
+                Some(Err(passkey_prf::PrfError::Cancelled)) => {
+                    self.status = Status::Info("Cancelled.".to_string());
+                }
+                Some(Err(e)) => {
+                    self.status = Status::Error(format!("PRF assertion failed: {}", e));
+                }
+            },
+        }
+    }
+
+    /// Complete wallet creation after receiving the PRF output.
+    fn finish_wallet_creation(
+        &mut self,
+        variant: SpxVariant,
+        credential_id: &[u8],
+        prf_output: &[u8],
+    ) {
+        let key = match key_vault_core::Util::derive_key_from_prf(prf_output) {
+            Ok(k) => k,
+            Err(e) => {
+                self.status = Status::Error(format!("Key derivation failed: {}", e));
+                return;
+            }
+        };
+
+        let vault = KeyVault::new(variant);
+        let auth = AuthMethod::Prf {
+            credential_id: credential_id.to_vec(),
+        };
+        match vault.generate_master_seed_with_key(variant, &key, auth) {
+            Ok(phrase) => {
+                self.seed_phrase_display = Some(phrase);
+                self.status = Status::Info("Wallet created with Touch ID.".to_string());
+            }
+            Err(e) => {
+                self.status = Status::Error(format!("Failed to create wallet: {}", e));
+            }
+        }
+    }
+
+    /// Complete wallet unlock after receiving the PRF output.
+    fn finish_unlock(&mut self, variant: SpxVariant, prf_output: &[u8]) {
+        let key = match key_vault_core::Util::derive_key_from_prf(prf_output) {
+            Ok(k) => k,
+            Err(e) => {
+                self.status = Status::Error(format!("Key derivation failed: {}", e));
+                return;
+            }
+        };
+
+        let vault = KeyVault::new(variant);
+        match vault.get_address_with_key(&key) {
+            Ok(addr) => {
+                self.address = Some(addr);
+                self.screen = Screen::Unlocked;
+                self.status = Status::None;
+            }
+            Err(e) => {
+                self.status = Status::Error(format!("Failed to unlock: {}", e));
+            }
+        }
+    }
 }
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        // Poll pending passkey operations each frame.
+        #[cfg(target_os = "macos")]
+        self.poll_pending();
+
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.add_space(8.0);
             match self.screen.clone() {
@@ -327,6 +477,12 @@ impl eframe::App for App {
                 Screen::Unlocked => self.show_unlocked(ui),
             }
         });
+
+        // Request repaint while an operation is pending so we poll promptly.
+        #[cfg(target_os = "macos")]
+        if self.pending_op.is_some() {
+            ctx.request_repaint();
+        }
     }
 }
 

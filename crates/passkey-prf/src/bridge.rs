@@ -12,7 +12,6 @@ use objc2::{
 };
 use objc2_app_kit::NSWindow;
 use objc2_authentication_services::*;
-use objc2_core_foundation::{kCFRunLoopDefaultMode, CFRunLoop};
 use objc2_foundation::*;
 
 /// Result of a successful passkey registration.
@@ -123,43 +122,134 @@ impl AuthDelegate {
     }
 }
 
-/// Pumps the main run loop until the delegate callback sets a result.
+/// A pending passkey registration that resolves asynchronously.
 ///
-/// This avoids blocking the main thread (which would deadlock, since
-/// ASAuthorizationController delivers callbacks on the main run loop).
-fn wait_for_result(result_arc: &Arc<Mutex<AuthResult>>) -> AuthResult {
-    loop {
-        // Run the main run loop for a short interval to let callbacks fire.
-        CFRunLoop::run_in_mode(
-            unsafe { kCFRunLoopDefaultMode },
-            0.1,  // 100ms per iteration
-            true, // return after handling one source
-        );
+/// Call [`PendingRegistration::poll`] each frame to check if the result is ready.
+/// The delegate callbacks fire on the main run loop between eframe update cycles.
+pub struct PendingRegistration {
+    result: Arc<Mutex<AuthResult>>,
+    // Keep the delegate and controller alive until the operation completes.
+    _delegate: Retained<AuthDelegate>,
+    _controller: Retained<ASAuthorizationController>,
+}
 
-        let mut guard = result_arc.lock().unwrap();
-        if !matches!(*guard, AuthResult::Pending) {
-            return std::mem::replace(&mut *guard, AuthResult::Pending);
+impl PendingRegistration {
+    /// Check if the registration has completed.
+    ///
+    /// Returns `None` if still pending, or `Some(Result)` when done.
+    pub fn poll(&self) -> Option<Result<Registration, PrfError>> {
+        let mut guard = self.result.lock().unwrap();
+        if matches!(*guard, AuthResult::Pending) {
+            return None;
+        }
+        let result = std::mem::replace(&mut *guard, AuthResult::Pending);
+        Some(match result {
+            AuthResult::Success(authorization) => Self::extract_registration(&authorization),
+            AuthResult::Failure(msg) => {
+                if msg.contains("Cancel") || msg.contains("cancel") {
+                    Err(PrfError::Cancelled)
+                } else {
+                    Err(PrfError::AuthorizationFailed(msg))
+                }
+            }
+            AuthResult::Pending => unreachable!(),
+        })
+    }
+
+    fn extract_registration(authorization: &ASAuthorization) -> Result<Registration, PrfError> {
+        unsafe {
+            let credential = authorization.credential();
+            let obj: &AnyObject = AsRef::as_ref(&*credential);
+            let registration: &ASAuthorizationPlatformPublicKeyCredentialRegistration =
+                obj.downcast_ref().ok_or(PrfError::AuthorizationFailed(
+                    "Unexpected credential type".to_string(),
+                ))?;
+
+            let credential_id = {
+                let cred: &ProtocolObject<dyn ASPublicKeyCredential> =
+                    ProtocolObject::from_ref(registration);
+                cred.credentialID().to_vec()
+            };
+
+            let prf_supported = registration
+                .prf()
+                .map(|output| output.isSupported())
+                .unwrap_or(false);
+
+            Ok(Registration {
+                credential_id,
+                prf_supported,
+            })
         }
     }
 }
 
-/// Register a new passkey with PRF support.
+/// A pending passkey assertion that resolves asynchronously.
+///
+/// Call [`PendingAssertion::poll`] each frame to check if the result is ready.
+pub struct PendingAssertion {
+    result: Arc<Mutex<AuthResult>>,
+    // Keep the delegate and controller alive until the operation completes.
+    _delegate: Retained<AuthDelegate>,
+    _controller: Retained<ASAuthorizationController>,
+}
+
+impl PendingAssertion {
+    /// Check if the assertion has completed.
+    ///
+    /// Returns `None` if still pending, or `Some(Result)` when done.
+    pub fn poll(&self) -> Option<Result<Vec<u8>, PrfError>> {
+        let mut guard = self.result.lock().unwrap();
+        if matches!(*guard, AuthResult::Pending) {
+            return None;
+        }
+        let result = std::mem::replace(&mut *guard, AuthResult::Pending);
+        Some(match result {
+            AuthResult::Success(authorization) => Self::extract_prf_output(&authorization),
+            AuthResult::Failure(msg) => {
+                if msg.contains("Cancel") || msg.contains("cancel") {
+                    Err(PrfError::Cancelled)
+                } else {
+                    Err(PrfError::AuthorizationFailed(msg))
+                }
+            }
+            AuthResult::Pending => unreachable!(),
+        })
+    }
+
+    fn extract_prf_output(authorization: &ASAuthorization) -> Result<Vec<u8>, PrfError> {
+        unsafe {
+            let credential = authorization.credential();
+            let obj: &AnyObject = AsRef::as_ref(&*credential);
+            let assertion: &ASAuthorizationPlatformPublicKeyCredentialAssertion =
+                obj.downcast_ref().ok_or(PrfError::AuthorizationFailed(
+                    "Unexpected credential type".to_string(),
+                ))?;
+
+            let prf_output = assertion.prf().ok_or(PrfError::PrfOutputMissing)?;
+            let first = prf_output.first();
+            Ok(first.to_vec())
+        }
+    }
+}
+
+/// Start a non-blocking passkey registration with PRF support.
+///
+/// Returns a [`PendingRegistration`] that should be polled each frame.
+/// The authorization UI (Touch ID prompt) appears immediately, and the delegate
+/// callbacks fire on the main run loop between eframe update cycles.
 ///
 /// **Parameters**:
 /// - `window` - The NSWindow to anchor the Touch ID prompt to.
 /// - `rp_id` - The relying party identifier (domain, e.g. "example.com").
 /// - `user_id` - Opaque user identifier bytes.
 /// - `user_name` - Human-readable user display name.
-///
-/// **Returns**:
-/// - `Ok(Registration)` with credential ID and PRF support flag.
-/// - `Err(PrfError)` on failure.
-pub fn register_passkey(
+pub fn register_passkey_async(
     window: &NSWindow,
     rp_id: &str,
     user_id: &[u8],
     user_name: &str,
-) -> Result<Registration, PrfError> {
+) -> Result<PendingRegistration, PrfError> {
     unsafe {
         let rp_id_ns = NSString::from_str(rp_id);
         let provider =
@@ -206,61 +296,29 @@ pub fn register_passkey(
 
         controller.performRequests();
 
-        // Pump the run loop until the delegate callback fires.
-        match wait_for_result(&result_arc) {
-            AuthResult::Success(authorization) => {
-                let credential = authorization.credential();
-                let obj: &AnyObject = AsRef::as_ref(&*credential);
-                let registration: &ASAuthorizationPlatformPublicKeyCredentialRegistration =
-                    obj.downcast_ref().ok_or(PrfError::AuthorizationFailed(
-                        "Unexpected credential type".to_string(),
-                    ))?;
-
-                let credential_id = {
-                    let cred: &ProtocolObject<dyn ASPublicKeyCredential> =
-                        ProtocolObject::from_ref(registration);
-                    cred.credentialID().to_vec()
-                };
-
-                let prf_supported = registration
-                    .prf()
-                    .map(|output| output.isSupported())
-                    .unwrap_or(false);
-
-                Ok(Registration {
-                    credential_id,
-                    prf_supported,
-                })
-            }
-            AuthResult::Failure(msg) => {
-                if msg.contains("Cancel") || msg.contains("cancel") {
-                    Err(PrfError::Cancelled)
-                } else {
-                    Err(PrfError::AuthorizationFailed(msg))
-                }
-            }
-            AuthResult::Pending => unreachable!(),
-        }
+        Ok(PendingRegistration {
+            result: result_arc,
+            _delegate: delegate,
+            _controller: controller,
+        })
     }
 }
 
-/// Assert a passkey with PRF and retrieve the 32-byte PRF output.
+/// Start a non-blocking passkey assertion with PRF.
+///
+/// Returns a [`PendingAssertion`] that should be polled each frame.
 ///
 /// **Parameters**:
 /// - `window` - The NSWindow to anchor the Touch ID prompt to.
 /// - `rp_id` - The relying party identifier (must match registration).
 /// - `credential_id` - The credential ID from registration.
 /// - `salt` - The 32-byte salt for PRF evaluation (saltInput1).
-///
-/// **Returns**:
-/// - `Ok(Vec<u8>)` containing the 32-byte PRF output.
-/// - `Err(PrfError)` on failure.
-pub fn assert_prf(
+pub fn assert_prf_async(
     window: &NSWindow,
     rp_id: &str,
     credential_id: &[u8],
     salt: &[u8],
-) -> Result<Vec<u8>, PrfError> {
+) -> Result<PendingAssertion, PrfError> {
     unsafe {
         let rp_id_ns = NSString::from_str(rp_id);
         let provider =
@@ -321,28 +379,10 @@ pub fn assert_prf(
 
         controller.performRequests();
 
-        // Pump the run loop until the delegate callback fires.
-        match wait_for_result(&result_arc) {
-            AuthResult::Success(authorization) => {
-                let credential = authorization.credential();
-                let obj: &AnyObject = AsRef::as_ref(&*credential);
-                let assertion: &ASAuthorizationPlatformPublicKeyCredentialAssertion =
-                    obj.downcast_ref().ok_or(PrfError::AuthorizationFailed(
-                        "Unexpected credential type".to_string(),
-                    ))?;
-
-                let prf_output = assertion.prf().ok_or(PrfError::PrfOutputMissing)?;
-                let first = prf_output.first();
-                Ok(first.to_vec())
-            }
-            AuthResult::Failure(msg) => {
-                if msg.contains("Cancel") || msg.contains("cancel") {
-                    Err(PrfError::Cancelled)
-                } else {
-                    Err(PrfError::AuthorizationFailed(msg))
-                }
-            }
-            AuthResult::Pending => unreachable!(),
-        }
+        Ok(PendingAssertion {
+            result: result_arc,
+            _delegate: delegate,
+            _controller: controller,
+        })
     }
 }

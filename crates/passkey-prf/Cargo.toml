@@ -48,6 +48,5 @@ objc2-authentication-services = { version = "0.3", default-features = false, fea
 	"ASPublicKeyCredential",
 	"ASFoundation",
 ] }
-objc2-core-foundation = { version = "0.3", features = ["CFDate", "CFRunLoop", "CFString"] }
 block2 = "0.6"
 getrandom = "0.4"
