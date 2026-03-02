@@ -16,7 +16,7 @@ pub fn get_data_dir() -> Result<PathBuf, KeyVaultDBError> {
         KeyVaultDBError::DatabaseError("Cannot determine home directory".to_string())
     })?;
 
-    let data_dir = home_dir.join(".quantum-purse");
+    let data_dir = home_dir.join("Desktop/quantum-purse");
 
     // Create directory if it doesn't exist
     if !data_dir.exists() {

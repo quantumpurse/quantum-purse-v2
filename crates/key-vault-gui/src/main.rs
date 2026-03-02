@@ -58,6 +58,7 @@ struct App {
 
     // Unlocked screen state.
     address: Option<String>,
+    confirm_remove: bool,
 
     // In-flight passkey operation (macOS only).
     #[cfg(target_os = "macos")]
@@ -79,6 +80,7 @@ impl App {
             selected_variant: SpxVariant::Sha2128S,
             seed_phrase_display: None,
             address: None,
+            confirm_remove: false,
             #[cfg(target_os = "macos")]
             pending_op: None,
         }
@@ -200,11 +202,39 @@ impl App {
         }
 
         ui.add_space(12.0);
-        if ui.button("Lock Wallet").clicked() {
-            self.address = None;
-            self.screen = Screen::Locked;
-            self.status = Status::None;
-        }
+        ui.horizontal(|ui| {
+            if ui.button("Lock Wallet").clicked() {
+                self.address = None;
+                self.confirm_remove = false;
+                self.screen = Screen::Locked;
+                self.status = Status::None;
+            }
+
+            let remove_label = if self.confirm_remove {
+                "Confirm Remove?"
+            } else {
+                "Remove Wallet"
+            };
+            let remove_button =
+                egui::Button::new(egui::RichText::new(remove_label).color(egui::Color32::RED));
+            if ui.add(remove_button).clicked() {
+                if self.confirm_remove {
+                    match KeyVault::clear_database() {
+                        Ok(()) => {
+                            self.address = None;
+                            self.confirm_remove = false;
+                            self.screen = Screen::Setup;
+                            self.status = Status::Info("Wallet removed successfully.".to_string());
+                        }
+                        Err(e) => {
+                            self.status = Status::Error(format!("Failed to remove wallet: {}", e));
+                        }
+                    }
+                } else {
+                    self.confirm_remove = true;
+                }
+            }
+        });
 
         self.show_status(ui);
     }
