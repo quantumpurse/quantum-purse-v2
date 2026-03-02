@@ -533,7 +533,7 @@ fn main() -> eframe::Result {
     };
 
     eframe::run_native(
-        "qpv2",
+        "qpkv",
         native_options,
         Box::new(|cc| Ok(Box::new(App::new(cc)))),
     )

@@ -1,1 +1,1 @@
-open "target/debug/qpv2.app"
+open "target/debug/qpkv.app"

@@ -21,7 +21,7 @@ PROJECT_ROOT="$(cd "$GUI_DIR/../.." && pwd)"
 # Configuration.
 BINARY_NAME="qpkv-gui"
 BUNDLE_ID="org.quantumpurse.wallet"
-APP_NAME="qpv2"
+APP_NAME="qpkv"
 SIGNING_IDENTITY="Developer ID Application: Pham Tung (KPSL53752R)"
 TEAM_ID="KPSL53752R"
 ENTITLEMENTS="$GUI_DIR/entitlements.plist"
