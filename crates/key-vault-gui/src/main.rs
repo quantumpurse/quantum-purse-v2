@@ -423,6 +423,7 @@ impl App {
     }
 
     /// Complete wallet creation after receiving the PRF output.
+    /// Generates the master seed, creates the first account, and goes straight to Unlocked.
     fn finish_wallet_creation(
         &mut self,
         variant: SpxVariant,
@@ -441,13 +442,44 @@ impl App {
         let auth_method = AuthMethod::PasskeyPrf {
             credential_id: credential_id.to_vec(),
         };
-        match vault.generate_master_seed(AuthKey::CryptoKey(key), auth_method) {
-            Ok(()) => {
+        if let Err(e) = vault.generate_master_seed(AuthKey::CryptoKey(key), auth_method) {
+            self.status = Status::Error(format!("Failed to create wallet: {}", e));
+            return;
+        }
+
+        // Re-derive key to generate the first account.
+        let key = match key_vault_core::Util::derive_key_from_prf(prf_output) {
+            Ok(k) => k,
+            Err(e) => {
+                self.status = Status::Error(format!("Key derivation failed: {}", e));
                 self.screen = Screen::Locked;
-                self.status = Status::Info("Wallet created. Touch ID to unlock.".to_string());
+                return;
+            }
+        };
+        if let Err(e) = vault.gen_new_account(AuthKey::CryptoKey(key)) {
+            self.status = Status::Error(format!("Failed to create first account: {}", e));
+            self.screen = Screen::Locked;
+            return;
+        }
+
+        // Re-derive key to read the address for display.
+        let key = match key_vault_core::Util::derive_key_from_prf(prf_output) {
+            Ok(k) => k,
+            Err(e) => {
+                self.status = Status::Error(format!("Key derivation failed: {}", e));
+                self.screen = Screen::Locked;
+                return;
+            }
+        };
+        match vault.get_address(AuthKey::CryptoKey(key), 0) {
+            Ok(addr) => {
+                self.address = Some(addr);
+                self.screen = Screen::Unlocked;
+                self.status = Status::Info("Wallet created successfully.".to_string());
             }
             Err(e) => {
-                self.status = Status::Error(format!("Failed to create wallet: {}", e));
+                self.status = Status::Error(format!("Failed to read address: {}", e));
+                self.screen = Screen::Locked;
             }
         }
     }
