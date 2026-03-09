@@ -187,26 +187,35 @@ impl PendingRegistration {
 
 /// A pending passkey assertion that resolves asynchronously.
 ///
-/// Call [`PendingAssertion::poll`] each frame to check if the result is ready.
-pub struct PendingAssertion {
+/// Call [`AssertionRequest::poll`] each frame to check if the result is ready.
+/// When PRF was requested, the result includes the PRF output; otherwise `None`.
+pub struct AssertionRequest {
     result: Arc<Mutex<AuthResult>>,
+    with_prf: bool,
     // Keep the delegate and controller alive until the operation completes.
     _delegate: Retained<AuthDelegate>,
     _controller: Retained<ASAuthorizationController>,
 }
 
-impl PendingAssertion {
+impl AssertionRequest {
     /// Check if the assertion has completed.
     ///
     /// Returns `None` if still pending, or `Some(Result)` when done.
-    pub fn poll(&self) -> Option<Result<SecureVec, PrfError>> {
+    /// The inner `Option<SecureVec>` is `Some` when PRF was requested, `None` otherwise.
+    pub fn poll(&self) -> Option<Result<Option<SecureVec>, PrfError>> {
         let mut guard = self.result.lock().unwrap();
         if matches!(*guard, AuthResult::Pending) {
             return None;
         }
         let result = std::mem::replace(&mut *guard, AuthResult::Pending);
         Some(match result {
-            AuthResult::Success(authorization) => Self::extract_prf_output(&authorization),
+            AuthResult::Success(authorization) => {
+                if self.with_prf {
+                    Self::extract_prf_output(&authorization).map(Some)
+                } else {
+                    Ok(None)
+                }
+            }
             AuthResult::Failure(msg) => {
                 if msg.contains("Cancel") || msg.contains("cancel") {
                     Err(PrfError::Cancelled)
@@ -305,21 +314,23 @@ pub fn register_passkey_async(
     }
 }
 
-/// Start a non-blocking passkey assertion with PRF.
+/// Start a non-blocking passkey assertion, optionally with the PRF extension.
 ///
-/// Returns a [`PendingAssertion`] that should be polled each frame.
+/// Returns an [`AssertionRequest`] that should be polled each frame.
+/// Pass `Some(salt)` to request PRF evaluation; pass `None` for credential-only
+/// authentication (Touch ID verification without key derivation).
 ///
 /// **Parameters**:
 /// - `window` - The NSWindow to anchor the Touch ID prompt to.
 /// - `rp_id` - The relying party identifier (must match registration).
 /// - `credential_id` - The credential ID from registration.
-/// - `salt` - The 32-byte salt for PRF evaluation (saltInput1).
-pub fn assert_prf_async(
+/// - `salt` - Optional 32-byte salt for PRF evaluation. `None` for credential-only assertion.
+pub fn assert_async(
     window: &NSWindow,
     rp_id: &str,
     credential_id: &[u8],
-    salt: &[u8],
-) -> Result<PendingAssertion, PrfError> {
+    salt: Option<&[u8]>,
+) -> Result<AssertionRequest, PrfError> {
     unsafe {
         let rp_id_ns = NSString::from_str(rp_id);
         let provider =
@@ -345,20 +356,22 @@ pub fn assert_prf_async(
         let allowed = NSArray::from_retained_slice(&[descriptor]);
         request.setAllowedCredentials(&allowed);
 
-        // Set PRF input with the salt.
-        let salt_data = NSData::from_vec(salt.to_vec());
-        let prf_values =
-			ASAuthorizationPublicKeyCredentialPRFAssertionInputValues::initWithSaltInput1_saltInput2(
-				ASAuthorizationPublicKeyCredentialPRFAssertionInputValues::alloc(),
-				&salt_data,
+        // Attach PRF extension if a salt was provided.
+        if let Some(salt) = salt {
+            let salt_data = NSData::from_vec(salt.to_vec());
+            let prf_values =
+				ASAuthorizationPublicKeyCredentialPRFAssertionInputValues::initWithSaltInput1_saltInput2(
+					ASAuthorizationPublicKeyCredentialPRFAssertionInputValues::alloc(),
+					&salt_data,
+					None,
+				);
+            let prf_input = ASAuthorizationPublicKeyCredentialPRFAssertionInput::initWithInputValues_perCredentialInputValues(
+				ASAuthorizationPublicKeyCredentialPRFAssertionInput::alloc(),
+				Some(&prf_values),
 				None,
 			);
-        let prf_input = ASAuthorizationPublicKeyCredentialPRFAssertionInput::initWithInputValues_perCredentialInputValues(
-			ASAuthorizationPublicKeyCredentialPRFAssertionInput::alloc(),
-			Some(&prf_values),
-			None,
-		);
-        request.setPrf(Some(&prf_input));
+            request.setPrf(Some(&prf_input));
+        }
 
         // Perform the authorization.
         let request_as_base: Retained<ASAuthorizationRequest> = Retained::into_super(request);
@@ -380,8 +393,9 @@ pub fn assert_prf_async(
 
         controller.performRequests();
 
-        Ok(PendingAssertion {
+        Ok(AssertionRequest {
             result: result_arc,
+            with_prf: salt.is_some(),
             _delegate: delegate,
             _controller: controller,
         })

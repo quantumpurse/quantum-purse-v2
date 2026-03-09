@@ -37,14 +37,13 @@ enum PendingOp {
     },
     /// Registration done; waiting for PRF assertion to get the encryption key.
     PostRegistrationAssert {
-        pending: passkey_prf::PendingAssertion,
+        pending: passkey_prf::AssertionRequest,
         variant: SpxVariant,
         credential_id: Vec<u8>,
     },
-    /// Waiting for unlock PRF assertion.
+    /// Waiting for unlock credential assertion (no PRF).
     UnlockAssert {
-        pending: passkey_prf::PendingAssertion,
-        variant: SpxVariant,
+        pending: passkey_prf::AssertionRequest,
     },
 }
 
@@ -273,7 +272,7 @@ impl App {
         }
     }
 
-    /// Kick off async passkey unlock (PRF assertion).
+    /// Kick off async credential-only assertion (no PRF) for unlock.
     fn start_unlock(&mut self, frame: &mut eframe::Frame) {
         #[cfg(target_os = "macos")]
         {
@@ -304,20 +303,17 @@ impl App {
             };
 
             let rp_id = "quantumpurse.org";
-            let salt = b"quantumpurse-kv-seed-encryption\0";
-            match passkey_prf::assert_prf_async(&window, rp_id, &credential_id, salt) {
+            match passkey_prf::assert_async(&window, rp_id, &credential_id, None) {
                 Ok(pending) => {
-                    self.pending_op = Some(PendingOp::UnlockAssert {
-                        pending,
-                        variant: wallet_info.spx_variant,
-                    });
+                    self.pending_op = Some(PendingOp::UnlockAssert { pending });
                     self.status = Status::Info("Touch ID prompt should appear...".to_string());
                 }
                 Err(passkey_prf::PrfError::Cancelled) => {
                     self.status = Status::Info("Cancelled.".to_string());
                 }
                 Err(e) => {
-                    self.status = Status::Error(format!("PRF assertion failed: {}", e));
+                    self.status =
+                        Status::Error(format!("Credential assertion failed: {}", e));
                 }
             }
         }
@@ -360,11 +356,11 @@ impl App {
                             return;
                         }
 
-                        // Registration succeeded — now assert PRF to get the key.
+                        // Registration succeeded — now assert with PRF to get the encryption key.
                         let rp_id = "quantumpurse.org";
                         let salt = b"quantumpurse-kv-seed-encryption\0";
                         let credential_id = registration.credential_id.clone();
-                        match passkey_prf::assert_prf_async(&window, rp_id, &credential_id, salt) {
+                        match passkey_prf::assert_async(&window, rp_id, &credential_id, Some(salt)) {
                             Ok(assert_pending) => {
                                 self.pending_op = Some(PendingOp::PostRegistrationAssert {
                                     pending: assert_pending,
@@ -398,25 +394,33 @@ impl App {
                         credential_id,
                     });
                 }
-                Some(Ok(prf_output)) => {
+                Some(Ok(Some(prf_output))) => {
                     self.finish_wallet_creation(variant, &credential_id, &prf_output);
                 }
-                Some(Err(e)) => {
-                    self.status = Status::Error(format!("PRF assertion failed: {}", e));
-                }
-            },
-            PendingOp::UnlockAssert { pending, variant } => match pending.poll() {
-                None => {
-                    self.pending_op = Some(PendingOp::UnlockAssert { pending, variant });
-                }
-                Some(Ok(prf_output)) => {
-                    self.finish_unlock(variant, &prf_output);
+                Some(Ok(None)) => {
+                    self.status = Status::Error(
+                        "Internal error: Expected encryption key from authentication.".to_string(),
+                    );
                 }
                 Some(Err(passkey_prf::PrfError::Cancelled)) => {
                     self.status = Status::Info("Cancelled.".to_string());
                 }
                 Some(Err(e)) => {
-                    self.status = Status::Error(format!("PRF assertion failed: {}", e));
+                    self.status = Status::Error(format!("Authentication failed: {}", e));
+                }
+            },
+            PendingOp::UnlockAssert { pending } => match pending.poll() {
+                None => {
+                    self.pending_op = Some(PendingOp::UnlockAssert { pending });
+                }
+                Some(Ok(_)) => {
+                    self.finish_unlock();
+                }
+                Some(Err(passkey_prf::PrfError::Cancelled)) => {
+                    self.status = Status::Info("Cancelled.".to_string());
+                }
+                Some(Err(e)) => {
+                    self.status = Status::Error(format!("Authentication failed: {}", e));
                 }
             },
         }
@@ -462,18 +466,10 @@ impl App {
             return;
         }
 
-        // Re-derive key to read the address for display.
-        let key = match key_vault_core::Util::derive_key_from_prf(prf_output) {
-            Ok(k) => k,
-            Err(e) => {
-                self.status = Status::Error(format!("Key derivation failed: {}", e));
-                self.screen = Screen::Locked;
-                return;
-            }
-        };
-        match vault.get_address(AuthKey::CryptoKey(key), 0) {
-            Ok(addr) => {
-                self.address = Some(addr);
+        // Read lock args from accounts.json (no decryption needed).
+        match KeyVault::get_all_sphincs_lock_args() {
+            Ok(lock_args) => {
+                self.address = lock_args.first().cloned();
                 self.screen = Screen::Unlocked;
                 self.status = Status::Info("Wallet created successfully.".to_string());
             }
@@ -484,20 +480,12 @@ impl App {
         }
     }
 
-    /// Complete wallet unlock after receiving the PRF output.
-    fn finish_unlock(&mut self, variant: SpxVariant, prf_output: &key_vault_core::SecureVec) {
-        let key = match key_vault_core::Util::derive_key_from_prf(prf_output) {
-            Ok(k) => k,
-            Err(e) => {
-                self.status = Status::Error(format!("Key derivation failed: {}", e));
-                return;
-            }
-        };
-
-        let vault = KeyVault::new(variant);
-        match vault.get_address(AuthKey::CryptoKey(key), 0) {
-            Ok(addr) => {
-                self.address = Some(addr);
+    /// Complete wallet unlock after credential assertion succeeds.
+    /// Reads the first account's lock args from accounts.json (no decryption needed).
+    fn finish_unlock(&mut self) {
+        match KeyVault::get_all_sphincs_lock_args() {
+            Ok(lock_args) => {
+                self.address = lock_args.first().cloned();
                 self.screen = Screen::Unlocked;
                 self.status = Status::None;
             }

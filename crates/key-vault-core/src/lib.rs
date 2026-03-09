@@ -596,28 +596,6 @@ impl KeyVault {
             })
     }
 
-    /// Decrypts the master seed and returns the lock script args for the account at the given index.
-    ///
-    /// **Parameters**:
-    /// - `auth: AuthKey` - The authentication key used to decrypt the master seed.
-    /// - `index: u32` - The account index to derive.
-    ///
-    /// **Returns**:
-    /// - `Result<String, String>` - The hex-encoded lock args on success, or an error on failure.
-    pub fn get_address(&self, auth: AuthKey, index: u32) -> Result<String, String> {
-        Self::validate_auth(&auth)?;
-
-        let payload = db::get_encrypted_seed()
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| "Master seed not found".to_string())?;
-        let seed = utilities::decrypt(&auth, payload)?;
-        let (pub_key, _) = self
-            .derive_spx_keys(&seed, index)
-            .map_err(|e| format!("Key derivation error: {}", e))?;
-        let lock_script_args = self.get_lock_scrip_arg(&pub_key);
-        Ok(encode(lock_script_args))
-    }
-
     /// Building CKB SPHINCS+ all-in-one lockscript arguments
     ///
     /// **Parameters**:
