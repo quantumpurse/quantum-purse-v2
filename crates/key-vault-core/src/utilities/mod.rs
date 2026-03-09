@@ -200,7 +200,7 @@ pub fn derive_key_from_prf(prf_output: &[u8]) -> Result<SecureVec, String> {
 pub fn encrypt(auth: &AuthKey, input: &[u8]) -> Result<CipherPayload, String> {
     match auth {
         AuthKey::Password(password) => encrypt_with_password(password.as_ref(), input),
-        AuthKey::DerivedKey(key) => encrypt_with_key(key.as_ref(), input),
+        AuthKey::CryptoKey(key) => encrypt_with_key(key.as_ref(), input),
     }
 }
 
@@ -215,6 +215,6 @@ pub fn encrypt(auth: &AuthKey, input: &[u8]) -> Result<CipherPayload, String> {
 pub fn decrypt(auth: &AuthKey, payload: CipherPayload) -> Result<SecureVec, String> {
     match auth {
         AuthKey::Password(password) => decrypt_with_password(password.as_ref(), payload),
-        AuthKey::DerivedKey(key) => decrypt_with_key(key.as_ref(), payload),
+        AuthKey::CryptoKey(key) => decrypt_with_key(key.as_ref(), payload),
     }
 }

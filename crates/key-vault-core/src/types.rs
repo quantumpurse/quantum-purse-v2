@@ -42,7 +42,7 @@ pub enum AuthMethod {
     /// Password-based authentication using scrypt key derivation.
     Password,
     /// Passkey PRF-based authentication using HKDF key derivation.
-    Prf {
+    PasskeyPrf {
         /// The WebAuthn credential ID used for PRF assertion.
         credential_id: Vec<u8>,
     },
@@ -61,7 +61,7 @@ pub enum AuthKey {
     /// Password to be hashed with Scrypt before use as AES-256 key.
     Password(SecureString),
     /// Pre-derived 32-byte AES-256 key (e.g. from passkey PRF + HKDF).
-    DerivedKey(SecureVec),
+    CryptoKey(SecureVec),
 }
 
 /// Represents wallet metadata information.

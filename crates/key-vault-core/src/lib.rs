@@ -107,7 +107,7 @@ impl KeyVault {
                     return Err("Password cannot be empty or uninitialized".to_string());
                 }
             }
-            AuthKey::DerivedKey(key) => {
+            AuthKey::CryptoKey(key) => {
                 if key.is_empty() || key.is_uninitialized() {
                     return Err("Derived key cannot be empty or uninitialized".to_string());
                 }

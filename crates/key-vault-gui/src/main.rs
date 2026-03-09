@@ -295,7 +295,7 @@ impl App {
             };
 
             let credential_id = match &wallet_info.auth_method {
-                AuthMethod::Prf { credential_id } => credential_id.clone(),
+                AuthMethod::PasskeyPrf { credential_id } => credential_id.clone(),
                 AuthMethod::Password => {
                     self.status =
                         Status::Error("This wallet uses password auth, not Touch ID.".to_string());
@@ -438,10 +438,10 @@ impl App {
         };
 
         let vault = KeyVault::new(variant);
-        let auth_method = AuthMethod::Prf {
+        let auth_method = AuthMethod::PasskeyPrf {
             credential_id: credential_id.to_vec(),
         };
-        match vault.generate_master_seed(AuthKey::DerivedKey(key), auth_method) {
+        match vault.generate_master_seed(AuthKey::CryptoKey(key), auth_method) {
             Ok(()) => {
                 self.screen = Screen::Locked;
                 self.status = Status::Info("Wallet created. Touch ID to unlock.".to_string());
@@ -463,7 +463,7 @@ impl App {
         };
 
         let vault = KeyVault::new(variant);
-        match vault.get_address(AuthKey::DerivedKey(key), 0) {
+        match vault.get_address(AuthKey::CryptoKey(key), 0) {
             Ok(addr) => {
                 self.address = Some(addr);
                 self.screen = Screen::Unlocked;
