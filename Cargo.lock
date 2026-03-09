@@ -3109,6 +3109,7 @@ version = "0.1.0"
 dependencies = [
  "block2 0.6.2",
  "getrandom 0.4.1",
+ "key-vault-core",
  "objc2 0.6.4",
  "objc2-app-kit 0.3.2",
  "objc2-authentication-services",

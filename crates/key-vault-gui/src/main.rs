@@ -428,7 +428,7 @@ impl App {
         &mut self,
         variant: SpxVariant,
         credential_id: &[u8],
-        prf_output: &[u8],
+        prf_output: &key_vault_core::SecureVec,
     ) {
         let key = match key_vault_core::Util::derive_key_from_prf(prf_output) {
             Ok(k) => k,
@@ -485,7 +485,7 @@ impl App {
     }
 
     /// Complete wallet unlock after receiving the PRF output.
-    fn finish_unlock(&mut self, variant: SpxVariant, prf_output: &[u8]) {
+    fn finish_unlock(&mut self, variant: SpxVariant, prf_output: &key_vault_core::SecureVec) {
         let key = match key_vault_core::Util::derive_key_from_prf(prf_output) {
             Ok(k) => k,
             Err(e) => {

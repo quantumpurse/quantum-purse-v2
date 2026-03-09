@@ -5,6 +5,7 @@
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
+use key_vault_core::SecureVec;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, NSObject, ProtocolObject};
 use objc2::{
@@ -198,7 +199,7 @@ impl PendingAssertion {
     /// Check if the assertion has completed.
     ///
     /// Returns `None` if still pending, or `Some(Result)` when done.
-    pub fn poll(&self) -> Option<Result<Vec<u8>, PrfError>> {
+    pub fn poll(&self) -> Option<Result<SecureVec, PrfError>> {
         let mut guard = self.result.lock().unwrap();
         if matches!(*guard, AuthResult::Pending) {
             return None;
@@ -217,7 +218,7 @@ impl PendingAssertion {
         })
     }
 
-    fn extract_prf_output(authorization: &ASAuthorization) -> Result<Vec<u8>, PrfError> {
+    fn extract_prf_output(authorization: &ASAuthorization) -> Result<SecureVec, PrfError> {
         unsafe {
             let credential = authorization.credential();
             let obj: &AnyObject = AsRef::as_ref(&*credential);
@@ -228,7 +229,7 @@ impl PendingAssertion {
 
             let prf_output = assertion.prf().ok_or(PrfError::PrfOutputMissing)?;
             let first = prf_output.first();
-            Ok(first.to_vec())
+            Ok(SecureVec::from_vec(first.to_vec()))
         }
     }
 }
