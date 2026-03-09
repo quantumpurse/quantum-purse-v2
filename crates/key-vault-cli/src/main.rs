@@ -165,7 +165,9 @@ fn main() -> Result<(), String> {
 
             vault.generate_master_seed(AuthKey::Password(password), AuthMethod::Password)?;
             println!("✓ Master seed generated successfully");
-            println!("⚠️  Make sure to backup your seed phrase using the 'mnemonic export' command");
+            println!(
+                "⚠️  Make sure to backup your seed phrase using the 'mnemonic export' command"
+            );
         }
 
         Commands::Mnemonic { command } => match command {

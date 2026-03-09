@@ -1,27 +1,10 @@
 [workspace]
 members = [
-	".",
 	"crates/ckb-fips205-utils",
+	"crates/key-vault-cli",
 	"crates/key-vault-core",
 	"crates/key-vault-gui",
 	"crates/passkey-prf",
 ]
+default-members = ["crates/key-vault-cli"]
 resolver = "2"
-
-[package]
-name = "key-vault-cli"
-version = "0.1.0"
-edition = "2021"
-description = "A SPHINCS+ key management CLI for CKB blockchain."
-repository = "https://github.com/quantumpurse/key-vault-cli.git"
-license = "MIT"
-
-[[bin]]
-name = "qpkv"
-path = "src/main.rs"
-
-[dependencies]
-key-vault-core = { path = "crates/key-vault-core" }
-clap = { version = "4.5.60", features = ["derive"] }
-rpassword = "7.4.0"
-hex = "0.4.3"
