@@ -54,7 +54,6 @@ struct App {
 
     // Setup screen state.
     selected_variant: SpxVariant,
-    seed_phrase_display: Option<String>,
 
     // Unlocked screen state.
     address: Option<String>,
@@ -78,7 +77,6 @@ impl App {
             screen,
             status: Status::None,
             selected_variant: SpxVariant::Sha2128S,
-            seed_phrase_display: None,
             address: None,
             confirm_remove: false,
             #[cfg(target_os = "macos")]
@@ -141,29 +139,6 @@ impl App {
         );
         if button.clicked() {
             self.start_registration(frame);
-        }
-
-        if let Some(ref phrase) = self.seed_phrase_display {
-            ui.add_space(16.0);
-            ui.separator();
-            ui.heading("Backup Your Seed Phrase");
-            ui.label("Write down these words and store them safely. You will NOT see them again.");
-            ui.add_space(8.0);
-
-            egui::Frame::group(ui.style()).show(ui, |ui| {
-                ui.add(
-                    egui::TextEdit::multiline(&mut phrase.as_str())
-                        .desired_width(f32::INFINITY)
-                        .font(egui::TextStyle::Monospace),
-                );
-            });
-
-            ui.add_space(8.0);
-            if ui.button("I have saved my seed phrase").clicked() {
-                self.seed_phrase_display = None;
-                self.screen = Screen::Locked;
-                self.status = Status::Info("Wallet created. Touch ID to unlock.".to_string());
-            }
         }
 
         self.show_status(ui);
@@ -468,7 +443,8 @@ impl App {
         };
         match vault.generate_master_seed(AuthKey::DerivedKey(key), auth_method) {
             Ok(()) => {
-                self.status = Status::Info("Wallet created with Touch ID.".to_string());
+                self.screen = Screen::Locked;
+                self.status = Status::Info("Wallet created. Touch ID to unlock.".to_string());
             }
             Err(e) => {
                 self.status = Status::Error(format!("Failed to create wallet: {}", e));
