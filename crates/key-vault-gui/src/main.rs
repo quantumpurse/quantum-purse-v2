@@ -4,7 +4,7 @@
 mod window_handle;
 
 use eframe::egui;
-use key_vault_core::types::{AuthMethod, SpxVariant};
+use key_vault_core::types::{AuthKey, AuthMethod, SpxVariant};
 use key_vault_core::KeyVault;
 
 /// Application state machine.
@@ -463,12 +463,11 @@ impl App {
         };
 
         let vault = KeyVault::new(variant);
-        let auth = AuthMethod::Prf {
+        let auth_method = AuthMethod::Prf {
             credential_id: credential_id.to_vec(),
         };
-        match vault.generate_master_seed_with_key(variant, &key, auth) {
-            Ok(phrase) => {
-                self.seed_phrase_display = Some(phrase);
+        match vault.generate_master_seed(AuthKey::DerivedKey(key), auth_method) {
+            Ok(()) => {
                 self.status = Status::Info("Wallet created with Touch ID.".to_string());
             }
             Err(e) => {
@@ -488,7 +487,7 @@ impl App {
         };
 
         let vault = KeyVault::new(variant);
-        match vault.get_address_with_key(&key) {
+        match vault.get_address(AuthKey::DerivedKey(key), 0) {
             Ok(addr) => {
                 self.address = Some(addr);
                 self.screen = Screen::Unlocked;

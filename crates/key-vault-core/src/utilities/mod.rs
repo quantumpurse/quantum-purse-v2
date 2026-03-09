@@ -1,5 +1,5 @@
 use super::constants::{ENC_SCRYPT, IV_LENGTH, PRF_HKDF_INFO, SALT_LENGTH};
-use super::types::{CipherPayload, ScryptParam};
+use super::types::{AuthKey, CipherPayload, ScryptParam};
 use crate::containers::SecureVec;
 use aes_gcm::{
     aead::{Aead, KeyInit},
@@ -68,14 +68,14 @@ pub fn derive_hkdf_key(ikm: &[u8], info: &[u8], output_len: usize) -> Result<Sec
 /// Encrypts data using AES-256-GCM with a pre-derived key.
 ///
 /// **Parameters**:
-/// - `key: &SecureVec` - The 32-byte AES-256 encryption key.
+/// - `key: &[u8]` - The 32-byte AES-256 encryption key.
 /// - `input: &[u8]` - The plaintext data to encrypt.
 ///
 /// **Returns**:
 /// - `Result<CipherPayload, String>` - A `CipherPayload` containing the encrypted data, salt (empty), and IV on success, or an error message on failure.
 ///
 /// Warning: Proper zeroization of the key and input is the responsibility of the caller.
-pub fn encrypt_with_key(key: &SecureVec, input: &[u8]) -> Result<CipherPayload, String> {
+pub fn encrypt_with_key(key: &[u8], input: &[u8]) -> Result<CipherPayload, String> {
     let iv_bytes = get_random_bytes(IV_LENGTH).map_err(|e| e.to_string())?;
 
     let aes_key: &Key<Aes256Gcm> = Key::<Aes256Gcm>::from_slice(key);
@@ -95,14 +95,14 @@ pub fn encrypt_with_key(key: &SecureVec, input: &[u8]) -> Result<CipherPayload, 
 /// Decrypts data using AES-256-GCM with a pre-derived key.
 ///
 /// **Parameters**:
-/// - `key: &SecureVec` - The 32-byte AES-256 decryption key.
+/// - `key: &[u8]` - The 32-byte AES-256 decryption key.
 /// - `payload: CipherPayload` - The encrypted data payload containing IV and ciphertext.
 ///
 /// **Returns**:
 /// - `Result<SecureVec, String>` - The decrypted plaintext on success, or an error message on failure.
 ///
 /// Warning: Proper zeroization of the key is the responsibility of the caller.
-pub fn decrypt_with_key(key: &SecureVec, payload: CipherPayload) -> Result<SecureVec, String> {
+pub fn decrypt_with_key(key: &[u8], payload: CipherPayload) -> Result<SecureVec, String> {
     let iv = decode(payload.iv).map_err(|e| format!("IV decode error: {:?}", e))?;
     let cipher_text =
         decode(payload.cipher_text).map_err(|e| format!("Ciphertext decode error: {:?}", e))?;
@@ -187,4 +187,34 @@ pub fn decrypt_with_password(password: &[u8], payload: CipherPayload) -> Result<
 /// - `Result<SecureVec, String>` - The derived 32-byte AES key on success, or an error on failure.
 pub fn derive_key_from_prf(prf_output: &[u8]) -> Result<SecureVec, String> {
     derive_hkdf_key(prf_output, PRF_HKDF_INFO, 32)
+}
+
+/// Encrypts data using the appropriate method based on the authentication key.
+///
+/// **Parameters**:
+/// - `auth: &AuthKey` - The authentication key (password or pre-derived key).
+/// - `input: &[u8]` - The plaintext data to encrypt.
+///
+/// **Returns**:
+/// - `Result<CipherPayload, String>` - The encrypted payload on success, or an error on failure.
+pub fn encrypt(auth: &AuthKey, input: &[u8]) -> Result<CipherPayload, String> {
+    match auth {
+        AuthKey::Password(password) => encrypt_with_password(password.as_ref(), input),
+        AuthKey::DerivedKey(key) => encrypt_with_key(key.as_ref(), input),
+    }
+}
+
+/// Decrypts data using the appropriate method based on the authentication key.
+///
+/// **Parameters**:
+/// - `auth: &AuthKey` - The authentication key (password or pre-derived key).
+/// - `payload: CipherPayload` - The encrypted data payload.
+///
+/// **Returns**:
+/// - `Result<SecureVec, String>` - The decrypted plaintext on success, or an error on failure.
+pub fn decrypt(auth: &AuthKey, payload: CipherPayload) -> Result<SecureVec, String> {
+    match auth {
+        AuthKey::Password(password) => decrypt_with_password(password.as_ref(), payload),
+        AuthKey::DerivedKey(key) => decrypt_with_key(key.as_ref(), payload),
+    }
 }

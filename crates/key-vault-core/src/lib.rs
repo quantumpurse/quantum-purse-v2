@@ -1,9 +1,9 @@
 //! # QuantumPurse KeyVault
 //!
-//! This module provides a secure password-based authentication interface for managing cryptographic keys in
+//! This module provides a secure authentication interface for managing cryptographic keys in the
 //! QuantumPurse project. It leverages AES-GCM for encryption, Scrypt for password hashing, HKDF for key derivation,
 //! and the SPHINCS+ signature scheme for post-quantum transaction signing. The master seed is encrypted and stored
-//! locally in files, with access authenticated by user-provided passwords.
+//! locally in files, with access authenticated via password (Scrypt) or pre-derived key (e.g. passkey PRF + HKDF).
 
 use bip39::{Language, Mnemonic};
 use ckb_fips205_utils::{
@@ -99,6 +99,23 @@ impl KeyVault {
         }
     }
 
+    /// Validates an authentication key, returning an error if it is empty or uninitialized.
+    fn validate_auth(auth: &AuthKey) -> Result<(), String> {
+        match auth {
+            AuthKey::Password(password) => {
+                if password.is_empty() || password.is_uninitialized() {
+                    return Err("Password cannot be empty or uninitialized".to_string());
+                }
+            }
+            AuthKey::DerivedKey(key) => {
+                if key.is_empty() || key.is_uninitialized() {
+                    return Err("Derived key cannot be empty or uninitialized".to_string());
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Clears all data in the vault.
     ///
     /// **Returns**:
@@ -145,14 +162,16 @@ impl KeyVault {
         Ok(payload.is_some())
     }
 
-    /// Generates master seed for your wallet, encrypts it with the provided password, and stores it.
+    /// Generates master seed for your wallet, encrypts it, and stores it.
+    /// Returns the BIP39 mnemonic seed phrase for backup.
     /// Errors if the master seed already exists.
     ///
     /// **Parameters**:
-    /// - `password: SecureString` - The password used to encrypt the generated master seed.
+    /// - `auth: AuthKey` - The authentication key used to encrypt the generated master seed.
+    /// - `auth_method: AuthMethod` - The authentication method to record in wallet metadata.
     ///
     /// **Returns**:
-    /// - `Result<(), String>` - Ok on success, or an error on failure.
+    /// - `Result<()), String>` - Ok on success, or an error on failure.
     ///
     /// **Security Considerations**:
     ///
@@ -174,10 +193,12 @@ impl KeyVault {
     ///  - Scrypt with param {log_n = 17, r = 8, p = 1, len 32} make each effort to guess a password even harder for the attacker.
     ///
     /// The theoretical security for this setup, thus starts at level 1) and is not upper limited following how long users passwords can be.
-    pub fn generate_master_seed(&self, password: SecureString) -> Result<(), String> {
-        if password.is_empty() || password.is_uninitialized() {
-            return Err("Password cannot be empty or uninitialized".to_string());
-        }
+    pub fn generate_master_seed(
+        &self,
+        auth: AuthKey,
+        auth_method: AuthMethod,
+    ) -> Result<(), String> {
+        Self::validate_auth(&auth)?;
 
         if self.has_master_seed()? {
             return Err("Master seed already exists".to_string());
@@ -186,38 +207,35 @@ impl KeyVault {
         let size = self.variant.required_entropy_size_total();
         let entropy = utilities::get_random_bytes(size)
             .map_err(|e| format!("Failed generating master seed: {}", e))?;
-        let encrypted_seed = utilities::encrypt_with_password(password.as_ref(), entropy.as_ref())
+        let encrypted_seed = utilities::encrypt(&auth, entropy.as_ref())
             .map_err(|e| format!("Encryption error: {}", e))?;
 
         db::set_encrypted_seed(encrypted_seed).map_err(|e| e.to_string())?;
 
-        // Store wallet info with SPHINCS+ variant
         let wallet_info = types::WalletInfo {
             spx_variant: self.variant,
-            auth_method: types::AuthMethod::Password,
+            auth_method,
         };
         db::set_wallet_info(wallet_info).map_err(|e| e.to_string())?;
 
         Ok(())
     }
 
-    /// Generates a new SPHINCS+ account - a SPHINCS+ child account derived from the master seed, encrypts the private key with the password, and stores it.
+    /// Generates a new SPHINCS+ account - a SPHINCS+ child account derived from the master seed and stores it.
     ///
     /// **Parameters**:
-    /// - `password: SecureString` - The password used to decrypt the master seed and encrypt the child private key.
+    /// - `auth: AuthKey` - The authentication key used to decrypt the master seed.
     ///
     /// **Returns**:
     /// - `Result<String, String>` - The hex-encoded SPHINCS+ lock argument (processed SPHINCS+ public key) of the account on success, or an error on failure.
-    pub fn gen_new_account(&self, password: SecureString) -> Result<String, String> {
-        if password.is_empty() || password.is_uninitialized() {
-            return Err("Password cannot be empty or uninitialized".to_string());
-        }
+    pub fn gen_new_account(&self, auth: AuthKey) -> Result<String, String> {
+        Self::validate_auth(&auth)?;
 
         // Get and decrypt the master seed
         let payload = db::get_encrypted_seed()
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "Master seed not found".to_string())?;
-        let seed = utilities::decrypt_with_password(password.as_ref(), payload)?;
+        let seed = utilities::decrypt(&auth, payload)?;
 
         let index = Self::get_all_sphincs_lock_args()?.len() as u32;
         let (pub_key, _) = self
@@ -238,19 +256,20 @@ impl KeyVault {
         Ok(encode(lock_script_args))
     }
 
-    /// Imports master seed then encrypting it with the provided password.
+    /// Imports master seed from a mnemonic phrase, encrypts it, and stores it.
     /// Overwrites the existing master seed.
     ///
     /// **Parameters**:
     /// - `seed_phrase: SecureString` - The mnemonic phrase to import.
     ///   There're only 3 options accepted: 36, 54 or 72 words.
-    /// - `password: SecureString` - The password used to encrypt the translated master seed.
+    /// - `auth: AuthKey` - The authentication key used to encrypt the translated master seed.
+    /// - `auth_method: AuthMethod` - The authentication method to record in wallet metadata.
     ///
     /// **Returns**:
     /// - `Result<(), String>` - Ok on success, or an error on failure.
     ///
     /// **Notes**:
-    /// - The provided `password` and `seed_phrase` buffers are cleared immediately after use.
+    /// - The provided `auth` and `seed_phrase` buffers are cleared immediately after use.
     ///
     /// **Security Considerations**:
     ///
@@ -275,11 +294,10 @@ impl KeyVault {
     pub fn import_seed_phrase(
         &self,
         seed_phrase: SecureString,
-        password: SecureString,
+        auth: AuthKey,
+        auth_method: AuthMethod,
     ) -> Result<(), String> {
-        if password.is_empty() || password.is_uninitialized() {
-            return Err("Password cannot be empty or uninitialized".to_string());
-        }
+        Self::validate_auth(&auth)?;
 
         if seed_phrase.is_empty() || seed_phrase.is_uninitialized() {
             return Err("Seed phrase cannot be empty or uninitialized".to_string());
@@ -306,13 +324,12 @@ impl KeyVault {
             combined_entropy.extend(SecureVec::from_vec(mnemonic.to_entropy()));
         }
 
-        let payload = utilities::encrypt_with_password(password.as_ref(), &combined_entropy)?;
+        let payload = utilities::encrypt(&auth, &combined_entropy)?;
         db::set_encrypted_seed(payload).map_err(|e| e.to_string())?;
 
-        // Store wallet info with SPHINCS+ variant
         let wallet_info = types::WalletInfo {
             spx_variant: self.variant,
-            auth_method: types::AuthMethod::Password,
+            auth_method,
         };
         db::set_wallet_info(wallet_info).map_err(|e| e.to_string())?;
 
@@ -322,22 +339,20 @@ impl KeyVault {
     /// Exports the master seed in the form of a custom bip39 mnemonic phrase. There're only 3 options: 36, 54 or 72 words.
     ///
     /// **Parameters**:
-    /// - `password: SecureString` - The password used to decrypt the master seed.
+    /// - `auth: AuthKey` - The authentication key used to decrypt the master seed.
     ///
     /// **Returns**:
-    /// - `Result<Vec<u8>, String>` - The mnemonic as a UTF-8 encoded byte array on success, or an error on failure.
+    /// - `Result<SecureString, String>` - The mnemonic phrase on success, or an error on failure.
     ///
     /// **Warning**: Exporting the mnemonic exposes it and may pose a security risk.
-    pub fn export_seed_phrase(&self, password: SecureString) -> Result<SecureString, String> {
-        if password.is_empty() || password.is_uninitialized() {
-            return Err("Password cannot be empty or uninitialized".to_string());
-        }
+    pub fn export_seed_phrase(&self, auth: AuthKey) -> Result<SecureString, String> {
+        Self::validate_auth(&auth)?;
 
         let payload = db::get_encrypted_seed()
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "Master seed not found".to_string())?;
 
-        let entropy = utilities::decrypt_with_password(password.as_ref(), payload)?;
+        let entropy = utilities::decrypt(&auth, payload)?;
         let size = self.variant.required_entropy_size_component();
         let chunks = entropy.chunks(size);
 
@@ -356,7 +371,7 @@ impl KeyVault {
     /// Sign and produce a valid signature for the CKB Blockchain Quantum Resistant Lock Script.
     ///
     /// **Parameters**:
-    /// - `password: SecureString` - The password used to decrypt the private key.
+    /// - `auth: AuthKey` - The authentication key used to decrypt the private key.
     /// - `lock_args: String` - The hex-encoded lock script's arguments corresponding to the SPHINCS+ public key of the account that signs.
     /// - `message: Vec<u8>` - The CKB transaction message all. For details check https://github.com/xxuejie/rfcs/blob/cighash-all/rfcs/0000-ckb-tx-message-all/0000-ckb-tx-message-all.md
     ///
@@ -364,13 +379,11 @@ impl KeyVault {
     /// - `Result<Vec<u8>, String>` - The signature on success, or an error on failure.
     pub fn ckb_sign(
         &self,
-        password: SecureString,
+        auth: AuthKey,
         lock_args: String,
         message: Vec<u8>,
     ) -> Result<Vec<u8>, String> {
-        if password.is_empty() || password.is_uninitialized() {
-            return Err("Password cannot be empty or uninitialized".to_string());
-        }
+        Self::validate_auth(&auth)?;
 
         let account = db::get_account(&lock_args)
             .map_err(|e| e.to_string())?
@@ -379,8 +392,8 @@ impl KeyVault {
         // Get and decrypt the master seed
         let payload = db::get_encrypted_seed()
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| ("Master seed not found").to_string())?;
-        let seed = utilities::decrypt_with_password(password.as_ref(), payload)?;
+            .ok_or_else(|| "Master seed not found".to_string())?;
+        let seed = utilities::decrypt(&auth, payload)?;
 
         let (_, pri_key) = self.derive_spx_keys(&seed, account.index)?;
 
@@ -426,7 +439,7 @@ impl KeyVault {
 
     /// Raw SPHINCS+ sign
     /// **Parameters**:
-    /// - `password: SecureString` - The password used to decrypt the private key.
+    /// - `auth: AuthKey` - The authentication key used to decrypt the private key.
     /// - `lock_args: String` - The hex-encoded lock script's arguments corresponding to the SPHINCS+ public key of the account that signs.
     /// - `message: Vec<u8>` - The CKB transaction message all. For details check https://github.com/xxuejie/rfcs/blob/cighash-all/rfcs/0000-ckb-tx-message-all/0000-ckb-tx-message-all.md
     ///
@@ -434,13 +447,11 @@ impl KeyVault {
     /// - `Result<(Vec<u8>, Vec<u8>), String>` - A tuple of (signature, public_key) on success, or an error on failure.
     pub fn raw_sign(
         &self,
-        password: SecureString,
+        auth: AuthKey,
         lock_args: String,
         message: Vec<u8>,
     ) -> Result<(Vec<u8>, Vec<u8>), String> {
-        if password.is_empty() || password.is_uninitialized() {
-            return Err("Password cannot be empty or uninitialized".to_string());
-        }
+        Self::validate_auth(&auth)?;
 
         let account = db::get_account(&lock_args)
             .map_err(|e| e.to_string())?
@@ -449,8 +460,8 @@ impl KeyVault {
         // Get and decrypt the master seed
         let payload = db::get_encrypted_seed()
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| ("Master seed not found").to_string())?;
-        let seed = utilities::decrypt_with_password(password.as_ref(), payload)?;
+            .ok_or_else(|| "Master seed not found".to_string())?;
+        let seed = utilities::decrypt(&auth, payload)?;
 
         let (_, pri_key) = self.derive_spx_keys(&seed, account.index)?;
 
@@ -497,7 +508,7 @@ impl KeyVault {
     /// Supporting wallet recovery - quickly derives a list of lock script arguments (processed public keys).
     ///
     /// **Parameters**:
-    /// - `password: SecureString` - The password used to decrypt the master seed used for account generation.
+    /// - `auth: AuthKey` - The authentication key used to decrypt the master seed.
     /// - `start_index: u32` - The starting index for derivation.
     /// - `count: u32` - The number of sequential lock scripts arguments to derive.
     ///
@@ -505,19 +516,17 @@ impl KeyVault {
     /// - `Result<Vec<String>, String>` - A list of lock script arguments on success, or an error on failure.
     pub fn try_gen_account_batch(
         &self,
-        password: SecureString,
+        auth: AuthKey,
         start_index: u32,
         count: u32,
     ) -> Result<Vec<String>, String> {
-        if password.is_empty() || password.is_uninitialized() {
-            return Err("Password cannot be empty or uninitialized".to_string());
-        }
+        Self::validate_auth(&auth)?;
 
         // Get and decrypt the master seed
         let payload = db::get_encrypted_seed()
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "Master seed not found".to_string())?;
-        let seed = utilities::decrypt_with_password(password.as_ref(), payload)?;
+        let seed = utilities::decrypt(&auth, payload)?;
         let mut lock_args_array: Vec<String> = Vec::new();
         for index in start_index..(start_index + count) {
             let (pub_key, _) = self
@@ -534,26 +543,20 @@ impl KeyVault {
     /// Supporting wallet recovery - Recovers the wallet by deriving and storing private keys for the first N accounts.
     ///
     /// **Parameters**:
-    /// - `password: SecureString` - The password used to decrypt the master seed.
+    /// - `auth: AuthKey` - The authentication key used to decrypt the master seed.
     /// - `count: u32` - The number of accounts to recover (from index 0 to count-1).
     ///
     /// **Returns**:
     /// - `Result<Vec<String>, String>` - A list of newly generated sphincs+ lock script arguments (processed public keys) on success, or an error on failure.
-    pub fn recover_accounts(
-        &self,
-        password: SecureString,
-        count: u32,
-    ) -> Result<Vec<String>, String> {
-        if password.is_empty() || password.is_uninitialized() {
-            return Err("Password cannot be empty or uninitialized".to_string());
-        }
+    pub fn recover_accounts(&self, auth: AuthKey, count: u32) -> Result<Vec<String>, String> {
+        Self::validate_auth(&auth)?;
 
         // Get and decrypt the master seed
         let payload = db::get_encrypted_seed()
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "Master seed not found".to_string())?;
         let mut lock_args_array: Vec<String> = Vec::new();
-        let seed = utilities::decrypt_with_password(password.as_ref(), payload)?;
+        let seed = utilities::decrypt(&auth, payload)?;
         for index in 0..count {
             let (pub_key, _) = self
                 .derive_spx_keys(&seed, index)
@@ -581,54 +584,6 @@ impl KeyVault {
         self.has_master_seed().unwrap_or(false)
     }
 
-    /// Generates master seed, encrypts it with a pre-derived key, and stores it.
-    /// Returns the BIP39 mnemonic seed phrase for backup.
-    ///
-    /// **Parameters**:
-    /// - `variant: SpxVariant` - The SPHINCS+ variant to use.
-    /// - `key: &SecureVec` - The 32-byte AES-256 encryption key (e.g. from PRF).
-    /// - `auth_method: AuthMethod` - The authentication method to record in wallet info.
-    ///
-    /// **Returns**:
-    /// - `Result<String, String>` - The mnemonic seed phrase on success, or an error on failure.
-    pub fn generate_master_seed_with_key(
-        &self,
-        variant: SpxVariant,
-        key: &SecureVec,
-        auth_method: AuthMethod,
-    ) -> Result<String, String> {
-        if self.has_master_seed()? {
-            return Err("Master seed already exists".to_string());
-        }
-
-        let size = variant.required_entropy_size_total();
-        let entropy = utilities::get_random_bytes(size)
-            .map_err(|e| format!("Failed generating master seed: {}", e))?;
-        let encrypted_seed = utilities::encrypt_with_key(key, entropy.as_ref())
-            .map_err(|e| format!("Encryption error: {}", e))?;
-
-        db::set_encrypted_seed(encrypted_seed).map_err(|e| e.to_string())?;
-
-        let wallet_info = types::WalletInfo {
-            spx_variant: variant,
-            auth_method,
-        };
-        db::set_wallet_info(wallet_info).map_err(|e| e.to_string())?;
-
-        // Generate the BIP39 mnemonic from the entropy for backup.
-        let component_size = variant.required_entropy_size_component();
-        let chunks = entropy.chunks(component_size);
-        let mut words: Vec<String> = Vec::new();
-        for chunk in chunks {
-            let mnemonic = Mnemonic::from_entropy_in(Language::English, chunk)
-                .map_err(|e| format!("Mnemonic generation error: {}", e))?;
-            for word in mnemonic.words() {
-                words.push(word.to_string());
-            }
-        }
-        Ok(words.join(" "))
-    }
-
     /// Reads and returns the stored wallet info.
     ///
     /// **Returns**:
@@ -641,21 +596,23 @@ impl KeyVault {
             })
     }
 
-    /// Decrypts the master seed with a pre-derived key and returns the first account's
-    /// CKB lock script args (hex-encoded) as the wallet address.
+    /// Decrypts the master seed and returns the lock script args for the account at the given index.
     ///
     /// **Parameters**:
-    /// - `key: &SecureVec` - The 32-byte AES-256 decryption key.
+    /// - `auth: AuthKey` - The authentication key used to decrypt the master seed.
+    /// - `index: u32` - The account index to derive.
     ///
     /// **Returns**:
     /// - `Result<String, String>` - The hex-encoded lock args on success, or an error on failure.
-    pub fn get_address_with_key(&self, key: &SecureVec) -> Result<String, String> {
+    pub fn get_address(&self, auth: AuthKey, index: u32) -> Result<String, String> {
+        Self::validate_auth(&auth)?;
+
         let payload = db::get_encrypted_seed()
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "Master seed not found".to_string())?;
-        let seed = utilities::decrypt_with_key(key, payload)?;
+        let seed = utilities::decrypt(&auth, payload)?;
         let (pub_key, _) = self
-            .derive_spx_keys(&seed, 0)
+            .derive_spx_keys(&seed, index)
             .map_err(|e| format!("Key derivation error: {}", e))?;
         let lock_script_args = self.get_lock_scrip_arg(&pub_key);
         Ok(encode(lock_script_args))

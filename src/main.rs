@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
+use key_vault_core::types::{AuthKey, AuthMethod, SpxVariant};
 use key_vault_core::SecureString;
-use key_vault_core::{types::SpxVariant, KeyVault, Util};
+use key_vault_core::{KeyVault, Util};
 use rpassword::read_password;
 use std::fs;
 use std::io::{self, Write};
@@ -162,11 +163,9 @@ fn main() -> Result<(), String> {
                 }
             }
 
-            vault.generate_master_seed(password)?;
+            vault.generate_master_seed(AuthKey::Password(password), AuthMethod::Password)?;
             println!("✓ Master seed generated successfully");
-            println!(
-                "⚠️  Make sure to backup your seed phrase using the 'mnemonic export' command"
-            );
+            println!("⚠️  Make sure to backup your seed phrase using the 'mnemonic export' command");
         }
 
         Commands::Mnemonic { command } => match command {
@@ -195,7 +194,11 @@ fn main() -> Result<(), String> {
                     }
                 }
 
-                vault.import_seed_phrase(seed_phrase, password)?;
+                vault.import_seed_phrase(
+                    seed_phrase,
+                    AuthKey::Password(password),
+                    AuthMethod::Password,
+                )?;
                 println!("✓ Seed phrase imported successfully");
             }
 
@@ -204,7 +207,7 @@ fn main() -> Result<(), String> {
                 let vault = KeyVault::new(variant);
 
                 let password = promt_for_input("Enter password: ")?;
-                let seed_phrase = vault.export_seed_phrase(password)?;
+                let seed_phrase = vault.export_seed_phrase(AuthKey::Password(password))?;
 
                 if let Some(output_path) = output {
                     fs::write(output_path, &*seed_phrase).map_err(|e| e.to_string())?;
@@ -223,7 +226,7 @@ fn main() -> Result<(), String> {
                     let vault = KeyVault::new(variant);
 
                     let password = promt_for_input("Enter password: ")?;
-                    let lock_args = vault.gen_new_account(password)?;
+                    let lock_args = vault.gen_new_account(AuthKey::Password(password))?;
                     println!("✓ New account created");
                     println!("Identifier(CKB quantum lock script args): {}", lock_args);
                 }
@@ -247,7 +250,7 @@ fn main() -> Result<(), String> {
                     let vault = KeyVault::new(variant);
 
                     let password = promt_for_input("Enter password: ")?;
-                    let accounts = vault.recover_accounts(password, count)?;
+                    let accounts = vault.recover_accounts(AuthKey::Password(password), count)?;
 
                     println!("✓ Recovered {} accounts:", accounts.len());
                     for (idx, lock_args) in accounts.iter().enumerate() {
@@ -260,7 +263,8 @@ fn main() -> Result<(), String> {
                     let vault = KeyVault::new(variant);
 
                     let password = promt_for_input("Enter password: ")?;
-                    let accounts = vault.try_gen_account_batch(password, start, count)?;
+                    let accounts =
+                        vault.try_gen_account_batch(AuthKey::Password(password), start, count)?;
 
                     println!("Generated {} accounts:", accounts.len());
                     for (idx, lock_args) in accounts.iter().enumerate() {
@@ -280,7 +284,8 @@ fn main() -> Result<(), String> {
             let message_bytes = hex::decode(&message).map_err(|e| e.to_string())?;
             let password = promt_for_input("Enter password: ")?;
 
-            let (signature, pub_key) = vault.raw_sign(password, identifier, message_bytes)?;
+            let (signature, pub_key) =
+                vault.raw_sign(AuthKey::Password(password), identifier, message_bytes)?;
             println!("Signature: {}", hex::encode(signature));
             println!("Public Key: {}", hex::encode(pub_key));
         }
@@ -293,7 +298,8 @@ fn main() -> Result<(), String> {
                 let message_bytes = hex::decode(&message).map_err(|e| e.to_string())?;
                 let password = promt_for_input("Enter password: ")?;
 
-                let signature = vault.ckb_sign(password, lock_args, message_bytes)?;
+                let signature =
+                    vault.ckb_sign(AuthKey::Password(password), lock_args, message_bytes)?;
                 println!("Signature: {}", hex::encode(signature));
             }
 

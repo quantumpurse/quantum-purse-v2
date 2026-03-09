@@ -1,3 +1,4 @@
+use crate::containers::{SecureString, SecureVec};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{Shl, Shr};
@@ -51,6 +52,16 @@ impl Default for AuthMethod {
     fn default() -> Self {
         AuthMethod::Password
     }
+}
+
+/// Authentication key used to encrypt/decrypt the vault.
+/// Unifies password-based and PRF-derived key paths so that all core functions
+/// accept a single parameter regardless of how the key was obtained.
+pub enum AuthKey {
+    /// Password to be hashed with Scrypt before use as AES-256 key.
+    Password(SecureString),
+    /// Pre-derived 32-byte AES-256 key (e.g. from passkey PRF + HKDF).
+    DerivedKey(SecureVec),
 }
 
 /// Represents wallet metadata information.
