@@ -1,0 +1,18 @@
+[package]
+name = "node-manager"
+version = "0.1.0"
+edition = "2021"
+description = "CKB node process lifecycle management and unified RPC abstraction for full node, light client, and public endpoints."
+license = "MIT"
+
+[dependencies]
+ckb-jsonrpc-types = "=1.0.2"
+ckb-sdk = "5.0.0"
+ckb-types = "=1.0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+dirs = "6.0"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

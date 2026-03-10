@@ -3264,6 +3264,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "node-manager"
+version = "0.1.0"
+dependencies = [
+ "ckb-jsonrpc-types",
+ "ckb-sdk",
+ "ckb-types",
+ "dirs",
+ "libc",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "nohash-hasher"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -4,6 +4,7 @@ members = [
 	"crates/key-vault-cli",
 	"crates/key-vault-core",
 	"crates/key-vault-gui",
+	"crates/node-manager",
 	"crates/passkey-prf",
 ]
 default-members = ["crates/key-vault-cli"]
