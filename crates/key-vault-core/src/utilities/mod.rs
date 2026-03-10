@@ -1,6 +1,11 @@
 use super::constants::{ENC_SCRYPT, IV_LENGTH, PRF_HKDF_INFO, SALT_LENGTH};
 use super::types::{AuthKey, CipherPayload, ScryptParam};
-use crate::containers::SecureVec;
+use crate::containers::{SecureString, SecureVec};
+use ckb_fips205_utils::{
+    ckb_tx_message_all_from_mock_tx::{generate_ckb_tx_message_all_from_mock_tx, ScriptOrIndex},
+    Hasher,
+};
+use ckb_mock_tx_types::{MockTransaction, ReprMockTransaction};
 use aes_gcm::{
     aead::{Aead, KeyInit},
     AeadInPlace, Aes256Gcm, Key, Nonce,
@@ -217,4 +222,108 @@ pub fn decrypt(auth: &AuthKey, payload: CipherPayload) -> Result<SecureVec, Stri
         AuthKey::Password(password) => decrypt_with_password(password.as_ref(), payload),
         AuthKey::CryptoKey(key) => decrypt_with_key(key.as_ref(), payload),
     }
+}
+
+/// Generates CKB transaction message all hash.
+/// https://github.com/xxuejie/rfcs/blob/cighash-all/rfcs/0000-ckb-tx-message-all/0000-ckb-tx-message-all.md.
+///
+/// **Parameters**:
+/// - `serialized_mock_tx: Vec<u8>` - serialized CKB mock transaction.
+///
+/// **Returns**:
+/// - `Result<Vec<u8>, String>` - The CKB transaction message all hash digest on success, or an error on failure.
+pub fn get_ckb_tx_message_all(serialized_mock_tx: Vec<u8>) -> Result<Vec<u8>, String> {
+    let repr_mock_tx: ReprMockTransaction = serde_json::from_slice(&serialized_mock_tx)
+        .map_err(|e| format!("Deserialization error: {}", e))?;
+    let mock_tx: MockTransaction = repr_mock_tx.into();
+    let mut message_hasher = Hasher::message_hasher();
+    generate_ckb_tx_message_all_from_mock_tx(
+        &mock_tx,
+        ScriptOrIndex::Index(0),
+        &mut message_hasher,
+    )
+    .map_err(|e| format!("CKB_TX_MESSAGE_ALL error: {:?}", e))?;
+    let message = message_hasher.hash();
+    Ok(message.to_vec())
+}
+
+/// Check strength of a password.
+/// There is no official weighting system to calculate the strength of a password.
+/// This is just a simple implementation for ASCII passwords. Feel free to use your own password checker.
+/// By default will require at least 20 characters.
+///
+/// **Parameters**:
+/// - `password: SecureString` - the password.
+///
+/// **Returns**:
+/// - `Result<u32, String>` - The strength of the password measured in bit on success, or an error on failure.
+pub fn password_checker(password: &SecureString) -> Result<u32, String> {
+    if password.is_empty() || password.is_uninitialized() {
+        return Err("Password cannot be empty or uninitialized".to_string());
+    }
+
+    let mut has_space = false;
+    let mut has_lowercase = false;
+    let mut has_uppercase = false;
+    let mut has_digit = false;
+    let mut has_punctuation = false;
+    let mut has_other = false;
+
+    for c in password.chars() {
+        if c == ' ' {
+            has_space = true;
+        } else if c.is_ascii_lowercase() {
+            has_lowercase = true;
+        } else if c.is_ascii_uppercase() {
+            has_uppercase = true;
+        } else if c.is_ascii_digit() {
+            has_digit = true;
+        } else if c.is_ascii_punctuation() {
+            has_punctuation = true;
+        } else {
+            has_other = true;
+        }
+    }
+
+    if !has_uppercase {
+        return Err("Password must contain at least one uppercase letter!".to_string());
+    }
+    if !has_lowercase {
+        return Err("Password must contain at least one lowercase letter!".to_string());
+    }
+    if !has_digit {
+        return Err("Password must contain at least one digit!".to_string());
+    }
+    if !has_punctuation {
+        return Err("Password must contain at least one symbol!".to_string());
+    }
+    if password.len() < 20 {
+        return Err("Password must contain at least 20 characters!".to_string());
+    }
+
+    let character_set_size = if has_other {
+        256 // Entire characters space in ASCII
+    } else {
+        let mut size = 0;
+        if has_space {
+            size += 1;
+        } // Space character
+        if has_lowercase {
+            size += 26;
+        } // a-z
+        if has_uppercase {
+            size += 26;
+        } // A-Z
+        if has_digit {
+            size += 10;
+        } // 0-9
+        if has_punctuation {
+            size += 32;
+        } // ASCII punctuation
+        size
+    };
+
+    let entropy = (password.len() as f64) * (character_set_size as f64).log2();
+    let rounded_entropy = entropy.round() as u32;
+    Ok(rounded_entropy)
 }

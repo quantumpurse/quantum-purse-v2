@@ -6,11 +6,7 @@
 //! locally in files, with access authenticated via password (Scrypt) or pre-derived key (e.g. passkey PRF + HKDF).
 
 use bip39::{Language, Mnemonic};
-use ckb_fips205_utils::{
-    ckb_tx_message_all_from_mock_tx::{generate_ckb_tx_message_all_from_mock_tx, ScriptOrIndex},
-    Hasher,
-};
-use ckb_mock_tx_types::{MockTransaction, ReprMockTransaction};
+use ckb_fips205_utils::Hasher;
 use fips205::{
     traits::{KeyGen, SerDes, Signer},
     *,
@@ -171,7 +167,7 @@ impl KeyVault {
     /// - `auth_method: AuthMethod` - The authentication method to record in wallet metadata.
     ///
     /// **Returns**:
-    /// - `Result<()), String>` - Ok on success, or an error on failure.
+    /// - `Result<(), String>` - Ok on success, or an error on failure.
     ///
     /// **Security Considerations**:
     ///
@@ -619,124 +615,3 @@ impl KeyVault {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-///  Key-vault utility functions
-////////////////////////////////////////////////////////////////////////////////
-pub struct Util;
-
-impl Util {
-    /// Generates CKB transaction message all hash.
-    /// https://github.com/xxuejie/rfcs/blob/cighash-all/rfcs/0000-ckb-tx-message-all/0000-ckb-tx-message-all.md.
-    ///
-    /// **Parameters**:
-    /// - `serialized_mock_tx: Vec<u8>` - serialized CKB mock transaction.
-    ///
-    /// **Returns**:
-    /// - `Result<Vec<u8>, String>` - The CKB transaction message all hash digest on success, or an error on failure.
-    pub fn get_ckb_tx_message_all(serialized_mock_tx: Vec<u8>) -> Result<Vec<u8>, String> {
-        let repr_mock_tx: ReprMockTransaction = serde_json::from_slice(&serialized_mock_tx)
-            .map_err(|e| format!("Deserialization error: {}", e))?;
-        let mock_tx: MockTransaction = repr_mock_tx.into();
-        let mut message_hasher = Hasher::message_hasher();
-        generate_ckb_tx_message_all_from_mock_tx(
-            &mock_tx,
-            ScriptOrIndex::Index(0),
-            &mut message_hasher,
-        )
-        .map_err(|e| format!("CKB_TX_MESSAGE_ALL error: {:?}", e))?;
-        let message = message_hasher.hash();
-        Ok(message.to_vec())
-    }
-
-    /// Derives an AES-256 key from passkey PRF output using HKDF-SHA256.
-    ///
-    /// **Parameters**:
-    /// - `prf_output: &[u8]` - The 32-byte PRF output from passkey assertion.
-    ///
-    /// **Returns**:
-    /// - `Result<SecureVec, String>` - The derived 32-byte AES key on success, or an error on failure.
-    pub fn derive_key_from_prf(prf_output: &[u8]) -> Result<SecureVec, String> {
-        utilities::derive_key_from_prf(prf_output)
-    }
-
-    /// Check strength of a password.
-    /// There is no official weighting system to calculate the strength of a password.
-    /// This is just a simple implementation for ASCII passwords. Feel free to use your own password checker.
-    /// By default will require at least 20 characters
-    ///
-    /// **Parameters**:
-    /// - `password: SecureString` - the password.
-    ///
-    /// **Returns**:
-    /// - `Result<u32, String>` - The strength of the password measured in bit on success, or an error on failure.
-    pub fn password_checker(password: &SecureString) -> Result<u32, String> {
-        if password.is_empty() || password.is_uninitialized() {
-            return Err("Password cannot be empty or uninitialized".to_string());
-        }
-
-        let mut has_space = false;
-        let mut has_lowercase = false;
-        let mut has_uppercase = false;
-        let mut has_digit = false;
-        let mut has_punctuation = false;
-        let mut has_other = false;
-
-        for c in password.chars() {
-            if c == ' ' {
-                has_space = true;
-            } else if c.is_ascii_lowercase() {
-                has_lowercase = true;
-            } else if c.is_ascii_uppercase() {
-                has_uppercase = true;
-            } else if c.is_ascii_digit() {
-                has_digit = true;
-            } else if c.is_ascii_punctuation() {
-                has_punctuation = true;
-            } else {
-                has_other = true;
-            }
-        }
-
-        if !has_uppercase {
-            return Err("Password must contain at least one uppercase letter!".to_string());
-        }
-        if !has_lowercase {
-            return Err("Password must contain at least one lowercase letter!".to_string());
-        }
-        if !has_digit {
-            return Err("Password must contain at least one digit!".to_string());
-        }
-        if !has_punctuation {
-            return Err("Password must contain at least one symbol!".to_string());
-        }
-        if password.len() < 20 {
-            return Err("Password must contain at least 20 characters!".to_string());
-        }
-
-        let character_set_size = if has_other {
-            256 // Entire characters space in ASCII
-        } else {
-            let mut size = 0;
-            if has_space {
-                size += 1;
-            } // Space character
-            if has_lowercase {
-                size += 26;
-            } // a-z
-            if has_uppercase {
-                size += 26;
-            } // A-Z
-            if has_digit {
-                size += 10;
-            } // 0-9
-            if has_punctuation {
-                size += 32;
-            } // ASCII punctuation
-            size
-        };
-
-        let entropy = (password.len() as f64) * (character_set_size as f64).log2();
-        let rounded_entropy = entropy.round() as u32;
-        Ok(rounded_entropy)
-    }
-}

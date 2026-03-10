@@ -434,7 +434,7 @@ impl App {
         credential_id: &[u8],
         prf_output: &key_vault_core::SecureVec,
     ) {
-        let key = match key_vault_core::Util::derive_key_from_prf(prf_output) {
+        let key = match key_vault_core::utilities::derive_key_from_prf(prf_output) {
             Ok(k) => k,
             Err(e) => {
                 self.status = Status::Error(format!("Key derivation failed: {}", e));
@@ -452,7 +452,7 @@ impl App {
         }
 
         // Re-derive key to generate the first account.
-        let key = match key_vault_core::Util::derive_key_from_prf(prf_output) {
+        let key = match key_vault_core::utilities::derive_key_from_prf(prf_output) {
             Ok(k) => k,
             Err(e) => {
                 self.status = Status::Error(format!("Key derivation failed: {}", e));

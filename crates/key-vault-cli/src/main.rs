@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use key_vault_core::types::{AuthKey, AuthMethod, SpxVariant};
 use key_vault_core::SecureString;
-use key_vault_core::{KeyVault, Util};
+use key_vault_core::KeyVault;
 use rpassword::read_password;
 use std::fs;
 use std::io::{self, Write};
@@ -156,7 +156,7 @@ fn main() -> Result<(), String> {
                 return Err("Passwords do not match".to_string());
             }
 
-            match Util::password_checker(&password) {
+            match key_vault_core::utilities::password_checker(&password) {
                 Ok(strength) => println!("Password strength: {} bits", strength),
                 Err(e) => {
                     return Err(format!("Password validation failed: {}", e));
@@ -189,7 +189,7 @@ fn main() -> Result<(), String> {
                     return Err("Passwords do not match".to_string());
                 }
 
-                match Util::password_checker(&password) {
+                match key_vault_core::utilities::password_checker(&password) {
                     Ok(strength) => println!("Password strength: {} bits", strength),
                     Err(e) => {
                         return Err(format!("Password validation failed: {}", e));
@@ -307,7 +307,7 @@ fn main() -> Result<(), String> {
 
             CkbCommands::GetTxMessage { tx_file } => {
                 let tx_data = fs::read(tx_file).map_err(|e| e.to_string())?;
-                let message = Util::get_ckb_tx_message_all(tx_data)?;
+                let message = key_vault_core::utilities::get_ckb_tx_message_all(tx_data)?;
                 println!("CKB Tx message hash: {}", hex::encode(message));
             }
         },
