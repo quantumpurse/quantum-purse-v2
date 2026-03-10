@@ -1,4 +1,4 @@
-use super::constants::{ENC_SCRYPT, IV_LENGTH, PRF_HKDF_INFO, SALT_LENGTH};
+use super::constants::{ENC_SCRYPT, IV_LENGTH, PRF_HKDF_DOMAIN, SALT_LENGTH};
 use super::types::{AuthKey, CipherPayload, ScryptParam};
 use crate::containers::{SecureString, SecureVec};
 use ckb_fips205_utils::{
@@ -73,7 +73,7 @@ pub fn derive_hkdf_key(ikm: &[u8], info: &[u8], output_len: usize) -> Result<Sec
 /// Encrypts data using AES-256-GCM with a pre-derived key.
 ///
 /// **Parameters**:
-/// - `key: &[u8]` - The 32-byte AES-256 encryption key.
+/// - `key: &[u8]` - The 32-byte AES-256 encryption crypto key.
 /// - `input: &[u8]` - The plaintext data to encrypt.
 ///
 /// **Returns**:
@@ -191,7 +191,7 @@ pub fn decrypt_with_password(password: &[u8], payload: CipherPayload) -> Result<
 /// **Returns**:
 /// - `Result<SecureVec, String>` - The derived 32-byte AES key on success, or an error on failure.
 pub fn derive_key_from_prf(prf_output: &[u8]) -> Result<SecureVec, String> {
-    derive_hkdf_key(prf_output, PRF_HKDF_INFO, 32)
+    derive_hkdf_key(prf_output, PRF_HKDF_DOMAIN, 32)
 }
 
 /// Encrypts data using the appropriate method based on the authentication key.

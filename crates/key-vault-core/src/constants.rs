@@ -36,7 +36,7 @@ pub const ENC_SCRYPT: ScryptParam = ScryptParam {
 
 /// HKDF info string for deriving AES-256 key from passkey PRF output.
 /// Domain separation ensures this key is distinct from any other HKDF derivation in the system.
-pub const PRF_HKDF_INFO: &[u8] = b"quantumpurse-kv-prf-aes-256-gcm-key";
+pub const PRF_HKDF_DOMAIN: &[u8] = b"quantum-purse-v2-prf-aes-256-gcm-key";
 
 /// All-in-one quantum resistant lock script configuration
 pub const MULTISIG_RESERVED_FIELD_VALUE: u8 = 0x80;
