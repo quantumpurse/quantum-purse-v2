@@ -1,15 +1,18 @@
-use super::constants::{ENC_SCRYPT, IV_LENGTH, PRF_HKDF_DOMAIN, SALT_LENGTH};
+use super::constants::{
+    CKB_MAINNET_CODE_HASH, CKB_MAINNET_HASH_TYPE, CKB_TESTNET_CODE_HASH, CKB_TESTNET_HASH_TYPE,
+    ENC_SCRYPT, IV_LENGTH, PRF_HKDF_DOMAIN, SALT_LENGTH,
+};
 use super::types::{AuthKey, CipherPayload, ScryptParam};
 use crate::containers::{SecureString, SecureVec};
+use aes_gcm::{
+    aead::{Aead, KeyInit},
+    AeadInPlace, Aes256Gcm, Key, Nonce,
+};
 use ckb_fips205_utils::{
     ckb_tx_message_all_from_mock_tx::{generate_ckb_tx_message_all_from_mock_tx, ScriptOrIndex},
     Hasher,
 };
 use ckb_mock_tx_types::{MockTransaction, ReprMockTransaction};
-use aes_gcm::{
-    aead::{Aead, KeyInit},
-    AeadInPlace, Aes256Gcm, Key, Nonce,
-};
 use hex::{decode, encode};
 use hkdf::Hkdf;
 use scrypt::{scrypt, Params};
@@ -326,4 +329,54 @@ pub fn password_checker(password: &SecureString) -> Result<u32, String> {
     let entropy = (password.len() as f64) * (character_set_size as f64).log2();
     let rounded_entropy = entropy.round() as u32;
     Ok(rounded_entropy)
+}
+
+/// Converts a hex-encoded lock script argument to a full CKB address string.
+///
+/// **Parameters**:
+/// - `lock_args: &str` - Hex-encoded lock script arguments (from accounts.json).
+/// - `is_mainnet: bool` - `true` for mainnet, `false` for testnet.
+///
+/// **Returns**:
+/// - `Result<String, String>` - The bech32m-encoded CKB address on success, or an error on failure.
+pub fn lock_args_to_address(lock_args: &str, is_mainnet: bool) -> Result<String, String> {
+    use ckb_sdk::{Address, AddressPayload, NetworkType};
+    use ckb_types::{bytes::Bytes, core::ScriptHashType};
+
+    let (code_hash_hex, hash_type_str, network) = if is_mainnet {
+        (
+            CKB_MAINNET_CODE_HASH,
+            CKB_MAINNET_HASH_TYPE,
+            NetworkType::Mainnet,
+        )
+    } else {
+        (
+            CKB_TESTNET_CODE_HASH,
+            CKB_TESTNET_HASH_TYPE,
+            NetworkType::Testnet,
+        )
+    };
+
+    let code_hash_bytes = hex::decode(code_hash_hex.trim_start_matches("0x"))
+        .map_err(|e| format!("Failed to decode code_hash: {:?}", e))?;
+    let mut code_hash_array = [0u8; 32];
+    code_hash_array.copy_from_slice(&code_hash_bytes);
+
+    let script_hash_type = match hash_type_str {
+        "type" => ScriptHashType::Type,
+        "data1" => ScriptHashType::Data1,
+        _ => return Err(format!("Unsupported hash_type: {}", hash_type_str)),
+    };
+
+    let args_bytes =
+        hex::decode(lock_args).map_err(|e| format!("Failed to decode lock_args: {:?}", e))?;
+
+    let payload = AddressPayload::new_full(
+        script_hash_type,
+        code_hash_array.into(),
+        Bytes::from(args_bytes),
+    );
+    let address = Address::new(network, payload, true);
+
+    Ok(address.to_string())
 }

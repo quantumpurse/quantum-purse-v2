@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use key_vault_core::types::{AuthKey, AuthMethod, SpxVariant};
-use key_vault_core::SecureString;
 use key_vault_core::KeyVault;
+use key_vault_core::SecureString;
 use rpassword::read_password;
 use std::fs;
 use std::io::{self, Write};

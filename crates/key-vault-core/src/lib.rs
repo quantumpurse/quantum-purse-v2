@@ -614,4 +614,3 @@ impl KeyVault {
         script_args_hasher.hash()
     }
 }
-

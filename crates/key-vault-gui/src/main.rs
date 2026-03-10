@@ -45,6 +45,10 @@ enum PendingOp {
     UnlockAssert {
         pending: passkey_prf::AssertionRequest,
     },
+    /// Waiting for PRF assertion to create a new account.
+    NewAccountAssert {
+        pending: passkey_prf::AssertionRequest,
+    },
 }
 
 struct App {
@@ -55,7 +59,8 @@ struct App {
     selected_variant: SpxVariant,
 
     // Unlocked screen state.
-    address: Option<String>,
+    accounts: Vec<String>,
+    is_mainnet: bool,
     confirm_remove: bool,
 
     // In-flight passkey operation (macOS only).
@@ -76,7 +81,8 @@ impl App {
             screen,
             status: Status::None,
             selected_variant: SpxVariant::Sha2128S,
-            address: None,
+            accounts: Vec::new(),
+            is_mainnet: false,
             confirm_remove: false,
             #[cfg(target_os = "macos")]
             pending_op: None,
@@ -167,26 +173,66 @@ impl App {
         self.show_status(ui);
     }
 
-    fn show_unlocked(&mut self, ui: &mut egui::Ui) {
+    fn show_unlocked(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         ui.heading("Wallet Unlocked");
         ui.add_space(8.0);
 
-        if let Some(ref addr) = self.address {
-            ui.label("CKB Lock Args:");
+        // Network toggle.
+        ui.horizontal(|ui| {
+            ui.label("Network:");
+            ui.selectable_value(&mut self.is_mainnet, false, "Testnet");
+            ui.selectable_value(&mut self.is_mainnet, true, "Mainnet");
+        });
+        ui.add_space(8.0);
+
+        // Account list.
+        if self.accounts.is_empty() {
+            ui.label("No accounts yet.");
+        } else {
+            ui.label(format!("Accounts ({}):", self.accounts.len()));
             ui.add_space(4.0);
-            egui::Frame::group(ui.style()).show(ui, |ui| {
-                ui.add(
-                    egui::TextEdit::singleline(&mut addr.as_str())
-                        .desired_width(f32::INFINITY)
-                        .font(egui::TextStyle::Monospace),
-                );
-            });
+            for (i, lock_args) in self.accounts.iter().enumerate() {
+                let address_text = match key_vault_core::utilities::lock_args_to_address(
+                    lock_args,
+                    self.is_mainnet,
+                ) {
+                    Ok(addr) => addr,
+                    Err(_) => format!("0x{}", lock_args),
+                };
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    ui.label(format!("Account #{}", i));
+                    ui.add(
+                        egui::TextEdit::singleline(&mut address_text.as_str())
+                            .desired_width(f32::INFINITY)
+                            .font(egui::TextStyle::Monospace),
+                    );
+                });
+                ui.add_space(4.0);
+            }
         }
 
-        ui.add_space(12.0);
+        ui.add_space(8.0);
+
+        #[cfg(target_os = "macos")]
+        let is_busy = self.pending_op.is_some();
+        #[cfg(not(target_os = "macos"))]
+        let is_busy = false;
+
         ui.horizontal(|ui| {
+            let new_acct_button = ui.add_enabled(
+                !is_busy,
+                egui::Button::new(if is_busy {
+                    "Creating account..."
+                } else {
+                    "New Account"
+                }),
+            );
+            if new_acct_button.clicked() {
+                self.start_create_new_account(frame);
+            }
+
             if ui.button("Lock Wallet").clicked() {
-                self.address = None;
+                self.accounts.clear();
                 self.confirm_remove = false;
                 self.screen = Screen::Locked;
                 self.status = Status::None;
@@ -203,7 +249,7 @@ impl App {
                 if self.confirm_remove {
                     match KeyVault::clear_database() {
                         Ok(()) => {
-                            self.address = None;
+                            self.accounts.clear();
                             self.confirm_remove = false;
                             self.screen = Screen::Setup;
                             self.status = Status::Info("Wallet removed successfully.".to_string());
@@ -324,6 +370,59 @@ impl App {
         }
     }
 
+    /// Kick off async PRF assertion to create a new account (requires seed decryption).
+    fn start_create_new_account(&mut self, frame: &mut eframe::Frame) {
+        #[cfg(target_os = "macos")]
+        {
+            let window = match Self::get_ns_window(frame) {
+                Ok(w) => w,
+                Err(e) => {
+                    self.status = Status::Error(format!("Failed to get window: {}", e));
+                    return;
+                }
+            };
+
+            let temp_vault = KeyVault::new(SpxVariant::Sha2128S);
+            let wallet_info = match temp_vault.read_wallet_info() {
+                Ok(info) => info,
+                Err(e) => {
+                    self.status = Status::Error(format!("Failed to read wallet info: {}", e));
+                    return;
+                }
+            };
+
+            let credential_id = match &wallet_info.auth_method {
+                AuthMethod::PasskeyPrf { credential_id } => credential_id.clone(),
+                AuthMethod::Password => {
+                    self.status =
+                        Status::Error("This wallet uses password auth, not Touch ID.".to_string());
+                    return;
+                }
+            };
+
+            let rp_id = "quantumpurse.org";
+            let salt = b"quantumpurse-kv-seed-encryption\0";
+            match passkey_prf::assert_async(&window, rp_id, &credential_id, Some(salt)) {
+                Ok(pending) => {
+                    self.pending_op = Some(PendingOp::NewAccountAssert { pending });
+                    self.status = Status::Info("Authenticate with Touch ID...".to_string());
+                }
+                Err(passkey_prf::PrfError::Cancelled) => {
+                    self.status = Status::Info("Cancelled.".to_string());
+                }
+                Err(e) => {
+                    self.status = Status::Error(format!("PRF assertion failed: {}", e));
+                }
+            }
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = frame;
+            self.status = Status::Error("Passkey PRF is only supported on macOS.".to_string());
+        }
+    }
+
     /// Poll pending passkey operations each frame (macOS only).
     #[cfg(target_os = "macos")]
     fn poll_pending(&mut self) {
@@ -423,6 +522,25 @@ impl App {
                     self.status = Status::Error(format!("Authentication failed: {}", e));
                 }
             },
+            PendingOp::NewAccountAssert { pending } => match pending.poll() {
+                None => {
+                    self.pending_op = Some(PendingOp::NewAccountAssert { pending });
+                }
+                Some(Ok(Some(prf_output))) => {
+                    self.finish_create_new_account(&prf_output);
+                }
+                Some(Ok(None)) => {
+                    self.status = Status::Error(
+                        "Internal error: Expected encryption key from authentication.".to_string(),
+                    );
+                }
+                Some(Err(passkey_prf::PrfError::Cancelled)) => {
+                    self.status = Status::Info("Cancelled.".to_string());
+                }
+                Some(Err(e)) => {
+                    self.status = Status::Error(format!("Authentication failed: {}", e));
+                }
+            },
         }
     }
 
@@ -469,28 +587,58 @@ impl App {
         // Read lock args from accounts.json (no decryption needed).
         match KeyVault::get_all_sphincs_lock_args() {
             Ok(lock_args) => {
-                self.address = lock_args.first().cloned();
+                self.accounts = lock_args;
                 self.screen = Screen::Unlocked;
                 self.status = Status::Info("Wallet created successfully.".to_string());
             }
             Err(e) => {
-                self.status = Status::Error(format!("Failed to read address: {}", e));
+                self.status = Status::Error(format!("Failed to read accounts: {}", e));
                 self.screen = Screen::Locked;
             }
         }
     }
 
     /// Complete wallet unlock after credential assertion succeeds.
-    /// Reads the first account's lock args from accounts.json (no decryption needed).
+    /// Reads all account lock args from accounts.json (no decryption needed).
     fn finish_unlock(&mut self) {
         match KeyVault::get_all_sphincs_lock_args() {
             Ok(lock_args) => {
-                self.address = lock_args.first().cloned();
+                self.accounts = lock_args;
                 self.screen = Screen::Unlocked;
                 self.status = Status::None;
             }
             Err(e) => {
                 self.status = Status::Error(format!("Failed to unlock: {}", e));
+            }
+        }
+    }
+
+    /// Complete new account creation after receiving the PRF output.
+    fn finish_create_new_account(&mut self, prf_output: &key_vault_core::SecureVec) {
+        let key = match key_vault_core::utilities::derive_key_from_prf(prf_output) {
+            Ok(k) => k,
+            Err(e) => {
+                self.status = Status::Error(format!("Key derivation failed: {}", e));
+                return;
+            }
+        };
+
+        let variant = match KeyVault::get_spx_variant() {
+            Ok(v) => v,
+            Err(e) => {
+                self.status = Status::Error(format!("Failed to read wallet variant: {}", e));
+                return;
+            }
+        };
+
+        let vault = KeyVault::new(variant);
+        match vault.gen_new_account(AuthKey::CryptoKey(key)) {
+            Ok(lock_args) => {
+                self.accounts.push(lock_args);
+                self.status = Status::Info("New account created.".to_string());
+            }
+            Err(e) => {
+                self.status = Status::Error(format!("Failed to create account: {}", e));
             }
         }
     }
@@ -507,7 +655,7 @@ impl eframe::App for App {
             match self.screen.clone() {
                 Screen::Setup => self.show_setup(ui, frame),
                 Screen::Locked => self.show_locked(ui, frame),
-                Screen::Unlocked => self.show_unlocked(ui),
+                Screen::Unlocked => self.show_unlocked(ui, frame),
             }
         });
 
