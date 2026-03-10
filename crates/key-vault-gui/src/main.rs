@@ -312,8 +312,7 @@ impl App {
                     self.status = Status::Info("Cancelled.".to_string());
                 }
                 Err(e) => {
-                    self.status =
-                        Status::Error(format!("Credential assertion failed: {}", e));
+                    self.status = Status::Error(format!("Credential assertion failed: {}", e));
                 }
             }
         }
@@ -360,7 +359,8 @@ impl App {
                         let rp_id = "quantumpurse.org";
                         let salt = b"quantumpurse-kv-seed-encryption\0";
                         let credential_id = registration.credential_id.clone();
-                        match passkey_prf::assert_async(&window, rp_id, &credential_id, Some(salt)) {
+                        match passkey_prf::assert_async(&window, rp_id, &credential_id, Some(salt))
+                        {
                             Ok(assert_pending) => {
                                 self.pending_op = Some(PendingOp::PostRegistrationAssert {
                                     pending: assert_pending,
