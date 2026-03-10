@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 key-vault-core = { path = "../key-vault-core" }
+node-manager = { path = "../node-manager" }
 passkey-prf = { path = "../passkey-prf" }
 eframe = "0.33"
 hex = "0.4.3"

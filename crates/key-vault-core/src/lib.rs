@@ -14,7 +14,7 @@ use fips205::{
 use hex::encode;
 use zeroize::Zeroize;
 
-mod constants;
+pub mod constants;
 mod containers;
 pub mod db;
 mod macros;
@@ -239,7 +239,7 @@ impl KeyVault {
             .map_err(|e| format!("Key derivation error: {}", e))?;
 
         // Calculate lock script args and encrypt corresponding private key
-        let lock_script_args = self.get_lock_scrip_arg(&pub_key);
+        let lock_script_args = self.get_lock_script_arg(&pub_key);
 
         // Store to DB
         let account = SphincsPlusAccount {
@@ -530,7 +530,7 @@ impl KeyVault {
                 .map_err(|e| format!("Key derivation error: {}", e))?;
 
             // Calculate lock script args
-            let lock_script_args = self.get_lock_scrip_arg(&pub_key);
+            let lock_script_args = self.get_lock_script_arg(&pub_key);
             lock_args_array.push(encode(lock_script_args));
         }
         Ok(lock_args_array)
@@ -559,7 +559,7 @@ impl KeyVault {
                 .map_err(|e| format!("Key derivation error: {}", e))?;
 
             // Calculate lock script args and encrypt corresponding private key
-            let lock_script_args = self.get_lock_scrip_arg(&pub_key);
+            let lock_script_args = self.get_lock_script_arg(&pub_key);
             // Store to DB
             let account = SphincsPlusAccount {
                 index: 0, // Init to 0; Will be set correctly in add_account
@@ -599,7 +599,7 @@ impl KeyVault {
     ///
     /// **Returns**:
     /// - `[u8; 32]` - The lock script arguments as a byte array.
-    fn get_lock_scrip_arg(&self, public_key: &SecureVec) -> [u8; 32] {
+    fn get_lock_script_arg(&self, public_key: &SecureVec) -> [u8; 32] {
         let all_in_one_config: [u8; 4] = [
             MULTISIG_RESERVED_FIELD_VALUE,
             REQUIRED_FIRST_N,

@@ -128,7 +128,7 @@ fn parse_variant(variant_str: &str) -> Result<SpxVariant, String> {
     }
 }
 
-fn promt_for_input(prompt: &str) -> Result<SecureString, String> {
+fn prompt_for_input(prompt: &str) -> Result<SecureString, String> {
     print!("{}", prompt);
     io::stdout().flush().map_err(|e| e.to_string())?;
     let input = read_password().map_err(|e| e.to_string())?;
@@ -150,8 +150,8 @@ fn main() -> Result<(), String> {
                 variant.required_bip39_size_in_word_total()
             );
 
-            let password = promt_for_input("Enter password: ")?;
-            let confirm = promt_for_input("Confirm password: ")?;
+            let password = prompt_for_input("Enter password: ")?;
+            let confirm = prompt_for_input("Confirm password: ")?;
             if password != confirm {
                 return Err("Passwords do not match".to_string());
             }
@@ -180,11 +180,11 @@ fn main() -> Result<(), String> {
                         fs::read_to_string(file_path).map_err(|e| e.to_string())?,
                     )
                 } else {
-                    promt_for_input("Enter seed phrase: ")?
+                    prompt_for_input("Enter seed phrase: ")?
                 };
 
-                let password = promt_for_input("Enter password: ")?;
-                let confirm = promt_for_input("Confirm password: ")?;
+                let password = prompt_for_input("Enter password: ")?;
+                let confirm = prompt_for_input("Confirm password: ")?;
                 if password != confirm {
                     return Err("Passwords do not match".to_string());
                 }
@@ -208,7 +208,7 @@ fn main() -> Result<(), String> {
                 let variant = KeyVault::get_spx_variant()?;
                 let vault = KeyVault::new(variant);
 
-                let password = promt_for_input("Enter password: ")?;
+                let password = prompt_for_input("Enter password: ")?;
                 let seed_phrase = vault.export_seed_phrase(AuthKey::Password(password))?;
 
                 if let Some(output_path) = output {
@@ -227,7 +227,7 @@ fn main() -> Result<(), String> {
                     let variant = KeyVault::get_spx_variant()?;
                     let vault = KeyVault::new(variant);
 
-                    let password = promt_for_input("Enter password: ")?;
+                    let password = prompt_for_input("Enter password: ")?;
                     let lock_args = vault.gen_new_account(AuthKey::Password(password))?;
                     println!("✓ New account created");
                     println!("Identifier(CKB quantum lock script args): {}", lock_args);
@@ -251,7 +251,7 @@ fn main() -> Result<(), String> {
                     let variant = KeyVault::get_spx_variant()?;
                     let vault = KeyVault::new(variant);
 
-                    let password = promt_for_input("Enter password: ")?;
+                    let password = prompt_for_input("Enter password: ")?;
                     let accounts = vault.recover_accounts(AuthKey::Password(password), count)?;
 
                     println!("✓ Recovered {} accounts:", accounts.len());
@@ -264,7 +264,7 @@ fn main() -> Result<(), String> {
                     let variant = KeyVault::get_spx_variant()?;
                     let vault = KeyVault::new(variant);
 
-                    let password = promt_for_input("Enter password: ")?;
+                    let password = prompt_for_input("Enter password: ")?;
                     let accounts =
                         vault.try_gen_account_batch(AuthKey::Password(password), start, count)?;
 
@@ -284,7 +284,7 @@ fn main() -> Result<(), String> {
             let vault = KeyVault::new(variant);
 
             let message_bytes = hex::decode(&message).map_err(|e| e.to_string())?;
-            let password = promt_for_input("Enter password: ")?;
+            let password = prompt_for_input("Enter password: ")?;
 
             let (signature, pub_key) =
                 vault.raw_sign(AuthKey::Password(password), identifier, message_bytes)?;
@@ -298,7 +298,7 @@ fn main() -> Result<(), String> {
                 let vault = KeyVault::new(variant);
 
                 let message_bytes = hex::decode(&message).map_err(|e| e.to_string())?;
-                let password = promt_for_input("Enter password: ")?;
+                let password = prompt_for_input("Enter password: ")?;
 
                 let signature =
                     vault.ckb_sign(AuthKey::Password(password), lock_args, message_bytes)?;
