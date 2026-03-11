@@ -1,13 +1,13 @@
 use clap::{Parser, Subcommand};
-use key_vault_core::types::{AuthKey, AuthMethod, SpxVariant};
-use key_vault_core::KeyVault;
-use key_vault_core::SecureString;
+use qpv2_core::types::{AuthKey, AuthMethod, SpxVariant};
+use qpv2_core::KeyVault;
+use qpv2_core::SecureString;
 use rpassword::read_password;
 use std::fs;
 use std::io::{self, Write};
 
 #[derive(Parser)]
-#[command(name = "qpkv")]
+#[command(name = "qpv2")]
 #[command(about = "A SPHINCS+-based key management CLI with integrated CKB blockchain address resolution.", long_about = None)]
 struct Cli {
     #[command(subcommand)]
@@ -34,7 +34,7 @@ enum Commands {
     },
     /// Generate raw SPHINCS+ signature for any message (returns signature and public key)
     Sign {
-        /// Account identifier (CKB quantum lock args). Run `qpkv account list` to see all accounts
+        /// Account identifier (CKB quantum lock args). Run `qpv2 account list` to see all accounts
         #[arg(short, long)]
         identifier: String,
         /// Message to sign (hex-encoded)
@@ -156,7 +156,7 @@ fn main() -> Result<(), String> {
                 return Err("Passwords do not match".to_string());
             }
 
-            match key_vault_core::utilities::password_checker(&password) {
+            match qpv2_core::utilities::password_checker(&password) {
                 Ok(strength) => println!("Password strength: {} bits", strength),
                 Err(e) => {
                     return Err(format!("Password validation failed: {}", e));
@@ -189,7 +189,7 @@ fn main() -> Result<(), String> {
                     return Err("Passwords do not match".to_string());
                 }
 
-                match key_vault_core::utilities::password_checker(&password) {
+                match qpv2_core::utilities::password_checker(&password) {
                     Ok(strength) => println!("Password strength: {} bits", strength),
                     Err(e) => {
                         return Err(format!("Password validation failed: {}", e));
@@ -236,7 +236,7 @@ fn main() -> Result<(), String> {
                 AccountCommands::List => {
                     let accounts = KeyVault::get_all_sphincs_lock_args()?;
                     if accounts.is_empty() {
-                        println!("No accounts found. Run `qpkv account new` to generate a new SPHINCS+ account");
+                        println!("No accounts found. Run `qpv2 account new` to generate a new SPHINCS+ account");
                     } else {
                         println!("Accounts ({}):", accounts.len());
                         println!("  Index  Account Identifier (CKB Quantum Lock Args)");
@@ -307,7 +307,7 @@ fn main() -> Result<(), String> {
 
             CkbCommands::GetTxMessage { tx_file } => {
                 let tx_data = fs::read(tx_file).map_err(|e| e.to_string())?;
-                let message = key_vault_core::utilities::get_ckb_tx_message_all(tx_data)?;
+                let message = qpv2_core::utilities::get_ckb_tx_message_all(tx_data)?;
                 println!("CKB Tx message hash: {}", hex::encode(message));
             }
         },
@@ -332,7 +332,7 @@ fn main() -> Result<(), String> {
         Commands::Info => {
             let variant = KeyVault::get_spx_variant()?;
             let accounts = KeyVault::get_all_sphincs_lock_args()?;
-            let data_path = key_vault_core::db::get_data_dir().map_err(|e| e.to_string())?;
+            let data_path = qpv2_core::db::get_data_dir().map_err(|e| e.to_string())?;
 
             println!("\n╔════════════════════════════════════════════════════════════════╗");
             println!("║                     Wallet Information                         ║");

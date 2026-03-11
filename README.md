@@ -1,9 +1,6 @@
-# QPKV CLI
+# QPV2
 
-A cross-platform CLI tool for managing FIPS205 (formerly SPHINCS+) cryptographic keys with CKB blockchain address resolution integrated.
-
-<img width="768" height="274" alt="Screenshot 2026-02-06 at 3 22 34 PM" src="https://github.com/user-attachments/assets/35608cda-48bf-41e3-b84b-20ad5c43ca32" />
-
+Quantum Purse version 2 built entirely in Rust. Secure and Performant. There are 2 UI options: CLI and GUI (egui).
 
 ###### <u>Feature list</u>:
 
@@ -36,7 +33,7 @@ SPHINCS+ offers 12 parameter sets, grouped by three security parameters: 128-bit
 
 ### Key Derivation Function
 
-From the single master seed, quantum-purse-key-vault can derive many child keys using Key Derivation Function(KDF). Pure Hash-based KDF is the top choice for this project. Although using [BIP32](https://en.bitcoin.it/wiki/BIP_0032) carefully (with only hardened key derivation and never generate ECDSA public keys) can satisfy however the benefits of the tricky usage at this point(2025) is unclear. Thus, a fresh start with HKDF seems better because it's simpler - meaning the implementation will be easier to audit.
+From the single master seed, quantum-purse-v2 can derive many child keys using Key Derivation Function(KDF). Pure Hash-based KDF is the top choice for this project. Although using [BIP32](https://en.bitcoin.it/wiki/BIP_0032) carefully (with only hardened key derivation and never generate ECDSA public keys) can satisfy however the benefits of the tricky usage at this point(2025) is unclear. Thus, a fresh start with HKDF seems better because it's simpler - meaning the implementation will be easier to audit.
 
 ###### Key Tree:
 ```
@@ -70,56 +67,65 @@ master_seed
 
 ### Build
 ```shell
-# Build release binary
-cargo build --release
+# Build dev binary
+./build.sh
+
+# Build prod binary
+./build.sh --release
 
 # Run tests
 cargo test
-
-# Install globally
-cargo install --path .
 ```
 
-### Usage
+### Use CLI
 
 The CLI provides the following commands:
 
 ```shell
 # Initialize a new wallet
-qpkv init --variant <VARIANT> # example: qpkv init --variant Sha2256S
+qpv2 init --variant <VARIANT> # example: qpv2 init --variant Sha2256S
 
 # ImportMnemonic an existing wallet
-qpkv mnemonic import
+qpv2 mnemonic import
 
 # ExportMnemonic seed phrase
-qpkv mnemonic export
+qpv2 mnemonic export
 
 # Generate a new account
-qpkv account new
+qpv2 account new
 
 # List all accounts
-qpkv account list
+qpv2 account list
 
 # Sign and generate a raw sphincs+ signature for any message
-qpkv sign --identifier <IDENTIFIER> --message <MESSAGE>
+qpv2 sign --identifier <IDENTIFIER> --message <MESSAGE>
 
 # Sign a message - designed for CKB transaction
-qpkv ckb sign --lock-args <LOCK_ARGS> --message <MESSAGE>
+qpv2 ckb sign --lock-args <LOCK_ARGS> --message <MESSAGE>
 
 # Recover accounts
-qpkv ckb recover --count <COUNT>
+qpv2 ckb recover --count <COUNT>
 
 # Generate account batch for discovery
-qpkv ckb try-gen-batch --start <START> --count <COUNT> # example: qpkv try-gen-batch --start 0 --count 10
+qpv2 ckb try-gen-batch --start <START> --count <COUNT> # example: qpv2 try-gen-batch --start 0 --count 10
 
 # Get CKB transaction message hash
-qpkv ckb get-ckb-tx-message --tx-file <TX_FILE>
+qpv2 ckb get-ckb-tx-message --tx-file <TX_FILE>
 
 # Clear all vault data
-qpkv clear
+qpv2 clear
 
 # Show help
-qpkv --help
+qpv2 --help
+```
+
+### Use GUI
+```shell
+# launch the dev gui
+./launch.sh
+
+# launch the prod gui
+./launch.sh --release
 ```
 
 ### Data Storage

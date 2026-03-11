@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 if [[ "${1:-}" == "--release" ]]; then
-	open "target/release/qpkv.app"
+	open "target/release/qpv2.app"
 else
-	./target/debug/qpkv.app/Contents/MacOS/qpkv-gui
+	./target/debug/qpv2.app/Contents/MacOS/qpv2-gui
 fi

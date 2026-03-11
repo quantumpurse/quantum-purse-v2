@@ -1,16 +1,16 @@
 [package]
-name = "key-vault-gui"
+name = "qpv2-gui"
 version = "0.1.0"
 edition = "2021"
 description = "GUI for SPHINCS+ key vault with Passkey PRF / Touch ID support."
 license = "MIT"
 
 [[bin]]
-name = "qpkv-gui"
+name = "qpv2-gui"
 path = "src/main.rs"
 
 [dependencies]
-key-vault-core = { path = "../key-vault-core" }
+qpv2-core = { path = "../qpv2-core" }
 node-manager = { path = "../node-manager" }
 passkey-prf = { path = "../passkey-prf" }
 eframe = "0.33"

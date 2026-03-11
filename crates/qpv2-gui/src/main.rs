@@ -4,8 +4,8 @@
 mod window_handle;
 
 use eframe::egui;
-use key_vault_core::types::{AuthKey, AuthMethod, SpxVariant};
-use key_vault_core::KeyVault;
+use qpv2_core::types::{AuthKey, AuthMethod, SpxVariant};
+use qpv2_core::KeyVault;
 use node_manager::{CkbRpc, NodeConfig, NodeType};
 use std::collections::HashMap;
 use std::sync::mpsc;
@@ -229,7 +229,7 @@ impl App {
             .default_width(140.0)
             .show(ctx, |ui| {
                 ui.add_space(8.0);
-                ui.heading("QPKV");
+                ui.heading("QPV2");
                 ui.add_space(16.0);
 
                 // Tab buttons.
@@ -323,7 +323,7 @@ impl App {
         } else {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 for (i, lock_args) in self.accounts.clone().iter().enumerate() {
-                    let address_text = match key_vault_core::utilities::lock_args_to_address(
+                    let address_text = match qpv2_core::utilities::lock_args_to_address(
                         lock_args,
                         self.is_mainnet(),
                     ) {
@@ -692,7 +692,7 @@ impl App {
             };
 
             let rp_id = "quantumpurse.org";
-            let user_id = b"qpkv-user";
+            let user_id = b"qpv2-user";
             let user_name = "tea";
 
             match passkey_prf::register_passkey_async(&window, rp_id, user_id, user_name) {
@@ -915,9 +915,9 @@ impl App {
         &mut self,
         variant: SpxVariant,
         credential_id: &[u8],
-        prf_output: &key_vault_core::SecureVec,
+        prf_output: &qpv2_core::SecureVec,
     ) {
-        let key = match key_vault_core::utilities::derive_key_from_prf(prf_output) {
+        let key = match qpv2_core::utilities::derive_key_from_prf(prf_output) {
             Ok(k) => k,
             Err(e) => {
                 self.status = Status::Error(format!("Key derivation failed: {}", e));
@@ -935,7 +935,7 @@ impl App {
         }
 
         // Re-derive key to generate the first account.
-        let key = match key_vault_core::utilities::derive_key_from_prf(prf_output) {
+        let key = match qpv2_core::utilities::derive_key_from_prf(prf_output) {
             Ok(k) => k,
             Err(e) => {
                 self.status = Status::Error(format!("Key derivation failed: {}", e));
@@ -981,8 +981,8 @@ impl App {
     }
 
     /// Complete new account creation after receiving the PRF output.
-    fn finish_create_new_account(&mut self, prf_output: &key_vault_core::SecureVec) {
-        let key = match key_vault_core::utilities::derive_key_from_prf(prf_output) {
+    fn finish_create_new_account(&mut self, prf_output: &qpv2_core::SecureVec) {
+        let key = match qpv2_core::utilities::derive_key_from_prf(prf_output) {
             Ok(k) => k,
             Err(e) => {
                 self.status = Status::Error(format!("Key derivation failed: {}", e));
@@ -1103,13 +1103,13 @@ fn fetch_account_balance(
 ) -> Result<u64, node_manager::NodeManagerError> {
     let (code_hash, hash_type) = if is_mainnet {
         (
-            key_vault_core::constants::CKB_MAINNET_CODE_HASH,
-            key_vault_core::constants::CKB_MAINNET_HASH_TYPE,
+            qpv2_core::constants::CKB_MAINNET_CODE_HASH,
+            qpv2_core::constants::CKB_MAINNET_HASH_TYPE,
         )
     } else {
         (
-            key_vault_core::constants::CKB_TESTNET_CODE_HASH,
-            key_vault_core::constants::CKB_TESTNET_HASH_TYPE,
+            qpv2_core::constants::CKB_TESTNET_CODE_HASH,
+            qpv2_core::constants::CKB_TESTNET_HASH_TYPE,
         )
     };
 
@@ -1140,7 +1140,7 @@ fn main() -> eframe::Result {
     };
 
     eframe::run_native(
-        "qpkv",
+        "qpv2",
         native_options,
         Box::new(|cc| Ok(Box::new(App::new(cc)))),
     )

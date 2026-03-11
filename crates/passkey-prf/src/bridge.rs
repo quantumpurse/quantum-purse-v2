@@ -5,7 +5,7 @@
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use key_vault_core::SecureVec;
+use qpv2_core::SecureVec;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, NSObject, ProtocolObject};
 use objc2::{

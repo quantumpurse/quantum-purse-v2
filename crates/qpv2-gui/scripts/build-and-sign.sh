@@ -10,7 +10,7 @@
 #      https://quantumpurse.org/.well-known/apple-app-site-association
 #
 # Usage:
-#   ./crates/key-vault-gui/scripts/build-and-sign.sh [--release] [--profile <path>]
+#   ./crates/qpv2-gui/scripts/build-and-sign.sh [--release] [--profile <path>]
 
 set -euo pipefail
 
@@ -19,9 +19,9 @@ GUI_DIR="$(dirname "$SCRIPT_DIR")"
 PROJECT_ROOT="$(cd "$GUI_DIR/../.." && pwd)"
 
 # Configuration.
-BINARY_NAME="qpkv-gui"
+BINARY_NAME="qpv2-gui"
 BUNDLE_ID="org.quantumpurse.wallet"
-APP_NAME="qpkv"
+APP_NAME="qpv2"
 SIGNING_IDENTITY="Developer ID Application: Pham Tung (KPSL53752R)"
 TEAM_ID="KPSL53752R"
 ENTITLEMENTS="$GUI_DIR/entitlements.plist"
@@ -53,7 +53,7 @@ TARGET_DIR="$PROJECT_ROOT/target/$BUILD_TYPE"
 APP_BUNDLE="$TARGET_DIR/$APP_NAME.app"
 
 echo "==> Building $BINARY_NAME ($BUILD_TYPE)..."
-cargo build -p key-vault-gui $CARGO_FLAGS
+cargo build -p qpv2-gui $CARGO_FLAGS
 
 echo "==> Creating app bundle at $APP_BUNDLE..."
 rm -rf "$APP_BUNDLE"

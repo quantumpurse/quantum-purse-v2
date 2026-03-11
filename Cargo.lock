@@ -2908,55 +2908,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "key-vault-cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "hex",
- "key-vault-core",
- "rpassword",
-]
-
-[[package]]
-name = "key-vault-core"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "anyhow",
- "bip39",
- "ckb-fips205-utils",
- "ckb-mock-tx-types",
- "ckb-sdk",
- "ckb-types",
- "dirs",
- "fips205",
- "getrandom 0.4.1",
- "hex",
- "hkdf",
- "scrypt",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.18",
- "zeroize",
-]
-
-[[package]]
-name = "key-vault-gui"
-version = "0.1.0"
-dependencies = [
- "eframe",
- "hex",
- "key-vault-core",
- "node-manager",
- "objc2 0.6.4",
- "objc2-app-kit 0.3.2",
- "objc2-foundation 0.3.2",
- "passkey-prf",
- "raw-window-handle",
-]
-
-[[package]]
 name = "khronos-egl"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3881,11 +3832,11 @@ version = "0.1.0"
 dependencies = [
  "block2 0.6.2",
  "getrandom 0.4.1",
- "key-vault-core",
  "objc2 0.6.4",
  "objc2-app-kit 0.3.2",
  "objc2-authentication-services",
  "objc2-foundation 0.3.2",
+ "qpv2-core",
 ]
 
 [[package]]
@@ -4223,6 +4174,55 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7186d3822593aa4393561d186d1393b3923e9d6163d3fbfd6e825e3e6cf3e6a8"
 dependencies = [
  "num-traits",
+]
+
+[[package]]
+name = "qpv2-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "hex",
+ "qpv2-core",
+ "rpassword",
+]
+
+[[package]]
+name = "qpv2-core"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "anyhow",
+ "bip39",
+ "ckb-fips205-utils",
+ "ckb-mock-tx-types",
+ "ckb-sdk",
+ "ckb-types",
+ "dirs",
+ "fips205",
+ "getrandom 0.4.1",
+ "hex",
+ "hkdf",
+ "scrypt",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.18",
+ "zeroize",
+]
+
+[[package]]
+name = "qpv2-gui"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "hex",
+ "node-manager",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
+ "passkey-prf",
+ "qpv2-core",
+ "raw-window-handle",
 ]
 
 [[package]]

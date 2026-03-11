@@ -6,7 +6,7 @@ description = "macOS Passkey PRF bridge via AuthenticationServices framework."
 license = "MIT"
 
 [dependencies]
-key-vault-core = { path = "../key-vault-core" }
+qpv2-core = { path = "../qpv2-core" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
