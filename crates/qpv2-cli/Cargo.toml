@@ -2,8 +2,8 @@
 name = "qpv2-cli"
 version = "0.1.0"
 edition = "2021"
-description = "A SPHINCS+ key management CLI for CKB blockchain."
-repository = "https://github.com/quantumpurse/key-vault-cli.git"
+description = "A SPHINCS+ wallet for CKB blockchain."
+repository = "https://github.com/quantumpurse/quantum-purse-v2.git"
 license = "MIT"
 
 [[bin]]
