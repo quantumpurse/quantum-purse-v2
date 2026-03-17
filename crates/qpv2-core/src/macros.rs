@@ -111,3 +111,32 @@ macro_rules! raw_spx_sign {
         Ok((signature.as_slice().to_vec(), pub_key_slice.to_vec()))
     }};
 }
+
+#[macro_export]
+macro_rules! raw_spx_verify {
+    ($module:ident, $public_key:expr, $message:expr, $signature:expr) => {{
+        use $module::{PublicKey, PK_LEN, SIG_LEN};
+        if $public_key.len() != PK_LEN {
+            return Err(format!(
+                "Invalid public key length: expected {}, got {}",
+                PK_LEN,
+                $public_key.len()
+            ));
+        }
+        if $signature.len() != SIG_LEN {
+            return Err(format!(
+                "Invalid signature length: expected {}, got {}",
+                SIG_LEN,
+                $signature.len()
+            ));
+        }
+        let pk_array: &[u8; PK_LEN] = $public_key.try_into().unwrap();
+        let sig_array: &[u8; SIG_LEN] = $signature.try_into().unwrap();
+
+        let pk = PublicKey::try_from_bytes(pk_array)
+            .map_err(|e| format!("Failed to deserialize public key: {:?}", e))?;
+
+        let is_valid = pk.verify($message, sig_array, &[]);
+        Ok(is_valid)
+    }};
+}

@@ -4,9 +4,9 @@
 mod window_handle;
 
 use eframe::egui;
+use node_manager::{CkbRpc, NodeConfig, NodeType};
 use qpv2_core::types::{AuthKey, AuthMethod, SpxVariant};
 use qpv2_core::KeyVault;
-use node_manager::{CkbRpc, NodeConfig, NodeType};
 use std::collections::HashMap;
 use std::sync::mpsc;
 

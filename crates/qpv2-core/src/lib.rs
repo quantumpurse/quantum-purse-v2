@@ -8,7 +8,7 @@
 use bip39::{Language, Mnemonic};
 use ckb_fips205_utils::Hasher;
 use fips205::{
-    traits::{KeyGen, SerDes, Signer},
+    traits::{KeyGen, SerDes, Signer, Verifier},
     *,
 };
 use hex::encode;
@@ -497,6 +497,60 @@ impl KeyVault {
             }
             SpxVariant::Shake256F => {
                 raw_spx_sign!(slh_dsa_shake_256f, pri_key, &message, self.variant)
+            }
+        }
+    }
+
+    /// Raw SPHINCS+ verify
+    /// **Parameters**:
+    /// - `public_key: &[u8]` - SPHINCS+ public key associated with the signature.
+    /// - `message: &[u8]` - The message from which the signature was created.
+    /// - `signature: &[u8]` - The SPHINCS+ signature to verify.
+    ///
+    /// **Returns**:
+    /// - `Result<bool, String>` - A tuple of (signature, public_key) on success, or an error on failure.
+    pub fn raw_verify(
+        &self,
+        public_key: &[u8],
+        message: &[u8],
+        signature: &[u8],
+    ) -> Result<bool, String> {
+        match self.variant {
+            SpxVariant::Sha2128S => {
+                raw_spx_verify!(slh_dsa_sha2_128s, public_key, message, signature)
+            }
+            SpxVariant::Sha2128F => {
+                raw_spx_verify!(slh_dsa_sha2_128f, public_key, message, signature)
+            }
+            SpxVariant::Shake128S => {
+                raw_spx_verify!(slh_dsa_shake_128s, public_key, message, signature)
+            }
+            SpxVariant::Shake128F => {
+                raw_spx_verify!(slh_dsa_shake_128f, public_key, message, signature)
+            }
+            SpxVariant::Sha2192S => {
+                raw_spx_verify!(slh_dsa_sha2_192s, public_key, message, signature)
+            }
+            SpxVariant::Sha2192F => {
+                raw_spx_verify!(slh_dsa_sha2_192f, public_key, message, signature)
+            }
+            SpxVariant::Shake192S => {
+                raw_spx_verify!(slh_dsa_shake_192s, public_key, message, signature)
+            }
+            SpxVariant::Shake192F => {
+                raw_spx_verify!(slh_dsa_shake_192f, public_key, message, signature)
+            }
+            SpxVariant::Sha2256S => {
+                raw_spx_verify!(slh_dsa_sha2_256s, public_key, message, signature)
+            }
+            SpxVariant::Sha2256F => {
+                raw_spx_verify!(slh_dsa_sha2_256f, public_key, message, signature)
+            }
+            SpxVariant::Shake256S => {
+                raw_spx_verify!(slh_dsa_shake_256s, public_key, message, signature)
+            }
+            SpxVariant::Shake256F => {
+                raw_spx_verify!(slh_dsa_shake_256f, public_key, message, signature)
             }
         }
     }

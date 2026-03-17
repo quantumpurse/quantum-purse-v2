@@ -5,7 +5,6 @@
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use qpv2_core::SecureVec;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, NSObject, ProtocolObject};
 use objc2::{
@@ -14,6 +13,7 @@ use objc2::{
 use objc2_app_kit::NSWindow;
 use objc2_authentication_services::*;
 use objc2_foundation::*;
+use qpv2_core::SecureVec;
 
 /// Result of a successful passkey registration.
 #[derive(Debug, Clone)]

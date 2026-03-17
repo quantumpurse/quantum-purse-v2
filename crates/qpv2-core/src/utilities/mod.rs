@@ -331,7 +331,7 @@ pub fn password_checker(password: &SecureString) -> Result<u32, String> {
     Ok(rounded_entropy)
 }
 
-/// Converts a hex-encoded lock script argument to a full CKB address string.
+/// Converts a hex-encoded lock script argument to a full CKB address string (post 2021 format).
 ///
 /// **Parameters**:
 /// - `lock_args: &str` - Hex-encoded lock script arguments (from accounts.json).
