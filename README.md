@@ -83,40 +83,40 @@ The CLI provides the following commands:
 
 ```shell
 # Initialize a new wallet
-qpv2 init --variant <VARIANT> # example: qpv2 init --variant Sha2256S
+qpv2-cli init --variant <VARIANT> # example: qpv2-cli init --variant Sha2256S
 
 # ImportMnemonic an existing wallet
-qpv2 mnemonic import
+qpv2-cli mnemonic import
 
 # ExportMnemonic seed phrase
-qpv2 mnemonic export
+qpv2-cli mnemonic export
 
 # Generate a new account
-qpv2 account new
+qpv2-cli account new
 
 # List all accounts
-qpv2 account list
+qpv2-cli account list
 
 # Sign and generate a raw sphincs+ signature for any message
-qpv2 sign --identifier <IDENTIFIER> --message <MESSAGE>
+qpv2-cli sign --identifier <IDENTIFIER> --message <MESSAGE>
 
 # Sign a message - designed for CKB transaction
-qpv2 ckb sign --lock-args <LOCK_ARGS> --message <MESSAGE>
+qpv2-cli ckb sign --lock-args <LOCK_ARGS> --message <MESSAGE>
 
 # Recover accounts
-qpv2 ckb recover --count <COUNT>
+qpv2-cli ckb recover --count <COUNT>
 
 # Generate account batch for discovery
-qpv2 ckb try-gen-batch --start <START> --count <COUNT> # example: qpv2 try-gen-batch --start 0 --count 10
+qpv2-cli ckb try-gen-batch --start <START> --count <COUNT> # example: qpv2-cli try-gen-batch --start 0 --count 10
 
 # Get CKB transaction message hash
-qpv2 ckb get-ckb-tx-message --tx-file <TX_FILE>
+qpv2-cli ckb get-ckb-tx-message --tx-file <TX_FILE>
 
 # Clear all vault data
-qpv2 clear
+qpv2-cli clear
 
 # Show help
-qpv2 --help
+qpv2-cli --help
 ```
 
 ### Use GUI
