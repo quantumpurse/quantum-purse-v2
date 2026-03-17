@@ -34,12 +34,27 @@ enum Commands {
     },
     /// Generate raw SPHINCS+ signature for any message (returns signature and public key)
     Sign {
-        /// Account identifier (CKB quantum lock args). Run `qpv2 account list` to see all accounts
+        /// Account identifier (CKB quantum lock args). Run `qpv2-cli account list` to see all accounts
         #[arg(short, long)]
         identifier: String,
         /// Message to sign (hex-encoded)
         #[arg(short, long)]
         message: String,
+    },
+    /// Verify raw SPHINCS+ signature
+    Verify {
+        /// SPHINCS+ variant (Sha2128F, Sha2128S, Sha2192F, Sha2192S, Sha2256F, Sha2256S, Shake128F, Shake128S, Shake192F, Shake192S, Shake256F, Shake256S)
+        #[arg(short, long)]
+        variant: String,
+        /// Public key (hex-encoded)
+        #[arg(short, long)]
+        public_key: String,
+        /// Message to verify (hex-encoded)
+        #[arg(short, long)]
+        message: String,
+        /// Signature to verify (hex-encoded)
+        #[arg(short, long)]
+        signature: String,
     },
     /// CKB blockchain operations (sign/get-tx-message)
     Ckb {
@@ -236,7 +251,7 @@ fn main() -> Result<(), String> {
                 AccountCommands::List => {
                     let accounts = KeyVault::get_all_sphincs_lock_args()?;
                     if accounts.is_empty() {
-                        println!("No accounts found. Run `qpv2 account new` to generate a new SPHINCS+ account");
+                        println!("No accounts found. Run `qpv2-cli account new` to generate a new SPHINCS+ account");
                     } else {
                         println!("Accounts ({}):", accounts.len());
                         println!("  Index  Account Identifier (CKB Quantum Lock Args)");
@@ -290,6 +305,28 @@ fn main() -> Result<(), String> {
                 vault.raw_sign(AuthKey::Password(password), identifier, message_bytes)?;
             println!("Signature: {}", hex::encode(signature));
             println!("Public Key: {}", hex::encode(pub_key));
+        }
+
+        Commands::Verify {
+            variant,
+            public_key,
+            message,
+            signature,
+        } => {
+            let variant = parse_variant(&variant)?;
+            let message_bytes = hex::decode(&message).map_err(|e| e.to_string())?;
+            let public_key_bytes = hex::decode(&public_key).map_err(|e| e.to_string())?;
+            let signature_bytes = hex::decode(&signature).map_err(|e| e.to_string())?;
+
+            let vault = KeyVault::new(variant);
+
+            let is_valid =
+                vault.raw_verify(&public_key_bytes, &message_bytes, &signature_bytes)?;
+            if is_valid {
+                println!("✓ Signature is valid");
+            } else {
+                println!("✗ Signature is invalid");
+            }
         }
 
         Commands::Ckb { command } => match command {
