@@ -1,0 +1,1112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CKBvault — Nervos Wallet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Space+Mono:wght@400;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #080c10;
+    --surface: #0d1318;
+    --surface2: #111920;
+    --border: rgba(0,255,180,0.10);
+    --border2: rgba(0,255,180,0.22);
+    --accent: #00ffb4;
+    --accent2: #00c8ff;
+    --accent3: #9b7fd4;
+    --danger: #ff4d6d;
+    --warn: #ffd166;
+    --text: #e8f4f0;
+    --muted: #5a7a70;
+    --dim: #1e2e28;
+    --radius: 16px;
+    --radius-sm: 9px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    overflow: hidden;
+  }
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(ellipse 55% 45% at 12% 18%, rgba(0,255,180,0.05) 0%, transparent 60%),
+      radial-gradient(ellipse 45% 55% at 88% 78%, rgba(0,200,255,0.05) 0%, transparent 60%),
+      radial-gradient(ellipse 35% 35% at 50% 50%, rgba(123,94,167,0.03) 0%, transparent 60%);
+    pointer-events: none; z-index: 0;
+  }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    width: 236px; min-height: 100vh;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    z-index: 10; position: relative; flex-shrink: 0;
+  }
+  .logo {
+    padding: 26px 22px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .logo-mark {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800; font-size: 21px;
+    letter-spacing: -0.5px; color: var(--accent);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .logo-icon {
+    width: 34px; height: 34px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 17px; box-shadow: 0 0 22px rgba(0,255,180,0.3);
+  }
+  .logo-sub {
+    font-family: 'Space Mono', monospace;
+    font-size: 8.5px; color: var(--muted);
+    letter-spacing: 2px; margin-top: 2px;
+    text-transform: uppercase;
+  }
+
+  .node-selector {
+    margin: 14px 14px 0;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 9px 12px; cursor: pointer;
+    transition: border-color 0.2s;
+  }
+  .node-selector:hover { border-color: var(--border2); }
+  .node-label {
+    font-size: 8.5px; text-transform: uppercase;
+    letter-spacing: 1.5px; color: var(--muted);
+    margin-bottom: 4px; font-family: 'Space Mono', monospace;
+  }
+  .node-current {
+    display: flex; align-items: center;
+    justify-content: space-between;
+    font-size: 13px; font-weight: 500;
+  }
+  .node-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 6px var(--accent);
+    margin-right: 7px; animation: pulse 2s infinite;
+    display: inline-block;
+  }
+  @keyframes pulse {
+    0%,100%{opacity:1;box-shadow:0 0 6px var(--accent);}
+    50%{opacity:.6;box-shadow:0 0 14px var(--accent);}
+  }
+  .node-dropdown {
+    display: none; margin: 4px 14px 0;
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius-sm); overflow: hidden;
+  }
+  .node-dropdown.open { display: block; animation: fadeIn .15s ease; }
+  .node-option {
+    padding: 9px 13px; font-size: 12.5px; cursor: pointer;
+    display: flex; align-items: center; gap: 8px;
+    transition: background .15s;
+    border-bottom: 1px solid rgba(255,255,255,.04);
+  }
+  .node-option:last-child { border-bottom: none; }
+  .node-option:hover { background: rgba(0,255,180,.07); }
+  .node-option.active { color: var(--accent); }
+  .node-badge {
+    font-size: 8.5px; padding: 2px 6px;
+    border-radius: 4px; margin-left: auto;
+    font-family: 'Space Mono', monospace; letter-spacing: .5px;
+  }
+  .badge-full { background: rgba(0,255,180,.12); color: var(--accent); }
+  .badge-light { background: rgba(0,200,255,.12); color: var(--accent2); }
+  .badge-rpc { background: rgba(255,209,102,.12); color: var(--warn); }
+  .badge-fiber { background: rgba(155,127,212,.18); color: var(--accent3); }
+
+  nav { padding: 18px 10px; flex: 1; }
+  .nav-section {
+    font-size: 8.5px; text-transform: uppercase;
+    letter-spacing: 2px; color: var(--muted);
+    padding: 0 10px; margin: 14px 0 5px;
+    font-family: 'Space Mono', monospace;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px; border-radius: var(--radius-sm);
+    cursor: pointer; font-size: 13px; color: var(--muted);
+    transition: all .15s; margin-bottom: 1px;
+  }
+  .nav-item:hover { background: rgba(0,255,180,.06); color: var(--text); }
+  .nav-item.active {
+    background: rgba(0,255,180,.10);
+    color: var(--accent); font-weight: 500;
+  }
+  .nav-icon { width: 18px; text-align: center; font-size: 15px; }
+
+  .account-area {
+    padding: 14px; border-top: 1px solid var(--border);
+  }
+  .account-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 13px; cursor: pointer;
+    transition: border-color .2s;
+  }
+  .account-card:hover { border-color: var(--border2); }
+  .account-name { font-size: 12.5px; font-weight: 500; margin-bottom: 3px; }
+  .account-addr {
+    font-family: 'Space Mono', monospace;
+    font-size: 9px; color: var(--muted);
+  }
+
+  /* ── MAIN ── */
+  .main {
+    flex: 1; overflow-y: auto;
+    padding: 30px 34px;
+    position: relative; z-index: 1;
+  }
+  .main::-webkit-scrollbar { width: 3px; }
+  .main::-webkit-scrollbar-thumb { background: var(--dim); border-radius: 3px; }
+
+  .view { display: none; }
+  .view.active { display: block; animation: fadeIn .22s ease; }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(5px);}to{opacity:1;transform:none;} }
+
+  .topbar {
+    display: flex; align-items: flex-start;
+    justify-content: space-between; margin-bottom: 28px;
+  }
+  .page-header h1 {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700; font-size: 26px;
+    letter-spacing: -.5px; margin-bottom: 3px;
+  }
+  .page-header p { font-size: 13px; color: var(--muted); font-weight: 300; }
+  .topbar-chips { display: flex; gap: 8px; align-items: center; }
+  .chip {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 13px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 20px; font-size: 11.5px; color: var(--muted);
+    cursor: default;
+  }
+
+  /* BALANCE HERO */
+  .balance-hero {
+    background: linear-gradient(135deg,rgba(0,255,180,.07),rgba(0,200,255,.04),rgba(123,94,167,.05));
+    border: 1px solid var(--border2);
+    border-radius: 20px; padding: 30px 34px;
+    margin-bottom: 22px; position: relative; overflow: hidden;
+  }
+  .balance-hero::after {
+    content:''; position: absolute;
+    top: -40px; right: -40px;
+    width: 200px; height: 200px; border-radius: 50%;
+    background: radial-gradient(circle,rgba(0,255,180,.08),transparent 70%);
+    pointer-events: none;
+  }
+  .balance-label {
+    font-size: 10px; text-transform: uppercase;
+    letter-spacing: 2px; color: var(--muted);
+    font-family: 'Space Mono', monospace; margin-bottom: 8px;
+  }
+  .balance-amount {
+    font-family: 'Syne', sans-serif; font-size: 46px;
+    font-weight: 800; letter-spacing: -2px; line-height: 1;
+    margin-bottom: 5px;
+  }
+  .balance-amount span { color: var(--accent); }
+  .balance-usd { font-size: 13.5px; color: var(--muted); font-weight: 300; }
+  .balance-meta {
+    display: flex; gap: 30px;
+    margin-top: 22px; padding-top: 18px;
+    border-top: 1px solid var(--border);
+  }
+  .bm-label {
+    font-size: 9px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 1.5px;
+    font-family: 'Space Mono', monospace; margin-bottom: 4px;
+  }
+  .bm-val { font-size: 15px; font-weight: 600; font-family: 'Syne', sans-serif; }
+
+  /* QUICK ACTIONS */
+  .quick-actions { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 26px; }
+  .qa-btn {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px 10px;
+    text-align: center; cursor: pointer;
+    transition: all .2s; font-size: 12px; color: var(--muted); font-weight: 500;
+  }
+  .qa-btn:hover {
+    border-color: var(--border2); background: rgba(0,255,180,.05);
+    color: var(--text); transform: translateY(-2px);
+  }
+  .qa-icon { font-size: 20px; margin-bottom: 7px; display: block; }
+
+  /* TX LIST */
+  .section-title {
+    font-family: 'Syne', sans-serif; font-size: 15px;
+    font-weight: 700; margin-bottom: 12px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .s-badge {
+    font-family: 'Space Mono', monospace; font-size: 8.5px;
+    padding: 2px 8px; background: rgba(0,255,180,.08);
+    color: var(--accent); border-radius: 20px;
+  }
+  .tx-list { display: flex; flex-direction: column; gap: 7px; }
+  .tx-item {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 13px 17px;
+    display: flex; align-items: center; gap: 13px;
+    cursor: pointer; transition: all .15s;
+  }
+  .tx-item:hover { border-color: var(--border2); background: var(--surface2); }
+  .tx-icon {
+    width: 36px; height: 36px; border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; flex-shrink: 0;
+  }
+  .tx-out { background: rgba(255,77,109,.12); }
+  .tx-in { background: rgba(0,255,180,.10); }
+  .tx-dao { background: rgba(155,127,212,.15); }
+  .tx-info { flex: 1; }
+  .tx-name { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+  .tx-hash { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--muted); }
+  .tx-amount { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 14px; text-align: right; }
+  .tx-time { font-size: 10px; color: var(--muted); text-align: right; margin-top: 2px; }
+  .neg { color: var(--danger); } .pos { color: var(--accent); }
+
+  /* FORM */
+  .form-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 20px; padding: 26px 30px; max-width: 560px;
+  }
+  .form-group { margin-bottom: 18px; }
+  .form-label {
+    font-size: 9.5px; text-transform: uppercase;
+    letter-spacing: 1.5px; color: var(--muted);
+    font-family: 'Space Mono', monospace;
+    margin-bottom: 7px; display: block;
+  }
+  .form-input {
+    width: 100%; background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 15px; color: var(--text);
+    font-family: 'Space Mono', monospace;
+    font-size: 12.5px; outline: none; transition: border-color .2s;
+  }
+  .form-input:focus { border-color: var(--accent); }
+  .form-input::placeholder { color: var(--muted); }
+  .amount-wrap { position: relative; }
+  .amount-suffix {
+    position: absolute; right: 13px; top: 50%;
+    transform: translateY(-50%);
+    font-family: 'Space Mono', monospace; font-size: 10.5px;
+    color: var(--accent); letter-spacing: 1px;
+  }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .btn {
+    display: inline-flex; align-items: center;
+    justify-content: center; gap: 7px;
+    padding: 12px 22px; border-radius: var(--radius-sm);
+    font-size: 13px; font-weight: 600; cursor: pointer;
+    border: none; transition: all .2s; font-family: 'DM Sans', sans-serif;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg,var(--accent),var(--accent2));
+    color: #050c0a; box-shadow: 0 4px 20px rgba(0,255,180,.25);
+  }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 28px rgba(0,255,180,.35); }
+  .btn-secondary {
+    background: transparent; border: 1px solid var(--border2); color: var(--text);
+  }
+  .btn-secondary:hover { background: rgba(0,255,180,.06); border-color: var(--accent); }
+  .btn-danger {
+    background: rgba(255,77,109,.1); border: 1px solid rgba(255,77,109,.3); color: var(--danger);
+  }
+  .btn-danger:hover { background: rgba(255,77,109,.2); }
+  .fee-info {
+    display: flex; align-items: center;
+    justify-content: space-between; padding: 11px 15px;
+    background: rgba(0,255,180,.04); border-radius: var(--radius-sm);
+    border: 1px solid var(--border); margin-bottom: 18px; font-size: 12px;
+  }
+  .fee-label { color: var(--muted); }
+  .fee-val { font-family: 'Space Mono', monospace; font-size: 10.5px; color: var(--accent); }
+  .full-w { width: 100%; }
+  .gap-10 { display: flex; gap: 10px; }
+  .mt-16 { margin-top: 16px; }
+  .mt-24 { margin-top: 24px; }
+
+  /* DAO */
+  .dao-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; margin-bottom: 26px; }
+  .dao-action-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 18px; padding: 22px 20px;
+    cursor: pointer; transition: all .2s; position: relative; overflow: hidden;
+  }
+  .dao-action-card:hover { border-color: var(--border2); transform: translateY(-3px); box-shadow: 0 8px 30px rgba(0,0,0,.3); }
+  .dao-card-accent {
+    position: absolute; top: 0; right: 0;
+    width: 70px; height: 70px;
+    border-radius: 0 0 0 70px; opacity: .07;
+  }
+  .da-deposit { background: var(--accent); }
+  .da-req { background: var(--warn); }
+  .da-withdraw { background: var(--accent2); }
+  .dao-action-icon { font-size: 26px; margin-bottom: 10px; display: block; }
+  .dao-action-title { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 14px; margin-bottom: 5px; }
+  .dao-action-desc { font-size: 11px; color: var(--muted); line-height: 1.5; font-weight: 300; }
+
+  .dao-stats { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 26px; }
+  .dao-stat {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px; text-align: center;
+  }
+  .dao-stat-n { font-family: 'Syne', sans-serif; font-size: 21px; font-weight: 800; color: var(--accent); margin-bottom: 4px; }
+  .dao-stat-l { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; font-family: 'Space Mono', monospace; }
+
+  .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th {
+    padding: 11px 17px; text-align: left;
+    font-family: 'Space Mono', monospace; font-size: 8.5px;
+    text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted);
+    border-bottom: 1px solid var(--border); background: var(--surface2); font-weight: 400;
+  }
+  td { padding: 13px 17px; border-bottom: 1px solid rgba(255,255,255,.03); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(0,255,180,.02); }
+  .status-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 9px; border-radius: 20px; font-size: 9px;
+    font-family: 'Space Mono', monospace;
+  }
+  .s-active { background: rgba(0,255,180,.1); color: var(--accent); }
+  .s-pending { background: rgba(255,209,102,.1); color: var(--warn); }
+  .s-ready { background: rgba(0,200,255,.1); color: var(--accent2); }
+
+  /* NODES */
+  .nodes-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 14px; margin-bottom: 26px; }
+  .node-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 18px; padding: 22px; transition: all .2s; cursor: pointer;
+  }
+  .node-card:hover { border-color: var(--border2); transform: translateY(-2px); }
+  .node-card.connected { border-color: rgba(0,255,180,.22); }
+  .node-card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 12px; }
+  .node-type-icon {
+    font-size: 24px; background: var(--surface2);
+    width: 46px; height: 46px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .node-status-pill {
+    font-family: 'Space Mono', monospace; font-size: 8.5px;
+    padding: 4px 10px; border-radius: 20px;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .ns-online { background: rgba(0,255,180,.1); color: var(--accent); }
+  .ns-syncing { background: rgba(255,209,102,.1); color: var(--warn); }
+  .ns-offline { background: rgba(255,77,109,.1); color: var(--danger); }
+  .node-card-title { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700; margin-bottom: 3px; }
+  .node-card-sub { font-size: 11.5px; color: var(--muted); margin-bottom: 13px; font-weight: 300; }
+  .node-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  .node-metric { background: var(--surface2); padding: 9px 11px; border-radius: 8px; }
+  .nm-label { font-size: 8.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; font-family: 'Space Mono', monospace; margin-bottom: 3px; }
+  .nm-val { font-family: 'Space Mono', monospace; font-size: 11.5px; }
+  .progress-bar { height: 3px; background: var(--dim); border-radius: 2px; margin-top: 12px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg,var(--accent),var(--accent2)); }
+  .progress-label { display: flex; justify-content: space-between; font-size: 9px; color: var(--muted); margin-top: 4px; font-family: 'Space Mono', monospace; }
+
+  /* FIBER */
+  .fiber-ch {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 14px 17px;
+    display: flex; align-items: center; gap: 15px;
+    margin-bottom: 8px;
+  }
+  .fiber-bars {
+    flex: 1; height: 7px; background: var(--dim);
+    border-radius: 4px; overflow: hidden; position: relative;
+  }
+  .fiber-local {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    border-radius: 4px;
+    background: linear-gradient(90deg,var(--accent3),var(--accent));
+  }
+  .fiber-info { min-width: 110px; text-align: right; }
+  .fiber-peer { font-family: 'Space Mono', monospace; font-size: 9.5px; color: var(--muted); margin-bottom: 4px; }
+  .fiber-cap { font-size: 13px; font-weight: 600; font-family: 'Syne', sans-serif; }
+  .icon-btn {
+    width: 30px; height: 30px; border-radius: 7px;
+    background: var(--surface2); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-size: 12px; transition: all .15s;
+  }
+  .icon-btn:hover { border-color: var(--border2); background: rgba(0,255,180,.08); }
+
+  /* ACCOUNTS */
+  .auth-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 28px; }
+  .auth-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 18px; padding: 24px 20px;
+    cursor: pointer; transition: all .2s; text-align: center;
+  }
+  .auth-card:hover { border-color: var(--border2); background: rgba(0,255,180,.04); transform: translateY(-3px); }
+  .auth-card-icon { font-size: 30px; margin-bottom: 12px; display: block; }
+  .auth-card-title { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 14px; margin-bottom: 5px; }
+  .auth-card-desc { font-size: 11px; color: var(--muted); line-height: 1.5; font-weight: 300; }
+
+  .acct-row {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 14px 18px;
+    display: flex; align-items: center; gap: 13px;
+    cursor: pointer; transition: all .15s; margin-bottom: 8px;
+  }
+  .acct-row:hover { border-color: var(--border2); }
+  .acct-row.current { border-color: rgba(0,255,180,.28); background: rgba(0,255,180,.04); }
+  .acct-avatar {
+    width: 38px; height: 38px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; font-weight: 700; font-family: 'Syne', sans-serif; flex-shrink: 0;
+  }
+  .av1 { background: linear-gradient(135deg,#00ffb4,#00c8ff); color: #050c0a; }
+  .av2 { background: linear-gradient(135deg,#7b5ea7,#c06080); color: #fff; }
+  .av3 { background: linear-gradient(135deg,#ffd166,#ef476f); color: #050c0a; }
+  .acct-info { flex: 1; }
+  .acct-name { font-size: 13.5px; font-weight: 500; margin-bottom: 3px; }
+  .acct-address { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--muted); }
+  .acct-balance { text-align: right; }
+  .acct-bal-amt { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 14px; }
+  .acct-bal-sub { font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .acct-actions { display: flex; gap: 5px; }
+
+  /* MODAL */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.72); backdrop-filter: blur(8px);
+    z-index: 100; display: none;
+    align-items: center; justify-content: center;
+  }
+  .modal-overlay.open { display: flex; animation: fadeIn .2s ease; }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border2);
+    border-radius: 20px; padding: 30px;
+    width: 470px; max-width: 92vw; max-height: 88vh;
+    overflow-y: auto; position: relative;
+  }
+  .modal-title { font-family: 'Syne', sans-serif; font-size: 19px; font-weight: 700; margin-bottom: 5px; }
+  .modal-sub { font-size: 12.5px; color: var(--muted); margin-bottom: 22px; font-weight: 300; }
+  .modal-close {
+    position: absolute; top: 18px; right: 18px;
+    width: 30px; height: 30px; border-radius: 7px;
+    background: var(--surface2); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-size: 13px; color: var(--muted); transition: all .15s;
+  }
+  .modal-close:hover { border-color: var(--border2); color: var(--text); }
+
+  .seed-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 7px; margin: 14px 0 18px; }
+  .seed-word {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 7px; padding: 9px 11px;
+    font-family: 'Space Mono', monospace; font-size: 11px;
+    display: flex; gap: 7px; align-items: center;
+  }
+  .seed-num { font-size: 8.5px; color: var(--muted); min-width: 14px; }
+  .seed-w { color: var(--accent); }
+
+  .warning-box {
+    background: rgba(255,209,102,.07); border: 1px solid rgba(255,209,102,.25);
+    border-radius: var(--radius-sm); padding: 11px 14px;
+    font-size: 11.5px; color: var(--warn); margin-bottom: 18px;
+    line-height: 1.55; display: flex; gap: 9px; align-items: flex-start;
+  }
+  .modal-actions { display: flex; gap: 9px; }
+
+  .auth-tabs { display: flex; gap: 3px; background: var(--surface2); padding: 3px; border-radius: var(--radius-sm); margin-bottom: 18px; }
+  .auth-tab {
+    flex: 1; padding: 8px; text-align: center;
+    font-size: 12px; border-radius: 6px;
+    cursor: pointer; color: var(--muted); transition: all .15s;
+  }
+  .auth-tab.active { background: var(--surface); color: var(--text); border: 1px solid var(--border2); }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="logo">
+    <div class="logo-mark">
+      <div class="logo-icon">⬡</div>
+      <div>QPV2<div class="logo-sub">Nervos Network</div></div>
+    </div>
+  </div>
+
+  <div class="node-selector" onclick="toggleDD()">
+    <div class="node-label">Active Node</div>
+    <div class="node-current">
+      <span><span class="node-dot"></span><span id="active-node">Full Node</span></span>
+      <span style="color:var(--muted);font-size:10px">▾</span>
+    </div>
+  </div>
+  <div class="node-dropdown" id="ndd">
+    <div class="node-option active" onclick="selNode('Full Node',this)">🖥️ Full Node <span class="node-badge badge-full">FULL</span></div>
+    <div class="node-option" onclick="selNode('Light Node',this)">💡 Light Node <span class="node-badge badge-light">LIGHT</span></div>
+    <div class="node-option" onclick="selNode('Public RPC',this)">🌐 Public RPC <span class="node-badge badge-rpc">RPC</span></div>
+    <div class="node-option" onclick="selNode('Fiber Node',this)">⚡ Fiber Node <span class="node-badge badge-fiber">FIBER</span></div>
+  </div>
+
+  <nav>
+    <div class="nav-section">Wallet</div>
+    <div class="nav-item active" onclick="go('dashboard',this)"><span class="nav-icon">◈</span> Dashboard</div>
+    <div class="nav-item" onclick="go('transfer',this)"><span class="nav-icon">↑</span> Transfer</div>
+    <div class="nav-section">NervosDAO</div>
+    <div class="nav-item" onclick="go('dao',this)"><span class="nav-icon">⬡</span> DAO Operations</div>
+    <div class="nav-section">Network</div>
+    <div class="nav-item" onclick="go('nodes',this)"><span class="nav-icon">◉</span> Node Manager</div>
+    <div class="nav-item" onclick="go('fiber',this)"><span class="nav-icon">⚡</span> Fiber Channels</div>
+    <div class="nav-section">Security</div>
+    <div class="nav-item" onclick="go('accounts',this)"><span class="nav-icon">◎</span> Accounts</div>
+  </nav>
+
+  <div class="account-area">
+    <div class="account-card" onclick="go('accounts',document.querySelectorAll('.nav-item')[5])">
+      <div class="account-name">Account Alpha</div>
+      <div class="account-addr">ckb1qzqg8u7…5f7d3</div>
+    </div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<main class="main">
+
+  <!-- DASHBOARD -->
+  <div class="view active" id="view-dashboard">
+    <div class="topbar">
+      <div class="page-header"><h1>Dashboard</h1><p>Portfolio overview & activity</p></div>
+      <div class="topbar-chips">
+        <div class="chip">🔔 0 alerts</div>
+        <div class="chip">⛓️ #14,298,441</div>
+      </div>
+    </div>
+
+    <div class="balance-hero">
+      <div class="balance-label">Total Balance</div>
+      <div class="balance-amount">142,840.<span>50</span> CKB</div>
+      <div class="balance-usd">≈ $1,284.72 USD</div>
+      <div class="balance-meta">
+        <div><div class="bm-label">Available</div><div class="bm-val" style="color:var(--accent)">88,400 CKB</div></div>
+        <div><div class="bm-label">DAO Locked</div><div class="bm-val" style="color:var(--accent3)">54,000 CKB</div></div>
+        <div><div class="bm-label">Fiber</div><div class="bm-val" style="color:var(--accent2)">440 CKB</div></div>
+        <div><div class="bm-label">DAO APY</div><div class="bm-val" style="color:var(--warn)">~3.2%</div></div>
+      </div>
+    </div>
+
+    <div class="quick-actions">
+      <div class="qa-btn" onclick="go('transfer',document.querySelectorAll('.nav-item')[1])"><span class="qa-icon">↑</span>Send</div>
+      <div class="qa-btn"><span class="qa-icon">↓</span>Receive</div>
+      <div class="qa-btn" onclick="go('dao',document.querySelectorAll('.nav-item')[2])"><span class="qa-icon">⬡</span>DAO</div>
+      <div class="qa-btn" onclick="go('fiber',document.querySelectorAll('.nav-item')[4])"><span class="qa-icon">⚡</span>Fiber</div>
+    </div>
+
+    <div class="section-title">Recent Transactions <span class="s-badge">7 total</span></div>
+    <div class="tx-list">
+      <div class="tx-item">
+        <div class="tx-icon tx-dao">⬡</div>
+        <div class="tx-info"><div class="tx-name">DAO Deposit</div><div class="tx-hash">0x3f9a…c21b</div></div>
+        <div><div class="tx-amount neg">−10,000 CKB</div><div class="tx-time">2h ago</div></div>
+      </div>
+      <div class="tx-item">
+        <div class="tx-icon tx-in">↓</div>
+        <div class="tx-info"><div class="tx-name">Received from ckb1…8f2d</div><div class="tx-hash">0xa87b…119e</div></div>
+        <div><div class="tx-amount pos">+3,200 CKB</div><div class="tx-time">5h ago</div></div>
+      </div>
+      <div class="tx-item">
+        <div class="tx-icon tx-out">↑</div>
+        <div class="tx-info"><div class="tx-name">Transfer to ckb1…92aa</div><div class="tx-hash">0xd44c…7f01</div></div>
+        <div><div class="tx-amount neg">−500 CKB</div><div class="tx-time">1d ago</div></div>
+      </div>
+      <div class="tx-item">
+        <div class="tx-icon tx-dao">⬡</div>
+        <div class="tx-info"><div class="tx-name">DAO Request Withdrawal</div><div class="tx-hash">0x71fc…3301</div></div>
+        <div><div class="tx-amount" style="color:var(--warn)">Pending</div><div class="tx-time">2d ago</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TRANSFER -->
+  <div class="view" id="view-transfer">
+    <div class="page-header" style="margin-bottom:26px"><h1>Transfer CKB</h1><p>Send CKB to any Nervos address</p></div>
+    <div class="form-card">
+      <div class="form-group">
+        <label class="form-label">Recipient Address</label>
+        <input class="form-input" type="text" placeholder="ckb1qzq…">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Amount</label>
+        <div class="amount-wrap">
+          <input class="form-input" type="text" placeholder="0.00" style="padding-right:54px">
+          <span class="amount-suffix">CKB</span>
+        </div>
+        <div style="margin-top:5px;font-size:11px;color:var(--muted)">Available: <span style="color:var(--accent)">88,400 CKB</span> &nbsp;·&nbsp; Min: 61 CKB</div>
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Fee Rate</label>
+          <input class="form-input" type="text" value="1000" placeholder="shannons/kB">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Data (optional)</label>
+          <input class="form-input" type="text" placeholder="0x…">
+        </div>
+      </div>
+      <div class="fee-info" style="margin-top:18px">
+        <span class="fee-label">Estimated Fee</span>
+        <span class="fee-val">~0.001 CKB · ~2s confirmation</span>
+      </div>
+      <div class="gap-10">
+        <button class="btn btn-primary full-w">Send Transaction →</button>
+        <button class="btn btn-secondary" style="flex-shrink:0">Clear</button>
+      </div>
+      <div style="margin-top:18px;padding-top:18px;border-top:1px solid var(--border)">
+        <div class="section-title" style="font-size:13px;margin-bottom:10px">Address Book</div>
+        <div class="tx-item" style="padding:9px 13px">
+          <div class="acct-avatar av2" style="width:30px;height:30px;font-size:12px;border-radius:8px">B</div>
+          <div class="tx-info"><div style="font-size:12.5px;font-weight:500">Bob</div><div class="tx-hash">ckb1qzq…f29a</div></div>
+          <span style="font-size:11px;color:var(--accent);cursor:pointer">Use →</span>
+        </div>
+        <div class="tx-item" style="padding:9px 13px;margin-top:6px">
+          <div class="acct-avatar av3" style="width:30px;height:30px;font-size:12px;border-radius:8px">E</div>
+          <div class="tx-info"><div style="font-size:12.5px;font-weight:500">Exchange Hot</div><div class="tx-hash">ckb1qzq…a010</div></div>
+          <span style="font-size:11px;color:var(--accent);cursor:pointer">Use →</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DAO -->
+  <div class="view" id="view-dao">
+    <div class="page-header" style="margin-bottom:26px"><h1>NervosDAO</h1><p>Deposit, withdraw, and manage DAO positions</p></div>
+    <div class="dao-stats">
+      <div class="dao-stat"><div class="dao-stat-n">54,000</div><div class="dao-stat-l">CKB Locked</div></div>
+      <div class="dao-stat"><div class="dao-stat-n" style="color:var(--warn)">+172</div><div class="dao-stat-l">CKB Earned</div></div>
+      <div class="dao-stat"><div class="dao-stat-n" style="color:var(--accent2)">3.24%</div><div class="dao-stat-l">Current APY</div></div>
+      <div class="dao-stat"><div class="dao-stat-n" style="color:var(--accent3)">2</div><div class="dao-stat-l">Active Cells</div></div>
+    </div>
+    <div class="dao-grid">
+      <div class="dao-action-card" onclick="openM('m-deposit')">
+        <div class="dao-card-accent da-deposit"></div>
+        <span class="dao-action-icon">📥</span>
+        <div class="dao-action-title">DAO Deposit</div>
+        <div class="dao-action-desc">Lock CKB to earn compensation against secondary issuance inflation.</div>
+      </div>
+      <div class="dao-action-card" onclick="openM('m-req')">
+        <div class="dao-card-accent da-req"></div>
+        <span class="dao-action-icon">⏳</span>
+        <div class="dao-action-title">Request Withdrawal</div>
+        <div class="dao-action-desc">Begin the unlock process. Wait for an epoch boundary to complete.</div>
+      </div>
+      <div class="dao-action-card" onclick="openM('m-withdraw')">
+        <div class="dao-card-accent da-withdraw"></div>
+        <span class="dao-action-icon">📤</span>
+        <div class="dao-action-title">Withdraw</div>
+        <div class="dao-action-desc">Claim CKB + compensation after the epoch boundary is reached.</div>
+      </div>
+    </div>
+    <div class="section-title" style="margin-bottom:12px">Active Positions</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Cell</th><th>Deposited</th><th>Since Epoch</th><th>Earned</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr>
+            <td style="font-family:'Space Mono',monospace;font-size:10px;color:var(--muted)">0x3f9a…c21b</td>
+            <td><span style="font-weight:600;font-family:'Syne',sans-serif">44,000</span> <span style="font-size:9.5px;color:var(--muted)">CKB</span></td>
+            <td style="font-family:'Space Mono',monospace;font-size:10.5px">7,204</td>
+            <td style="color:var(--warn);font-weight:600">+141 CKB</td>
+            <td><span class="status-badge s-active">● Active</span></td>
+            <td><button class="btn btn-secondary" style="padding:5px 11px;font-size:10.5px" onclick="openM('m-req')">Request Withdraw</button></td>
+          </tr>
+          <tr>
+            <td style="font-family:'Space Mono',monospace;font-size:10px;color:var(--muted)">0xb11f…804d</td>
+            <td><span style="font-weight:600;font-family:'Syne',sans-serif">10,000</span> <span style="font-size:9.5px;color:var(--muted)">CKB</span></td>
+            <td style="font-family:'Space Mono',monospace;font-size:10.5px">7,219</td>
+            <td style="color:var(--warn);font-weight:600">+31 CKB</td>
+            <td><span class="status-badge s-pending">⏳ Pending</span></td>
+            <td><button class="btn btn-secondary" style="padding:5px 11px;font-size:10.5px;color:var(--accent2);border-color:rgba(0,200,255,.3)" onclick="openM('m-withdraw')">Withdraw</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- NODES -->
+  <div class="view" id="view-nodes">
+    <div class="page-header" style="margin-bottom:26px"><h1>Node Manager</h1><p>Configure and monitor your CKB nodes</p></div>
+    <div class="nodes-grid">
+      <div class="node-card connected">
+        <div class="node-card-header">
+          <div class="node-type-icon">🖥️</div>
+          <div class="node-status-pill ns-online">● ONLINE</div>
+        </div>
+        <div class="node-card-title">Full Node</div>
+        <div class="node-card-sub">Full chain verification · Local sovereignty</div>
+        <div class="node-metrics">
+          <div class="node-metric"><div class="nm-label">Block Height</div><div class="nm-val">14,298,441</div></div>
+          <div class="node-metric"><div class="nm-label">Peers</div><div class="nm-val">24 connected</div></div>
+          <div class="node-metric"><div class="nm-label">RPC Port</div><div class="nm-val">8114</div></div>
+          <div class="node-metric"><div class="nm-label">DB Size</div><div class="nm-val">38.4 GB</div></div>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" style="width:100%"></div></div>
+        <div class="progress-label"><span>Sync</span><span>100%</span></div>
+      </div>
+      <div class="node-card connected">
+        <div class="node-card-header">
+          <div class="node-type-icon">💡</div>
+          <div class="node-status-pill ns-syncing">◌ SYNCING</div>
+        </div>
+        <div class="node-card-title">Light Node</div>
+        <div class="node-card-sub">Header-only sync · Fast & lightweight</div>
+        <div class="node-metrics">
+          <div class="node-metric"><div class="nm-label">Block Height</div><div class="nm-val">14,296,810</div></div>
+          <div class="node-metric"><div class="nm-label">Peers</div><div class="nm-val">8 connected</div></div>
+          <div class="node-metric"><div class="nm-label">RPC Port</div><div class="nm-val">9000</div></div>
+          <div class="node-metric"><div class="nm-label">DB Size</div><div class="nm-val">420 MB</div></div>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" style="width:88%"></div></div>
+        <div class="progress-label"><span>Sync</span><span>88.4%</span></div>
+      </div>
+      <div class="node-card">
+        <div class="node-card-header">
+          <div class="node-type-icon">🌐</div>
+          <div class="node-status-pill ns-online">● ONLINE</div>
+        </div>
+        <div class="node-card-title">Public RPC Node</div>
+        <div class="node-card-sub">mainnet.ckb.dev · No local storage</div>
+        <div class="node-metrics">
+          <div class="node-metric"><div class="nm-label">Endpoint</div><div class="nm-val" style="font-size:10px">mainnet.ckb.dev</div></div>
+          <div class="node-metric"><div class="nm-label">Latency</div><div class="nm-val">42 ms</div></div>
+          <div class="node-metric"><div class="nm-label">Uptime</div><div class="nm-val">99.9%</div></div>
+          <div class="node-metric"><div class="nm-label">Rate Limit</div><div class="nm-val">100/min</div></div>
+        </div>
+        <button class="btn btn-secondary full-w" style="font-size:11.5px;padding:9px;margin-top:13px">Configure Endpoint</button>
+      </div>
+      <div class="node-card">
+        <div class="node-card-header">
+          <div class="node-type-icon">⚡</div>
+          <div class="node-status-pill ns-online">● ONLINE</div>
+        </div>
+        <div class="node-card-title">Fiber Node</div>
+        <div class="node-card-sub">Lightning payment channels · Instant finality</div>
+        <div class="node-metrics">
+          <div class="node-metric"><div class="nm-label">Channels</div><div class="nm-val">3 open</div></div>
+          <div class="node-metric"><div class="nm-label">Capacity</div><div class="nm-val">440 CKB</div></div>
+          <div class="node-metric"><div class="nm-label">P2P Port</div><div class="nm-val">8228</div></div>
+          <div class="node-metric"><div class="nm-label">Routed</div><div class="nm-val">18 pmts</div></div>
+        </div>
+        <button class="btn btn-secondary full-w" style="font-size:11.5px;padding:9px;margin-top:13px;color:var(--accent3);border-color:rgba(155,127,212,.3)" onclick="go('fiber',document.querySelectorAll('.nav-item')[4])">Manage Channels →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- FIBER -->
+  <div class="view" id="view-fiber">
+    <div class="page-header" style="margin-bottom:26px"><h1>Fiber Channels</h1><p>Lightning-fast payment channels on CKB</p></div>
+    <div class="dao-stats">
+      <div class="dao-stat"><div class="dao-stat-n" style="color:var(--accent3)">3</div><div class="dao-stat-l">Open Channels</div></div>
+      <div class="dao-stat"><div class="dao-stat-n">440</div><div class="dao-stat-l">CKB Locked</div></div>
+      <div class="dao-stat"><div class="dao-stat-n" style="color:var(--accent)">18</div><div class="dao-stat-l">Payments Sent</div></div>
+      <div class="dao-stat"><div class="dao-stat-n" style="color:var(--warn)">0.01%</div><div class="dao-stat-l">Avg Fee Rate</div></div>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:13px">
+      <div class="section-title" style="margin:0">Payment Channels</div>
+      <button class="btn btn-primary" style="padding:9px 17px;font-size:12px">+ Open Channel</button>
+    </div>
+    <div class="fiber-ch">
+      <div style="font-size:20px;min-width:32px;text-align:center">⚡</div>
+      <div style="flex:1">
+        <div class="fiber-peer">pub1q…3fa2 · Peer Node Alpha</div>
+        <div class="fiber-bars"><div class="fiber-local" style="width:65%"></div></div>
+        <div class="progress-label" style="margin-top:3px"><span style="color:var(--accent3)">Local 130</span><span>Remote 70 CKB</span></div>
+      </div>
+      <div class="fiber-info"><div class="fiber-cap">200 CKB</div><div style="font-size:9px;color:var(--accent);font-family:'Space Mono',monospace">ACTIVE</div></div>
+      <div style="display:flex;gap:5px"><div class="icon-btn">↑</div><div class="icon-btn">✕</div></div>
+    </div>
+    <div class="fiber-ch">
+      <div style="font-size:20px;min-width:32px;text-align:center">⚡</div>
+      <div style="flex:1">
+        <div class="fiber-peer">pub1q…92bc · Exchange Gateway</div>
+        <div class="fiber-bars"><div class="fiber-local" style="width:40%"></div></div>
+        <div class="progress-label" style="margin-top:3px"><span style="color:var(--accent3)">Local 80</span><span>Remote 120 CKB</span></div>
+      </div>
+      <div class="fiber-info"><div class="fiber-cap">200 CKB</div><div style="font-size:9px;color:var(--accent);font-family:'Space Mono',monospace">ACTIVE</div></div>
+      <div style="display:flex;gap:5px"><div class="icon-btn">↑</div><div class="icon-btn">✕</div></div>
+    </div>
+    <div class="fiber-ch">
+      <div style="font-size:20px;min-width:32px;text-align:center">⚡</div>
+      <div style="flex:1">
+        <div class="fiber-peer">pub1q…11de · Routing Hub Beta</div>
+        <div class="fiber-bars"><div class="fiber-local" style="width:85%"></div></div>
+        <div class="progress-label" style="margin-top:3px"><span style="color:var(--accent3)">Local 34</span><span>Remote 6 CKB</span></div>
+      </div>
+      <div class="fiber-info"><div class="fiber-cap">40 CKB</div><div style="font-size:9px;color:var(--warn);font-family:'Space Mono',monospace">LOW REMOTE</div></div>
+      <div style="display:flex;gap:5px"><div class="icon-btn">↑</div><div class="icon-btn">✕</div></div>
+    </div>
+  </div>
+
+  <!-- ACCOUNTS -->
+  <div class="view" id="view-accounts">
+    <div class="page-header" style="margin-bottom:26px"><h1>Accounts</h1><p>Manage wallets, keys, and authentication</p></div>
+    <div class="auth-grid">
+      <div class="auth-card" onclick="openM('m-new')">
+        <span class="auth-card-icon">✦</span>
+        <div class="auth-card-title">New Account</div>
+        <div class="auth-card-desc">Generate a fresh wallet with a new seed phrase and set authentication.</div>
+      </div>
+      <div class="auth-card" onclick="openM('m-import')">
+        <span class="auth-card-icon">⬇</span>
+        <div class="auth-card-title">Import Seed</div>
+        <div class="auth-card-desc">Restore an existing wallet from your 12 or 24-word mnemonic phrase.</div>
+      </div>
+      <div class="auth-card" onclick="openM('m-export')">
+        <span class="auth-card-icon">⬆</span>
+        <div class="auth-card-title">Export Seed</div>
+        <div class="auth-card-desc">Reveal and back up your current wallet's mnemonic seed phrase securely.</div>
+      </div>
+    </div>
+    <div class="section-title" style="margin-bottom:14px">Saved Accounts <span class="s-badge">3 wallets</span></div>
+    <div class="acct-row current">
+      <div class="acct-avatar av1">A</div>
+      <div class="acct-info">
+        <div class="acct-name">Account Alpha <span style="font-size:9px;color:var(--accent);margin-left:5px;font-family:'Space Mono',monospace">ACTIVE</span></div>
+        <div class="acct-address">ckb1qzqg8u7at0qyxkz8vmz47d6tgt8xz7n9cpwfzj9gly4vf5a5f7d3</div>
+      </div>
+      <div class="acct-balance"><div class="acct-bal-amt">88,840 CKB</div><div class="acct-bal-sub">≈ $799.56</div></div>
+      <div class="acct-actions"><div class="icon-btn">⎘</div><div class="icon-btn" onclick="openM('m-export')">⬆</div></div>
+    </div>
+    <div class="acct-row">
+      <div class="acct-avatar av2">B</div>
+      <div class="acct-info">
+        <div class="acct-name">Beta Vault</div>
+        <div class="acct-address">ckb1qzqp9a2x7lm4kf8jw5r6h3nt2yd9qc0v1u8z3e7b6f4d2c1a0e9</div>
+      </div>
+      <div class="acct-balance"><div class="acct-bal-amt">54,000 CKB</div><div class="acct-bal-sub">≈ $486.00</div></div>
+      <div class="acct-actions"><div class="icon-btn">⎘</div><div class="icon-btn" onclick="openM('m-export')">⬆</div></div>
+    </div>
+    <div class="acct-row">
+      <div class="acct-avatar av3">T</div>
+      <div class="acct-info">
+        <div class="acct-name">Trading Hot</div>
+        <div class="acct-address">ckb1qzqr8k1f3dn9j5mt7ya0xl2qb4vg6uc3h9pw5e1s8d2n7c0a010</div>
+      </div>
+      <div class="acct-balance"><div class="acct-bal-amt">0 CKB</div><div class="acct-bal-sub">≈ $0.00</div></div>
+      <div class="acct-actions"><div class="icon-btn">⎘</div><div class="icon-btn" onclick="openM('m-export')">⬆</div></div>
+    </div>
+  </div>
+
+</main>
+
+<!-- MODALS -->
+
+<!-- DAO Deposit -->
+<div class="modal-overlay" id="m-deposit">
+  <div class="modal">
+    <div class="modal-close" onclick="closeM('m-deposit')">✕</div>
+    <div class="modal-title">DAO Deposit</div>
+    <div class="modal-sub">Lock CKB to earn compensation against inflation</div>
+    <div class="form-group">
+      <label class="form-label">Amount to Deposit</label>
+      <div class="amount-wrap">
+        <input class="form-input" type="text" placeholder="Min: 102 CKB" style="padding-right:54px">
+        <span class="amount-suffix">CKB</span>
+      </div>
+    </div>
+    <div class="fee-info"><span class="fee-label">Current APY</span><span class="fee-val">~3.24%</span></div>
+    <div class="warning-box">⚠️ Deposited CKB is locked until you request withdrawal and wait for an epoch boundary (~4 hours/epoch).</div>
+    <div class="modal-actions">
+      <button class="btn btn-primary full-w" onclick="closeM('m-deposit')">Confirm Deposit</button>
+      <button class="btn btn-secondary" onclick="closeM('m-deposit')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- DAO Request Withdrawal -->
+<div class="modal-overlay" id="m-req">
+  <div class="modal">
+    <div class="modal-close" onclick="closeM('m-req')">✕</div>
+    <div class="modal-title">Request Withdrawal</div>
+    <div class="modal-sub">Initiate the unlock process for your DAO position</div>
+    <div class="form-group">
+      <label class="form-label">Select Deposit Cell</label>
+      <select class="form-input" style="cursor:pointer">
+        <option>0x3f9a…c21b — 44,000 CKB (Active)</option>
+        <option>0xb11f…804d — 10,000 CKB (Active)</option>
+      </select>
+    </div>
+    <div class="fee-info"><span class="fee-label">Earliest Unlock</span><span class="fee-val">Epoch 7,260 (~7d 14h)</span></div>
+    <div class="warning-box">⚠️ After requesting, you must wait until the epoch boundary. Compensation continues to accrue during this period.</div>
+    <div class="modal-actions">
+      <button class="btn btn-primary full-w" style="background:linear-gradient(135deg,var(--warn),#ff9a00);color:#050c0a" onclick="closeM('m-req')">Request Withdrawal</button>
+      <button class="btn btn-secondary" onclick="closeM('m-req')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- DAO Withdraw -->
+<div class="modal-overlay" id="m-withdraw">
+  <div class="modal">
+    <div class="modal-close" onclick="closeM('m-withdraw')">✕</div>
+    <div class="modal-title">Withdraw from DAO</div>
+    <div class="modal-sub">Claim your CKB after the unlock epoch</div>
+    <div class="form-group">
+      <label class="form-label">Ready to Withdraw</label>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:15px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:7px"><span style="color:var(--muted);font-size:12px">Cell</span><span style="font-family:'Space Mono',monospace;font-size:10.5px">0xb11f…804d</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:7px"><span style="color:var(--muted);font-size:12px">Principal</span><span style="font-weight:600;font-family:'Syne',sans-serif">10,000 CKB</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted);font-size:12px">Compensation</span><span style="color:var(--warn);font-weight:600">+31 CKB</span></div>
+        <div style="margin-top:11px;padding-top:11px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:12.5px;font-weight:500">Total</span>
+          <span style="font-family:'Syne',sans-serif;font-size:17px;font-weight:800;color:var(--accent)">10,031 CKB</span>
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions mt-16">
+      <button class="btn btn-primary full-w" style="background:linear-gradient(135deg,var(--accent2),var(--accent));color:#050c0a" onclick="closeM('m-withdraw')">Claim 10,031 CKB</button>
+      <button class="btn btn-secondary" onclick="closeM('m-withdraw')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- New Account -->
+<div class="modal-overlay" id="m-new">
+  <div class="modal">
+    <div class="modal-close" onclick="closeM('m-new')">✕</div>
+    <div class="modal-title">Create New Account</div>
+    <div class="modal-sub">Set a name and authentication method</div>
+    <div class="form-group">
+      <label class="form-label">Account Name</label>
+      <input class="form-input" type="text" placeholder="e.g. Main Wallet">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Authentication</label>
+      <div class="auth-tabs">
+        <div class="auth-tab active" onclick="selTab(this)">🔑 Password</div>
+        <div class="auth-tab" onclick="selTab(this)">🔢 PIN</div>
+        <div class="auth-tab" onclick="selTab(this)">🫆 Biometric</div>
+      </div>
+      <input class="form-input" type="password" placeholder="Create a strong password…">
+    </div>
+    <div class="warning-box">⚠️ Your seed phrase will be shown once. Write it down and keep it safe. Never share it with anyone.</div>
+    <div class="modal-actions">
+      <button class="btn btn-primary full-w" onclick="closeM('m-new')">Generate Wallet →</button>
+      <button class="btn btn-secondary" onclick="closeM('m-new')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Import Seed -->
+<div class="modal-overlay" id="m-import">
+  <div class="modal">
+    <div class="modal-close" onclick="closeM('m-import')">✕</div>
+    <div class="modal-title">Import Seed Phrase</div>
+    <div class="modal-sub">Restore a wallet from a 12 or 24-word mnemonic</div>
+    <div class="form-group">
+      <label class="form-label">Mnemonic Words</label>
+      <textarea class="form-input" rows="4" placeholder="Enter your seed phrase, words separated by spaces…" style="resize:vertical;font-size:12px;line-height:1.6"></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Account Name</label>
+      <input class="form-input" type="text" placeholder="My Restored Wallet">
+    </div>
+    <div class="form-group">
+      <label class="form-label">New Password</label>
+      <input class="form-input" type="password" placeholder="Protect this wallet…">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary full-w" onclick="closeM('m-import')">Import Wallet</button>
+      <button class="btn btn-secondary" onclick="closeM('m-import')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Export Seed -->
+<div class="modal-overlay" id="m-export">
+  <div class="modal">
+    <div class="modal-close" onclick="closeM('m-export')">✕</div>
+    <div class="modal-title">Export Seed Phrase</div>
+    <div class="modal-sub">Verify identity to reveal the mnemonic</div>
+    <div class="warning-box">⚠️ Anyone with this seed phrase controls your funds. Never share it or store it digitally.</div>
+    <div class="form-group">
+      <label class="form-label">Password to Reveal</label>
+      <input class="form-input" type="password" placeholder="Your wallet password…">
+    </div>
+    <div class="seed-grid" id="seed-grid" style="filter:blur(8px);user-select:none;transition:filter .3s">
+      <div class="seed-word"><span class="seed-num">1</span><span class="seed-w">forest</span></div>
+      <div class="seed-word"><span class="seed-num">2</span><span class="seed-w">candle</span></div>
+      <div class="seed-word"><span class="seed-num">3</span><span class="seed-w">ritual</span></div>
+      <div class="seed-word"><span class="seed-num">4</span><span class="seed-w">merge</span></div>
+      <div class="seed-word"><span class="seed-num">5</span><span class="seed-w">obscure</span></div>
+      <div class="seed-word"><span class="seed-num">6</span><span class="seed-w">talent</span></div>
+      <div class="seed-word"><span class="seed-num">7</span><span class="seed-w">bright</span></div>
+      <div class="seed-word"><span class="seed-num">8</span><span class="seed-w">invoke</span></div>
+      <div class="seed-word"><span class="seed-num">9</span><span class="seed-w">shadow</span></div>
+      <div class="seed-word"><span class="seed-num">10</span><span class="seed-w">cluster</span></div>
+      <div class="seed-word"><span class="seed-num">11</span><span class="seed-w">quantum</span></div>
+      <div class="seed-word"><span class="seed-num">12</span><span class="seed-w">vessel</span></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary full-w" onclick="document.getElementById('seed-grid').style.filter='none'">Reveal Seed Phrase</button>
+      <button class="btn btn-danger" onclick="closeM('m-export')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  function go(id,el){
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    document.getElementById('view-'+id).classList.add('active');
+    document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+    if(el) el.classList.add('active');
+  }
+  function toggleDD(){
+    document.getElementById('ndd').classList.toggle('open');
+  }
+  function selNode(name,el){
+    document.getElementById('active-node').textContent=name;
+    document.querySelectorAll('.node-option').forEach(o=>o.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('ndd').classList.remove('open');
+  }
+  document.addEventListener('click',function(e){
+    if(!e.target.closest('.node-selector')&&!e.target.closest('#ndd'))
+      document.getElementById('ndd').classList.remove('open');
+  });
+  function openM(id){ document.getElementById(id).classList.add('open'); }
+  function closeM(id){
+    document.getElementById(id).classList.remove('open');
+    const sg=document.getElementById('seed-grid');
+    if(sg) sg.style.filter='blur(8px)';
+  }
+  document.querySelectorAll('.modal-overlay').forEach(o=>{
+    o.addEventListener('click',function(e){
+      if(e.target===o) closeM(o.id);
+    });
+  });
+  function selTab(el){
+    el.parentNode.querySelectorAll('.auth-tab').forEach(t=>t.classList.remove('active'));
+    el.classList.add('active');
+  }
+</script>
+</body>
+</html>

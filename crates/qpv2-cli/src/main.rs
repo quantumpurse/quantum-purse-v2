@@ -335,8 +335,7 @@ fn main() -> Result<(), String> {
 
             let vault = KeyVault::new(variant);
 
-            let is_valid =
-                vault.raw_verify(&public_key_bytes, &message_bytes, &signature_bytes)?;
+            let is_valid = vault.raw_verify(&public_key_bytes, &message_bytes, &signature_bytes)?;
             if is_valid {
                 println!("✓ Signature is valid");
             } else {
