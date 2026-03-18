@@ -646,6 +646,28 @@ impl KeyVault {
             })
     }
 
+    /// Checks if the wallet's authentication method matches the expected one.
+    ///
+    /// **Parameters**:
+    /// - `expected: &AuthMethod` - The authentication method the caller expects to use.
+    ///
+    /// **Returns**:
+    /// - `Result<(), String>` - Ok if methods match, or an error message explaining the mismatch.
+    pub fn check_auth_compatibility(&self, expected: &AuthMethod) -> Result<(), String> {
+        let wallet_info = self.read_wallet_info()?;
+
+        match (&wallet_info.auth_method, expected) {
+            (AuthMethod::Password, AuthMethod::Password) => Ok(()),
+            (AuthMethod::PasskeyPrf { .. }, AuthMethod::PasskeyPrf { .. }) => Ok(()),
+            (AuthMethod::PasskeyPrf { .. }, AuthMethod::Password) => {
+                Err("This wallet was initialized with Touch ID/Passkey authentication and cannot be accessed with a password. Please use the GUI application.".to_string())
+            }
+            (AuthMethod::Password, AuthMethod::PasskeyPrf { .. }) => {
+                Err("This wallet was initialized with password authentication and cannot be accessed with Touch ID. Please use a password instead.".to_string())
+            }
+        }
+    }
+
     /// Building CKB SPHINCS+ all-in-one lockscript arguments
     ///
     /// **Parameters**:

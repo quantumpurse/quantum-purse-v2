@@ -223,6 +223,9 @@ fn main() -> Result<(), String> {
                 let variant = KeyVault::get_spx_variant()?;
                 let vault = KeyVault::new(variant);
 
+                // Check authentication compatibility. CLI only supports password
+                vault.check_auth_compatibility(&AuthMethod::Password)?;
+
                 let password = prompt_for_input("Enter password: ")?;
                 let seed_phrase = vault.export_seed_phrase(AuthKey::Password(password))?;
 
@@ -241,6 +244,9 @@ fn main() -> Result<(), String> {
                 AccountCommands::New => {
                     let variant = KeyVault::get_spx_variant()?;
                     let vault = KeyVault::new(variant);
+
+                    // Check authentication compatibility. CLI only supports password
+                    vault.check_auth_compatibility(&AuthMethod::Password)?;
 
                     let password = prompt_for_input("Enter password: ")?;
                     let lock_args = vault.gen_new_account(AuthKey::Password(password))?;
@@ -266,6 +272,9 @@ fn main() -> Result<(), String> {
                     let variant = KeyVault::get_spx_variant()?;
                     let vault = KeyVault::new(variant);
 
+                    // Check authentication compatibility. CLI only supports password
+                    vault.check_auth_compatibility(&AuthMethod::Password)?;
+
                     let password = prompt_for_input("Enter password: ")?;
                     let accounts = vault.recover_accounts(AuthKey::Password(password), count)?;
 
@@ -278,6 +287,9 @@ fn main() -> Result<(), String> {
                 AccountCommands::TryGenBatch { start, count } => {
                     let variant = KeyVault::get_spx_variant()?;
                     let vault = KeyVault::new(variant);
+
+                    // Check authentication compatibility. CLI only supports password
+                    vault.check_auth_compatibility(&AuthMethod::Password)?;
 
                     let password = prompt_for_input("Enter password: ")?;
                     let accounts =
@@ -297,6 +309,9 @@ fn main() -> Result<(), String> {
         } => {
             let variant = KeyVault::get_spx_variant()?;
             let vault = KeyVault::new(variant);
+
+            // Check authentication compatibility. CLI only supports password
+            vault.check_auth_compatibility(&AuthMethod::Password)?;
 
             let message_bytes = hex::decode(&message).map_err(|e| e.to_string())?;
             let password = prompt_for_input("Enter password: ")?;
@@ -333,6 +348,9 @@ fn main() -> Result<(), String> {
             CkbCommands::Sign { lock_args, message } => {
                 let variant = KeyVault::get_spx_variant()?;
                 let vault = KeyVault::new(variant);
+
+                // Check authentication compatibility. CLI only supports password
+                vault.check_auth_compatibility(&AuthMethod::Password)?;
 
                 let message_bytes = hex::decode(&message).map_err(|e| e.to_string())?;
                 let password = prompt_for_input("Enter password: ")?;
@@ -371,19 +389,26 @@ fn main() -> Result<(), String> {
             let accounts = KeyVault::get_all_sphincs_lock_args()?;
             let data_path = qpv2_core::db::get_data_dir().map_err(|e| e.to_string())?;
 
+            // Read wallet info to get authentication method
+            let temp_vault = KeyVault::new(variant);
+            let wallet_info = temp_vault.read_wallet_info()?;
+
+            let (auth_method_display, compatible_frontends) = match wallet_info.auth_method {
+                AuthMethod::Password => ("Password", "CLI and GUI"),
+                AuthMethod::PasskeyPrf { .. } => ("Touch ID (Passkey)", "GUI only"),
+            };
+
             println!("\n╔════════════════════════════════════════════════════════════════╗");
             println!("║                     Wallet Information                         ║");
             println!("╚════════════════════════════════════════════════════════════════╝");
             println!();
             println!("  SPHINCS+ Variant      : {}", variant);
             println!(
-                "  Security Level        : {} bits",
-                variant.required_entropy_size_component() * 8
-            );
-            println!(
                 "  Mnemonic Words        : {}",
                 variant.required_bip39_size_in_word_total()
             );
+            println!("  Authentication Method : {}", auth_method_display);
+            println!("  Compatible Frontends  : {}", compatible_frontends);
             println!("  Total Accounts        : {}", accounts.len());
             println!("  Data Storage Path     : {}", data_path.display());
             println!();
