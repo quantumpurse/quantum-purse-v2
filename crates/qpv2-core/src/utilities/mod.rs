@@ -122,7 +122,7 @@ pub fn decrypt_with_key(key: &[u8], payload: CipherPayload) -> Result<SecureVec,
     let mut secure_decipher = SecureVec::from_vec(cipher_text);
     cipher
         .decrypt_in_place(nonce, b"", &mut secure_decipher)
-        .map_err(|e| format!("Decryption error: {:?}", e))?;
+        .map_err(|_| "Incorrect key or corrupted data".to_string())?;
     Ok(secure_decipher)
 }
 
@@ -182,7 +182,7 @@ pub fn decrypt_with_password(password: &[u8], payload: CipherPayload) -> Result<
     let mut secure_decipher = SecureVec::from_vec(cipher_text);
     cipher
         .decrypt_in_place(nonce, b"", &mut secure_decipher)
-        .map_err(|e| format!("Decryption error: {:?}", e))?;
+        .map_err(|_| "Incorrect password or corrupted data".to_string())?;
     Ok(secure_decipher)
 }
 
