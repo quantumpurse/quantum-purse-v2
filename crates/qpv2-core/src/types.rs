@@ -36,22 +36,17 @@ pub struct SphincsPlusAccount {
 }
 
 /// Authentication method used to protect the vault.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(tag = "type")]
 pub enum AuthMethod {
     /// Password-based authentication using scrypt key derivation.
+    #[default]
     Password,
     /// Passkey PRF-based authentication using HKDF key derivation.
     PasskeyPrf {
         /// The WebAuthn credential ID used for PRF assertion.
         credential_id: Vec<u8>,
     },
-}
-
-impl Default for AuthMethod {
-    fn default() -> Self {
-        AuthMethod::Password
-    }
 }
 
 /// Authentication key used to encrypt/decrypt the vault.

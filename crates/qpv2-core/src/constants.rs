@@ -38,15 +38,25 @@ pub const ENC_SCRYPT: ScryptParam = ScryptParam {
 /// Domain separation ensures this key is distinct from any other HKDF derivation in the system.
 pub const PRF_HKDF_DOMAIN: &[u8] = b"quantum-purse-v2-prf-aes-256-gcm-key";
 
-/// CKB quantum-resistant lock script code hash and hash type per network.
-/// Used to construct full CKB addresses from lock script arguments.
+/// CKB quantum-resistant lock script deployment info per network.
 /// Source: https://github.com/cryptape/quantum-resistant-lock-script
+///
+/// Code hash and hash type — used to construct CKB addresses from lock script arguments.
 pub const CKB_MAINNET_CODE_HASH: &str =
     "0x302d35982f865ebcbedb9a9360e40530ed32adb8e10b42fbbe70d8312ff7cedf";
 pub const CKB_MAINNET_HASH_TYPE: &str = "type";
 pub const CKB_TESTNET_CODE_HASH: &str =
     "0x147ecbb5c5127d982ee1362d2c2bb4267803da2eb006d150e88af6caaa0a7eaf";
 pub const CKB_TESTNET_HASH_TYPE: &str = "data1";
+
+/// Cell dep OutPoint — the on-chain cell that contains the lock script binary.
+/// Used to construct the CellDep when building transactions.
+pub const CKB_MAINNET_CELL_DEP_TX_HASH: &str =
+    "0x4598d00df2f3dc8bc40eee38689a539c94f6cc3720b7a2a6746736daa60f500a";
+pub const CKB_MAINNET_CELL_DEP_INDEX: u32 = 0;
+pub const CKB_TESTNET_CELL_DEP_TX_HASH: &str =
+    "0x631d9a6049fb1fc3790e89d9daf35abe535b5e754cd8c3404319319710f0b106";
+pub const CKB_TESTNET_CELL_DEP_INDEX: u32 = 0;
 
 /// All-in-one quantum resistant lock script configuration
 pub const MULTISIG_RESERVED_FIELD_VALUE: u8 = 0x80;

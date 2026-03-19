@@ -37,6 +37,22 @@ pub trait CkbRpc {
 
     /// Retrieves a transaction by hash, returning its status.
     fn get_transaction(&self, hash: H256) -> Result<Option<TransactionStatus>, NodeManagerError>;
+
+    /// Gets a header by its hash.
+    fn get_header(
+        &self,
+        hash: H256,
+    ) -> Result<Option<ckb_jsonrpc_types::HeaderView>, NodeManagerError>;
+
+    /// Gets detailed transaction with status (needed for DAO calculations).
+    fn get_transaction_with_status(
+        &self,
+        hash: H256,
+    ) -> Result<Option<ckb_jsonrpc_types::TransactionWithStatusResponse>, NodeManagerError>;
+
+    /// Gets the RPC URL (temporary method for SDK components).
+    /// TODO: Remove when we implement custom collectors using the trait.
+    fn get_rpc_url(&self) -> String;
 }
 
 /// Simplified transaction status returned by `get_transaction`.
@@ -54,12 +70,14 @@ pub struct TransactionStatus {
 /// Full node / public RPC implementation.
 pub struct FullNodeRpc {
     client: CkbRpcClient,
+    rpc_url: String,
 }
 
 impl FullNodeRpc {
     pub fn new(rpc_url: &str) -> Self {
         Self {
             client: CkbRpcClient::new(rpc_url),
+            rpc_url: rpc_url.to_string(),
         }
     }
 }
@@ -112,6 +130,28 @@ impl CkbRpc for FullNodeRpc {
             status: format!("{:?}", r.tx_status.status),
         }))
     }
+
+    fn get_header(
+        &self,
+        hash: H256,
+    ) -> Result<Option<ckb_jsonrpc_types::HeaderView>, NodeManagerError> {
+        self.client
+            .get_header(hash)
+            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
+    }
+
+    fn get_transaction_with_status(
+        &self,
+        hash: H256,
+    ) -> Result<Option<ckb_jsonrpc_types::TransactionWithStatusResponse>, NodeManagerError> {
+        self.client
+            .get_transaction(hash)
+            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
+    }
+
+    fn get_rpc_url(&self) -> String {
+        self.rpc_url.clone()
+    }
 }
 
 /// Light client RPC implementation.
@@ -120,12 +160,14 @@ impl CkbRpc for FullNodeRpc {
 /// for script registration.
 pub struct LightClientRpc {
     client: LightClientRpcClient,
+    rpc_url: String,
 }
 
 impl LightClientRpc {
     pub fn new(rpc_url: &str) -> Self {
         Self {
             client: LightClientRpcClient::new(rpc_url),
+            rpc_url: rpc_url.to_string(),
         }
     }
 
@@ -214,6 +256,36 @@ impl CkbRpc for LightClientRpc {
                 status,
             }
         }))
+    }
+
+    fn get_header(
+        &self,
+        hash: H256,
+    ) -> Result<Option<ckb_jsonrpc_types::HeaderView>, NodeManagerError> {
+        self.client
+            .get_header(hash)
+            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
+    }
+
+    fn get_transaction_with_status(
+        &self,
+        hash: H256,
+    ) -> Result<Option<ckb_jsonrpc_types::TransactionWithStatusResponse>, NodeManagerError> {
+        // Light client returns a different type, we need to convert
+        let resp = self
+            .client
+            .get_transaction(hash)
+            .map_err(|e| NodeManagerError::RpcError(e.to_string()))?;
+
+        // Convert light client's TransactionWithStatus to the full node's format
+        Ok(resp.and_then(|r| {
+            let json_value = serde_json::to_value(&r).ok()?;
+            serde_json::from_value(json_value).ok()
+        }))
+    }
+
+    fn get_rpc_url(&self) -> String {
+        self.rpc_url.clone()
     }
 }
 
