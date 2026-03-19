@@ -103,6 +103,19 @@ impl App {
 
         cc.egui_ctx.set_visuals(visuals);
 
+        // Register Syne ExtraBold for hero balance display.
+        let mut fonts = egui::FontDefinitions::default();
+        fonts.font_data.insert(
+            "syne_extrabold".to_owned(),
+            std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+                "../../../assets/fonts/Syne-ExtraBold.ttf"
+            ))),
+        );
+        fonts
+            .families
+            .insert(egui::FontFamily::Name("syne".into()), vec!["syne_extrabold".to_owned()]);
+        cc.egui_ctx.set_fonts(fonts);
+
         // Check if a wallet already exists by trying to read wallet info.
         let screen = if KeyVault::new(SpxVariant::Sha2128S).wallet_exists() {
             Screen::Locked

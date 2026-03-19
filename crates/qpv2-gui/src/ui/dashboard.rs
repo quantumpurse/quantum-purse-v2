@@ -2,7 +2,7 @@
 
 use eframe::egui;
 
-use crate::types::{format_ckb_balance, Tab};
+use crate::types::{format_ckb_balance, format_with_commas, Tab};
 use crate::App;
 
 impl App {
@@ -55,12 +55,45 @@ impl App {
                     .filter_map(|b| b.as_ref().copied())
                     .sum();
 
-                ui.label(
-                    egui::RichText::new(format_ckb_balance(total_shannons))
-                        .size(42.0)
-                        .strong()
-                        .color(self.colors.text),
-                );
+                // Render balance with the fractional part in accent green
+                // to match the mockup style (e.g. "142,840." white + "50" green + " CKB" white).
+                let syne = egui::FontFamily::Name("syne".into());
+
+                let whole = total_shannons / crate::types::CKB_DECIMAL_PLACES;
+                let frac = total_shannons % crate::types::CKB_DECIMAL_PLACES;
+                let bal_size = 46.0;
+
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    if frac == 0 {
+                        ui.label(
+                            egui::RichText::new(format!("{} CKB", format_with_commas(whole)))
+                                .size(bal_size)
+                                .family(syne.clone())
+                                .color(self.colors.text),
+                        );
+                    } else {
+                        let frac_str = format!("{:08}", frac);
+                        ui.label(
+                            egui::RichText::new(format!("{}.", format_with_commas(whole)))
+                                .size(bal_size)
+                                .family(syne.clone())
+                                .color(self.colors.text),
+                        );
+                        ui.label(
+                            egui::RichText::new(&frac_str[..2])
+                                .size(bal_size)
+                                .family(syne.clone())
+                                .color(self.colors.accent),
+                        );
+                        ui.label(
+                            egui::RichText::new(" CKB")
+                                .size(bal_size)
+                                .family(syne.clone())
+                                .color(self.colors.text),
+                        );
+                    }
+                });
 
                 ui.add_space(16.0);
 
@@ -95,7 +128,7 @@ impl App {
                         ui.label(
                             egui::RichText::new(format_ckb_balance(available))
                                 .size(15.0)
-                                .strong()
+                                .family(syne.clone())
                                 .color(self.colors.accent),
                         );
                     });
@@ -113,7 +146,7 @@ impl App {
                         ui.label(
                             egui::RichText::new(format!("{}", self.accounts.len()))
                                 .size(15.0)
-                                .strong()
+                                .family(syne.clone())
                                 .color(self.colors.accent2),
                         );
                     });
@@ -131,7 +164,7 @@ impl App {
                         ui.label(
                             egui::RichText::new(format_ckb_balance(dao_locked))
                                 .size(15.0)
-                                .strong()
+                                .family(syne.clone())
                                 .color(self.colors.accent3),
                         );
                     });

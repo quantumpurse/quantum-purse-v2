@@ -220,17 +220,29 @@ pub(crate) fn format_ckb(shannons: u64) -> String {
     }
 }
 
+/// Format a number with thousands separators (e.g. `9999` -> `"9,999"`).
+pub(crate) fn format_with_commas(n: u64) -> String {
+    let s = n.to_string();
+    let mut result = String::with_capacity(s.len() + s.len() / 3);
+    for (i, ch) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i) % 3 == 0 {
+            result.push(',');
+        }
+        result.push(ch);
+    }
+    result
+}
+
 /// Format a balance in shannons to a human-readable CKB string.
 /// 1 CKB = 100,000,000 shannons.
 pub(crate) fn format_ckb_balance(shannons: u64) -> String {
     let whole = shannons / CKB_DECIMAL_PLACES;
     let frac = shannons % CKB_DECIMAL_PLACES;
     if frac == 0 {
-        format!("{} CKB", whole)
+        format!("{} CKB", format_with_commas(whole))
     } else {
-        // Show fractional part, trimming trailing zeros.
+        // Show first 2 decimal places.
         let frac_str = format!("{:08}", frac);
-        let trimmed = frac_str.trim_end_matches('0');
-        format!("{}.{} CKB", whole, trimmed)
+        format!("{}.{} CKB", format_with_commas(whole), &frac_str[..2])
     }
 }
