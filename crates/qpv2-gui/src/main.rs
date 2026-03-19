@@ -103,8 +103,10 @@ impl App {
 
         cc.egui_ctx.set_visuals(visuals);
 
-        // Register Syne ExtraBold for hero balance display.
+        // Register custom fonts.
         let mut fonts = egui::FontDefinitions::default();
+
+        // Syne ExtraBold for hero balance display.
         fonts.font_data.insert(
             "syne_extrabold".to_owned(),
             std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
@@ -114,6 +116,31 @@ impl App {
         fonts
             .families
             .insert(egui::FontFamily::Name("syne".into()), vec!["syne_extrabold".to_owned()]);
+
+        // Noto Sans Symbols for arrows and basic symbol glyphs (U+2190–U+21FF, etc.).
+        fonts.font_data.insert(
+            "noto_symbols".to_owned(),
+            std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+                "../../../assets/fonts/NotoSansSymbols-Regular.ttf"
+            ))),
+        );
+        // Noto Sans Symbols 2 for geometric shapes and extended symbol glyphs.
+        fonts.font_data.insert(
+            "noto_symbols2".to_owned(),
+            std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+                "../../../assets/fonts/NotoSansSymbols2-Regular.ttf"
+            ))),
+        );
+        // Append both as fallbacks so missing glyphs are resolved.
+        if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
+            family.push("noto_symbols".to_owned());
+            family.push("noto_symbols2".to_owned());
+        }
+        if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
+            family.push("noto_symbols".to_owned());
+            family.push("noto_symbols2".to_owned());
+        }
+
         cc.egui_ctx.set_fonts(fonts);
 
         // Check if a wallet already exists by trying to read wallet info.

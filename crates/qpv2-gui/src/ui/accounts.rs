@@ -44,7 +44,7 @@ impl App {
                                 ui.add_space(4.0);
                                 ui.label(
                                     egui::RichText::new(
-                                        "Derive a new SPHINCS+ account from your master seed.",
+                                        "Derive a new account from your wallet seed.",
                                     )
                                     .size(11.0)
                                     .color(self.colors.text_muted),

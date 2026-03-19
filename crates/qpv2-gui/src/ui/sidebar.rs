@@ -194,7 +194,7 @@ impl App {
                 });
                 ui.add_space(4.0);
                 self.draw_nav_item(ui, Tab::Dashboard, "\u{25c8}", "Dashboard");
-                self.draw_nav_item(ui, Tab::Transfer, "\u{2191}", "Transfer");
+                self.draw_nav_item(ui, Tab::Transfer, "\u{2191}\u{2193}", "Transfer");
 
                 ui.add_space(10.0);
 
