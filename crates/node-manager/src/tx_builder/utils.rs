@@ -27,8 +27,9 @@ pub fn cell_dep_resolver_from_rpc(
         .ok_or_else(|| NodeManagerError::RpcError("Genesis block not found.".to_string()))?;
 
     let block_view: BlockView = genesis_block.into();
-    let mut resolver = DefaultCellDepResolver::from_genesis(&block_view)
-        .map_err(|e| NodeManagerError::RpcError(format!("Failed to parse genesis info: {:?}", e)))?;
+    let mut resolver = DefaultCellDepResolver::from_genesis(&block_view).map_err(|e| {
+        NodeManagerError::RpcError(format!("Failed to parse genesis info: {:?}", e))
+    })?;
 
     // Register the quantum-resistant lock script cell dep.
     let (code_hash_hex, hash_type, dep_tx_hash_hex, dep_index) = if is_mainnet {

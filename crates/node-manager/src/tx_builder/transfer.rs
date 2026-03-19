@@ -106,7 +106,8 @@ impl<'a> TransferBuilder<'a> {
 
         // Create collectors and resolvers
         let mut cell_collector = DefaultCellCollector::new(&rpc_url);
-        let cell_dep_resolver = super::utils::cell_dep_resolver_from_rpc(&rpc_url, self.is_mainnet)?;
+        let cell_dep_resolver =
+            super::utils::cell_dep_resolver_from_rpc(&rpc_url, self.is_mainnet)?;
         let header_dep_resolver = DefaultHeaderDepResolver::new(&rpc_url);
         let tx_dep_provider = DefaultTransactionDependencyProvider::new(&rpc_url, 10);
 

@@ -65,6 +65,8 @@ pub struct TransactionStatus {
     pub transaction: Option<ckb_jsonrpc_types::TransactionView>,
     /// Transaction status string: "pending", "proposed", "committed", "rejected", or "unknown".
     pub status: String,
+    /// Block hash of the block that committed this transaction, if committed.
+    pub block_hash: Option<H256>,
 }
 
 /// Full node / public RPC implementation.
@@ -128,6 +130,7 @@ impl CkbRpc for FullNodeRpc {
         Ok(resp.map(|r| TransactionStatus {
             transaction: r.transaction.and_then(|inner| inner.get_value().ok()),
             status: format!("{:?}", r.tx_status.status),
+            block_hash: r.tx_status.block_hash,
         }))
     }
 
@@ -251,9 +254,14 @@ impl CkbRpc for LightClientRpc {
                 .and_then(|s| s.as_str())
                 .unwrap_or("unknown")
                 .to_string();
+            let block_hash = json_value
+                .get("tx_status")
+                .and_then(|s| s.get("block_hash"))
+                .and_then(|h| serde_json::from_value::<H256>(h.clone()).ok());
             TransactionStatus {
                 transaction,
                 status,
+                block_hash,
             }
         }))
     }
