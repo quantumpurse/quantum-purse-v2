@@ -72,7 +72,7 @@ impl App {
                     ui.add_space(32.0);
 
                     #[cfg(target_os = "macos")]
-                    let is_busy = self.pending_op.is_some();
+                    let is_busy = self.passkey_op.is_some();
                     #[cfg(not(target_os = "macos"))]
                     let is_busy = false;
 
@@ -122,7 +122,7 @@ impl App {
             ui.add_space(40.0);
 
             #[cfg(target_os = "macos")]
-            let is_busy = self.pending_op.is_some();
+            let is_busy = self.passkey_op.is_some();
             #[cfg(not(target_os = "macos"))]
             let is_busy = false;
 

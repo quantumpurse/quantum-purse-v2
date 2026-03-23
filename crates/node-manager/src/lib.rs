@@ -8,7 +8,8 @@ pub use config::{NetworkType, NodeConfig, NodeType};
 pub use error::NodeManagerError;
 pub use process::NodeProcess;
 pub use rpc::{
-    connect, connect_light_client, fetch_lock_script_balance, CkbRpc, LightClientRpc,
+    connect, connect_light_client, fetch_lock_script_balance, fetch_quantum_lock_balance, CkbRpc,
+    LightClientRpc,
     TransactionStatus,
 };
 pub use tx_builder::{

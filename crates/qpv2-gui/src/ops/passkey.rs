@@ -3,7 +3,7 @@
 use qpv2_core::types::{AuthKey, AuthMethod, SpxVariant};
 use qpv2_core::KeyVault;
 
-use crate::types::{fetch_account_balance, DaoStatus, PendingOp, Screen, Status, TransferStatus};
+use crate::types::{DaoStatus, PasskeyOp, Screen, Status, TransferStatus};
 use crate::App;
 
 impl App {
@@ -53,9 +53,9 @@ impl App {
         let user_name = "tea";
 
         match passkey_prf::register_passkey_async(&window, rp_id, user_id, user_name) {
-            Ok(pending) => {
-                self.pending_op = Some(PendingOp::Registration {
-                    pending,
+            Ok(op) => {
+                self.passkey_op = Some(PasskeyOp::Registration {
+                    op,
                     variant: self.selected_variant,
                     window,
                 });
@@ -79,8 +79,8 @@ impl App {
 
         let rp_id = "quantumpurse.org";
         match passkey_prf::assert_async(&window, rp_id, &credential_id, None) {
-            Ok(pending) => {
-                self.pending_op = Some(PendingOp::UnlockAssert { pending });
+            Ok(op) => {
+                self.passkey_op = Some(PasskeyOp::UnlockAssert { op });
             }
             Err(passkey_prf::PrfError::Cancelled) => {
                 self.status = Status::Info("Cancelled.".to_string());
@@ -105,8 +105,8 @@ impl App {
         let rp_id = "quantumpurse.org";
         let salt = b"quantumpurse-kv-seed-encryption\0";
         match passkey_prf::assert_async(&window, rp_id, &credential_id, Some(salt)) {
-            Ok(pending) => {
-                self.pending_op = Some(PendingOp::NewAccountAssert { pending });
+            Ok(op) => {
+                self.passkey_op = Some(PasskeyOp::NewAccountAssert { op });
                 self.status = Status::Info("Authenticate with Touch ID...".to_string());
             }
             Err(passkey_prf::PrfError::Cancelled) => {
@@ -118,24 +118,24 @@ impl App {
         }
     }
 
-    /// Poll pending passkey operations each frame.
-    pub(crate) fn poll_pending(&mut self) {
-        let op = match self.pending_op.take() {
+    /// Poll op passkey operations each frame.
+    pub(crate) fn poll_passkey_ops(&mut self) {
+        let op = match self.passkey_op.take() {
             Some(op) => op,
             None => return,
         };
 
         match op {
-            PendingOp::Registration {
-                pending,
+            PasskeyOp::Registration {
+                op,
                 variant,
                 window,
             } => {
-                match pending.poll() {
+                match op.poll() {
                     None => {
                         // Still waiting — put it back.
-                        self.pending_op = Some(PendingOp::Registration {
-                            pending,
+                        self.passkey_op = Some(PasskeyOp::Registration {
+                            op,
                             variant,
                             window,
                         });
@@ -155,8 +155,8 @@ impl App {
                         match passkey_prf::assert_async(&window, rp_id, &credential_id, Some(salt))
                         {
                             Ok(assert_pending) => {
-                                self.pending_op = Some(PendingOp::PostRegistrationAssert {
-                                    pending: assert_pending,
+                                self.passkey_op = Some(PasskeyOp::PostRegistrationAssert {
+                                    op: assert_pending,
                                     variant,
                                     credential_id,
                                 });
@@ -175,14 +175,14 @@ impl App {
                     }
                 }
             }
-            PendingOp::PostRegistrationAssert {
-                pending,
+            PasskeyOp::PostRegistrationAssert {
+                op,
                 variant,
                 credential_id,
-            } => match pending.poll() {
+            } => match op.poll() {
                 None => {
-                    self.pending_op = Some(PendingOp::PostRegistrationAssert {
-                        pending,
+                    self.passkey_op = Some(PasskeyOp::PostRegistrationAssert {
+                        op,
                         variant,
                         credential_id,
                     });
@@ -202,9 +202,9 @@ impl App {
                     self.status = Status::Error(format!("Authentication failed: {}", e));
                 }
             },
-            PendingOp::UnlockAssert { pending } => match pending.poll() {
+            PasskeyOp::UnlockAssert { op } => match op.poll() {
                 None => {
-                    self.pending_op = Some(PendingOp::UnlockAssert { pending });
+                    self.passkey_op = Some(PasskeyOp::UnlockAssert { op });
                 }
                 Some(Ok(_)) => {
                     self.finish_unlock();
@@ -216,9 +216,9 @@ impl App {
                     self.status = Status::Error(format!("Authentication failed: {}", e));
                 }
             },
-            PendingOp::NewAccountAssert { pending } => match pending.poll() {
+            PasskeyOp::NewAccountAssert { op } => match op.poll() {
                 None => {
-                    self.pending_op = Some(PendingOp::NewAccountAssert { pending });
+                    self.passkey_op = Some(PasskeyOp::NewAccountAssert { op });
                 }
                 Some(Ok(Some(prf_output))) => {
                     self.finish_create_new_account(&prf_output);
@@ -235,15 +235,15 @@ impl App {
                     self.status = Status::Error(format!("Authentication failed: {}", e));
                 }
             },
-            PendingOp::SignTransferAssert {
-                pending,
+            PasskeyOp::SignTransferAssert {
+                op,
                 unsigned_tx,
                 input_cells,
                 lock_args,
-            } => match pending.poll() {
+            } => match op.poll() {
                 None => {
-                    self.pending_op = Some(PendingOp::SignTransferAssert {
-                        pending,
+                    self.passkey_op = Some(PasskeyOp::SignTransferAssert {
+                        op,
                         unsigned_tx,
                         input_cells,
                         lock_args,
@@ -266,15 +266,15 @@ impl App {
                         TransferStatus::Error(format!("Authentication failed: {}", e));
                 }
             },
-            PendingOp::SignDaoAssert {
-                pending,
+            PasskeyOp::SignDaoAssert {
+                op,
                 unsigned_tx,
                 input_cells,
                 lock_args,
-            } => match pending.poll() {
+            } => match op.poll() {
                 None => {
-                    self.pending_op = Some(PendingOp::SignDaoAssert {
-                        pending,
+                    self.passkey_op = Some(PasskeyOp::SignDaoAssert {
+                        op,
                         unsigned_tx,
                         input_cells,
                         lock_args,
@@ -394,15 +394,16 @@ impl App {
                 self.balances.insert(lock_args.clone(), None);
                 if self.rpc_client.is_some() {
                     let node_config = self.node_config.clone();
-                    let is_mainnet = self.is_mainnet();
+                    let network = self.node_config.network;
                     let args = lock_args.clone();
                     let (tx, rx) = std::sync::mpsc::channel();
                     self.balance_receiver = Some(rx);
 
                     std::thread::spawn(move || {
                         let rpc = node_manager::connect(&node_config);
-                        let result = fetch_account_balance(rpc.as_ref(), &args, is_mainnet)
-                            .map_err(|e| e.to_string());
+                        let result =
+                            node_manager::fetch_quantum_lock_balance(rpc.as_ref(), &args, network)
+                                .map_err(|e| e.to_string());
                         let _ = tx.send((args, result));
                     });
                 }

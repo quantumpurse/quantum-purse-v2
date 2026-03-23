@@ -1,4 +1,4 @@
-use crate::config::{NodeConfig, NodeType};
+use crate::config::{NetworkType, NodeConfig, NodeType};
 use crate::error::NodeManagerError;
 use ckb_jsonrpc_types::JsonBytes;
 use ckb_sdk::rpc::ckb_indexer::{Cell, CellsCapacity, Order, Pagination, SearchKey};
@@ -393,4 +393,27 @@ pub fn fetch_lock_script_balance(
         Some(capacity) => Ok(capacity.capacity.value()),
         None => Ok(0),
     }
+}
+
+/// Queries the total balance (in shannons) for a QuantumPurse lock script.
+///
+/// Selects the correct lock script deployment (code hash + hash type) for the
+/// requested network, then delegates to `fetch_lock_script_balance`.
+pub fn fetch_quantum_lock_balance(
+    rpc: &dyn CkbRpc,
+    lock_args_hex: &str,
+    network: NetworkType,
+) -> Result<u64, NodeManagerError> {
+    let (code_hash, hash_type) = match network {
+        NetworkType::Mainnet => (
+            qpv2_core::constants::CKB_MAINNET_CODE_HASH,
+            qpv2_core::constants::CKB_MAINNET_HASH_TYPE,
+        ),
+        NetworkType::Testnet => (
+            qpv2_core::constants::CKB_TESTNET_CODE_HASH,
+            qpv2_core::constants::CKB_TESTNET_HASH_TYPE,
+        ),
+    };
+
+    fetch_lock_script_balance(rpc, code_hash, hash_type, lock_args_hex)
 }

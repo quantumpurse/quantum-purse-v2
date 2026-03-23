@@ -1,7 +1,6 @@
 //! Shared types, constants, and utility functions for the GUI.
 
 use eframe::egui;
-use node_manager::CkbRpc;
 use qpv2_core::types::SpxVariant;
 
 /// Computes the SPHINCS+ witness lock size for a given variant.
@@ -67,37 +66,37 @@ pub(crate) enum Status {
 
 /// Tracks in-flight passkey operations so the UI doesn't block.
 #[cfg(target_os = "macos")]
-pub(crate) enum PendingOp {
+pub(crate) enum PasskeyOp {
     /// Waiting for passkey registration to complete.
     Registration {
-        pending: passkey_prf::PendingRegistration,
+        op: passkey_prf::PendingRegistration,
         variant: SpxVariant,
         window: objc2::rc::Retained<objc2_app_kit::NSWindow>,
     },
     /// Registration done; waiting for PRF assertion to get the encryption key.
     PostRegistrationAssert {
-        pending: passkey_prf::AssertionRequest,
+        op: passkey_prf::AssertionRequest,
         variant: SpxVariant,
         credential_id: Vec<u8>,
     },
     /// Waiting for unlock credential assertion (no PRF).
     UnlockAssert {
-        pending: passkey_prf::AssertionRequest,
+        op: passkey_prf::AssertionRequest,
     },
     /// Waiting for PRF assertion to create a new account.
     NewAccountAssert {
-        pending: passkey_prf::AssertionRequest,
+        op: passkey_prf::AssertionRequest,
     },
     /// Waiting for PRF assertion to sign a transfer transaction.
     SignTransferAssert {
-        pending: passkey_prf::AssertionRequest,
+        op: passkey_prf::AssertionRequest,
         unsigned_tx: ckb_types::core::TransactionView,
         input_cells: Vec<(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)>,
         lock_args: String,
     },
     /// Waiting for PRF assertion to sign a DAO transaction.
     SignDaoAssert {
-        pending: passkey_prf::AssertionRequest,
+        op: passkey_prf::AssertionRequest,
         unsigned_tx: ckb_types::core::TransactionView,
         input_cells: Vec<(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)>,
         lock_args: String,
@@ -183,27 +182,6 @@ impl Default for AppColors {
             text_muted: egui::Color32::from_rgb(90, 122, 112), // #5a7a70
         }
     }
-}
-
-/// Fetch the balance (in shannons) for a single account by its lock_args.
-pub(crate) fn fetch_account_balance(
-    rpc: &dyn CkbRpc,
-    lock_args: &str,
-    is_mainnet: bool,
-) -> Result<u64, node_manager::NodeManagerError> {
-    let (code_hash, hash_type) = if is_mainnet {
-        (
-            qpv2_core::constants::CKB_MAINNET_CODE_HASH,
-            qpv2_core::constants::CKB_MAINNET_HASH_TYPE,
-        )
-    } else {
-        (
-            qpv2_core::constants::CKB_TESTNET_CODE_HASH,
-            qpv2_core::constants::CKB_TESTNET_HASH_TYPE,
-        )
-    };
-
-    node_manager::fetch_lock_script_balance(rpc, code_hash, hash_type, lock_args)
 }
 
 /// Format shannons as a numeric CKB string without the unit suffix.

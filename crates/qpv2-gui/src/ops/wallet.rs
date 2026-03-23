@@ -2,7 +2,7 @@
 
 use std::sync::mpsc;
 
-use crate::types::{fetch_account_balance, Screen, Status, Tab};
+use crate::types::{Screen, Status, Tab};
 use crate::App;
 
 impl App {
@@ -80,15 +80,19 @@ impl App {
         }
 
         let node_config = self.node_config.clone();
-        let is_mainnet = self.is_mainnet();
+        let network = self.node_config.network;
         let (tx, rx) = mpsc::channel();
         self.balance_receiver = Some(rx);
 
         std::thread::spawn(move || {
             let rpc = node_manager::connect(&node_config);
             for lock_args in accounts {
-                let result = fetch_account_balance(rpc.as_ref(), &lock_args, is_mainnet)
-                    .map_err(|e| e.to_string());
+                let result = node_manager::fetch_quantum_lock_balance(
+                    rpc.as_ref(),
+                    &lock_args,
+                    network,
+                )
+                .map_err(|e| e.to_string());
                 // If the receiver is dropped (e.g. wallet locked), stop.
                 if tx.send((lock_args, result)).is_err() {
                     break;

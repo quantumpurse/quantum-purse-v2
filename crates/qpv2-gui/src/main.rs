@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::sync::mpsc;
 
 #[cfg(target_os = "macos")]
-use types::PendingOp;
+use types::PasskeyOp;
 use types::{
     AppColors, BalanceResult, DaoQueryResult, DaoStatus, DaoView, Screen, Status, Tab,
     TransferStatus, TxBuildResult,
@@ -50,7 +50,7 @@ pub(crate) struct App {
 
     // In-flight passkey operation (macOS only).
     #[cfg(target_os = "macos")]
-    pub(crate) pending_op: Option<PendingOp>,
+    pub(crate) passkey_op: Option<PasskeyOp>,
 
     // Node selector popup state.
     pub(crate) node_selector_open: bool,
@@ -179,7 +179,7 @@ impl App {
             settings_data_dir,
             balance_receiver: None,
             #[cfg(target_os = "macos")]
-            pending_op: None,
+            passkey_op: None,
             node_selector_open: false,
             node_selector_rect: None,
             temp_network,
@@ -215,9 +215,9 @@ impl App {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        // Poll pending passkey operations each frame.
+        // Poll passkey operations each frame.
         #[cfg(target_os = "macos")]
-        self.poll_pending();
+        self.poll_passkey_ops();
 
         // Drain balance results from the background thread.
         self.poll_balance_results();
@@ -234,6 +234,7 @@ impl eframe::App for App {
         // Show node selector popup if open
         self.show_node_selector_popup(ctx);
 
+        // Polling main stages of the wallet.
         match self.screen.clone() {
             Screen::Setup => {
                 egui::CentralPanel::default()
@@ -261,7 +262,7 @@ impl eframe::App for App {
         let balance_pending = self.balance_receiver.is_some();
         let transfer_pending = self.transfer_build_rx.is_some() || self.transfer_send_rx.is_some();
         #[cfg(target_os = "macos")]
-        let has_pending_op = self.pending_op.is_some();
+        let has_pending_op = self.passkey_op.is_some();
         #[cfg(not(target_os = "macos"))]
         let has_pending_op = false;
 

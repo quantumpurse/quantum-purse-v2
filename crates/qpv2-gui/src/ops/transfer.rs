@@ -248,10 +248,10 @@ impl App {
                     let rp_id = "quantumpurse.org";
                     let salt = b"quantumpurse-kv-seed-encryption\0";
                     match passkey_prf::assert_async(&window, rp_id, &credential_id, Some(salt)) {
-                        Ok(pending) => {
-                            use crate::types::PendingOp;
-                            self.pending_op = Some(PendingOp::SignTransferAssert {
-                                pending,
+                        Ok(op) => {
+                            use crate::types::PasskeyOp;
+                            self.passkey_op = Some(PasskeyOp::SignTransferAssert {
+                                op,
                                 unsigned_tx,
                                 input_cells,
                                 lock_args,
