@@ -464,7 +464,7 @@ impl App {
 
     /// Renders the Active Positions table.
     pub(crate) fn show_dao_positions_table(&mut self, ui: &mut egui::Ui) {
-        ui.label(egui::RichText::new("Active Positions").size(16.0).strong());
+        ui.label(egui::RichText::new("Active Positions").size(16.0).strong().color(self.colors.text_muted));
         ui.add_space(12.0);
 
         let is_busy = !matches!(self.dao_status, DaoStatus::Idle)
@@ -553,8 +553,8 @@ impl App {
                             let hash_str = format!("{:#x}", cell.out_point.tx_hash());
                             let short = format!(
                                 "{}...{}",
-                                &hash_str[..6],
-                                &hash_str[hash_str.len().saturating_sub(4)..]
+                                &hash_str[..16],
+                                &hash_str[hash_str.len().saturating_sub(14)..]
                             );
                             ui.label(
                                 egui::RichText::new(&short)
@@ -619,8 +619,8 @@ impl App {
                             let hash_str = format!("{:#x}", cell.out_point.tx_hash());
                             let short = format!(
                                 "{}...{}",
-                                &hash_str[..6],
-                                &hash_str[hash_str.len().saturating_sub(4)..]
+                                &hash_str[..16],
+                                &hash_str[hash_str.len().saturating_sub(14)..]
                             );
                             ui.label(
                                 egui::RichText::new(&short)
@@ -632,6 +632,7 @@ impl App {
                             ui.label(
                                 egui::RichText::new(format!("{} CKB", format_ckb(cell.capacity)))
                                     .size(12.0)
+                                    .color(self.colors.text_muted)
                                     .strong(),
                             );
 

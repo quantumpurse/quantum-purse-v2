@@ -277,8 +277,8 @@ impl eframe::App for App {
 fn main() -> eframe::Result {
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([900.0, 600.0])
-            .with_min_inner_size([800.0, 500.0])
+            .with_inner_size([1000.0, 600.0])
+            .with_min_inner_size([1000.0, 600.0])
             .with_title("Quantum Purse"),
         ..Default::default()
     };
