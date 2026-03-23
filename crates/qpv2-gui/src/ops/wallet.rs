@@ -108,6 +108,7 @@ impl App {
             None => return,
         };
 
+        // fetching all available results from the mpsc::channel's buffer.
         loop {
             match rx.try_recv() {
                 Ok((lock_args, Ok(balance))) => {
