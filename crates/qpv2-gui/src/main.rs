@@ -261,12 +261,14 @@ impl eframe::App for App {
         // Request repaint while an async operation is pending so we poll promptly.
         let balance_pending = self.balance_receiver.is_some();
         let transfer_pending = self.transfer_build_rx.is_some() || self.transfer_send_rx.is_some();
+        let dao_pending =
+            self.dao_query_rx.is_some() || self.dao_build_rx.is_some() || self.dao_send_rx.is_some();
         #[cfg(target_os = "macos")]
         let has_pending_op = self.passkey_op.is_some();
         #[cfg(not(target_os = "macos"))]
         let has_pending_op = false;
 
-        if has_pending_op || balance_pending || transfer_pending {
+        if has_pending_op || balance_pending || transfer_pending || dao_pending {
             ctx.request_repaint();
         }
     }
