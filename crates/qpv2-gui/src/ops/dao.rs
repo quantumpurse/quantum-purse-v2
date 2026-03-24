@@ -4,7 +4,7 @@ use std::sync::mpsc;
 
 use qpv2_core::KeyVault;
 
-use crate::types::{spx_witness_lock_size, DaoStatus, Status, CKB_DECIMAL_PLACES};
+use crate::types::{spx_witness_lock_size, DaoQueryEvent, DaoStatus, Status, CKB_DECIMAL_PLACES};
 use crate::App;
 
 impl App {
@@ -13,6 +13,8 @@ impl App {
         if self.accounts.is_empty() || self.dao_query_rx.is_some() {
             return;
         }
+        self.dao_deposited_cells.clear();
+        self.dao_prepared_cells.clear();
 
         let is_mainnet = self.is_mainnet();
         let node_config = self.node_config.clone();
@@ -22,36 +24,61 @@ impl App {
         self.dao_query_rx = Some(rx);
 
         std::thread::spawn(move || {
-            let result = (|| -> Result<_, String> {
-                let rpc = node_manager::connect(&node_config);
-                let mut all_deposited = Vec::new();
-                let mut all_prepared = Vec::new();
+            let rpc = node_manager::connect(&node_config);
 
-                for lock_args in &all_lock_args {
-                    let address_str =
-                        qpv2_core::utilities::lock_args_to_address(lock_args, is_mainnet)
-                            .map_err(|e| format!("Invalid address: {}", e))?;
-                    let address: ckb_sdk::Address = address_str
-                        .parse()
-                        .map_err(|e| format!("Invalid address: {}", e))?;
-
-                    let deposited = node_manager::query_deposited_cells(rpc.as_ref(), &address)
-                        .map_err(|e| format!("Failed to query deposited cells: {}", e))?;
-                    let prepared = node_manager::query_prepared_cells(rpc.as_ref(), &address)
-                        .map_err(|e| format!("Failed to query prepared cells: {}", e))?;
-
-                    for cell in deposited {
-                        all_deposited.push((lock_args.clone(), cell));
+            for lock_args in &all_lock_args {
+                let address_str = match qpv2_core::utilities::lock_args_to_address(lock_args, is_mainnet) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        let _ = tx.send(Err(format!("Invalid address: {}", e)));
+                        continue;
                     }
-                    for cell in prepared {
-                        all_prepared.push((lock_args.clone(), cell));
+                };
+                let address: ckb_sdk::Address = match address_str.parse() {
+                    Ok(v) => v,
+                    Err(e) => {
+                        let _ = tx.send(Err(format!("Invalid address: {}", e)));
+                        continue;
+                    }
+                };
+
+                let deposited = match node_manager::query_deposited_cells(rpc.as_ref(), &address) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        let _ = tx.send(Err(format!("Failed to query deposited cells: {}", e)));
+                        continue;
+                    }
+                };
+
+                for cell in deposited {
+                    // If the receiver is dropped (e.g. wallet locked), stop.
+                    if tx
+                        .send(Ok(DaoQueryEvent::Deposited(lock_args.clone(), cell)))
+                        .is_err()
+                    {
+                        return;
                     }
                 }
 
-                Ok((all_deposited, all_prepared))
-            })();
+                let prepared = match node_manager::query_prepared_cells(rpc.as_ref(), &address) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        let _ = tx.send(Err(format!("Failed to query prepared cells: {}", e)));
+                        continue;
+                    }
+                };
+                for cell in prepared {
+                    // If the receiver is dropped (e.g. wallet locked), stop.
+                    if tx
+                        .send(Ok(DaoQueryEvent::Prepared(lock_args.clone(), cell)))
+                        .is_err()
+                    {
+                        return;
+                    }
+                }
+            }
 
-            let _ = tx.send(result);
+            let _ = tx.send(Ok(DaoQueryEvent::Done));
         });
     }
 
@@ -63,10 +90,14 @@ impl App {
         };
 
         match rx.try_recv() {
-            Ok(Ok((deposited, prepared))) => {
+            Ok(Ok(DaoQueryEvent::Deposited(lock_args, cell))) => {
+                self.dao_deposited_cells.push((lock_args, cell));
+            }
+            Ok(Ok(DaoQueryEvent::Prepared(lock_args, cell))) => {
+                self.dao_prepared_cells.push((lock_args, cell));
+            }
+            Ok(Ok(DaoQueryEvent::Done)) => {
                 self.dao_query_rx = None;
-                self.dao_deposited_cells = deposited;
-                self.dao_prepared_cells = prepared;
             }
             Ok(Err(e)) => {
                 self.dao_query_rx = None;

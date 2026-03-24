@@ -28,13 +28,14 @@ pub(crate) type TxBuildResult = Result<
 >;
 
 /// Result type for DAO cell queries across all accounts.
-pub(crate) type DaoQueryResult = Result<
-    (
-        Vec<(String, node_manager::DepositedCell)>,
-        Vec<(String, node_manager::PreparedCell)>,
-    ),
-    String,
->;
+pub(crate) type DaoQueryResult = Result<DaoQueryEvent, String>;
+
+/// Streaming DAO query event from background thread.
+pub(crate) enum DaoQueryEvent {
+    Deposited(String, node_manager::DepositedCell),
+    Prepared(String, node_manager::PreparedCell),
+    Done,
+}
 
 /// Sidebar navigation tabs matching the mockup layout.
 #[derive(Debug, Clone, Copy, PartialEq)]
