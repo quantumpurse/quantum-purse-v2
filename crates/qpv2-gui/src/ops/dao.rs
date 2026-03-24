@@ -44,7 +44,7 @@ impl App {
                     }
                 };
 
-                let (deposited, prepared) = match node_manager::query_dao_cells(rpc.as_ref(), &address) {
+                let (deposited, prepared) = match node_manager::categozire_dao_cells(rpc.as_ref(), &address) {
                     Ok(v) => v,
                     Err(e) => {
                         let _ = tx.send(Err(format!("Failed to query DAO cells: {}", e)));

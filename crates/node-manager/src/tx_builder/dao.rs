@@ -401,7 +401,7 @@ fn collect_dao_cells(
 
 /// Queries all DAO cells for an address and partitions them into deposited and
 /// prepared cells.
-pub fn query_dao_cells(
+pub fn categozire_dao_cells(
     rpc: &dyn CkbRpc,
     address: &Address,
 ) -> Result<(Vec<DepositedCell>, Vec<PreparedCell>), NodeManagerError> {
