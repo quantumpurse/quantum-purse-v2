@@ -399,76 +399,45 @@ fn collect_dao_cells(
     Ok(cells)
 }
 
-/// Queries deposited DAO cells for an address.
-///
-/// Deposited cells have 8 bytes of data where the encoded block number is 0.
-pub fn query_deposited_cells(
+/// Queries all DAO cells for an address and partitions them into deposited and
+/// prepared cells.
+pub fn query_dao_cells(
     rpc: &dyn CkbRpc,
     address: &Address,
-) -> Result<Vec<DepositedCell>, NodeManagerError> {
+) -> Result<(Vec<DepositedCell>, Vec<PreparedCell>), NodeManagerError> {
     let rpc_url = rpc.get_rpc_url();
     let cells = collect_dao_cells(&rpc_url, address)?;
 
-    Ok(cells
-        .into_iter()
-        .filter(|cell| {
-            cell.output_data.len() == 8
-                && LittleEndian::read_u64(&cell.output_data.as_ref()[0..8]) == 0
-        })
-        .map(|cell| {
-            let tx_hash: H256 = cell.out_point.tx_hash().unpack();
-            let block_number = rpc
-                .get_transaction(tx_hash)
-                .ok()
-                .flatten()
-                .and_then(|ts| ts.block_hash)
-                .and_then(|bh| rpc.get_header(bh).ok().flatten())
-                .map(|h| h.inner.number.into())
-                .unwrap_or(0);
+    let mut deposited = Vec::new();
+    let mut prepared = Vec::new();
+    for cell in cells {
+        if cell.output_data.len() != 8 {
+            continue;
+        }
 
-            DepositedCell {
+        // the DAO cell data can tell if this is a deposit cell or a withdrawn cell - waiting to be unlocked.
+        // if the first 8 bytes of the data is all 0, the it is a deposit cell. otherwise, it is a prepared cell.
+        let cell_data = LittleEndian::read_u64(&cell.output_data.as_ref()[0..8]);
+        if cell_data == 0 {
+            deposited.push(DepositedCell {
                 out_point: cell.out_point,
                 capacity: cell.output.capacity().unpack(),
-                block_number,
-            }
-        })
-        .collect())
-}
-
-/// Queries prepared DAO cells for an address.
-///
-/// Prepared cells have 8 bytes of data where the encoded block number is non-zero.
-/// For each cell, the maximum withdrawable capacity (principal + interest) is
-/// calculated by tracing back to the original deposit.
-pub fn query_prepared_cells(
-    rpc: &dyn CkbRpc,
-    address: &Address,
-) -> Result<Vec<PreparedCell>, NodeManagerError> {
-    let rpc_url = rpc.get_rpc_url();
-    let cells = collect_dao_cells(&rpc_url, address)?;
-
-    let prepared_cells: Vec<_> = cells
-        .into_iter()
-        .filter(|cell| {
-            cell.output_data.len() == 8
-                && LittleEndian::read_u64(&cell.output_data.as_ref()[0..8]) != 0
-        })
-        .collect();
-
-    let mut result = Vec::new();
-    for cell in prepared_cells {
-        let (max_withdraw, deposit_block_number, prepare_block_number) =
-            calculate_max_withdraw(rpc, &cell)?;
-        result.push(PreparedCell {
-            out_point: cell.out_point,
-            capacity: cell.output.capacity().unpack(),
-            maximum_withdraw: max_withdraw,
-            deposit_block_number,
-            prepare_block_number,
-        });
+                block_number: cell.block_number,
+            });
+        } else {
+            let (max_withdraw, deposit_block_number, prepare_block_number) =
+                calculate_max_withdraw(rpc, &cell)?;
+            prepared.push(PreparedCell {
+                out_point: cell.out_point,
+                capacity: cell.output.capacity().unpack(),
+                maximum_withdraw: max_withdraw,
+                deposit_block_number,
+                prepare_block_number,
+            });
+        }
     }
 
-    Ok(result)
+    Ok((deposited, prepared))
 }
 
 /// Calculates the maximum withdrawable capacity for a prepared DAO cell.

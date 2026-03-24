@@ -13,6 +13,8 @@ impl App {
         if self.accounts.is_empty() || self.dao_query_rx.is_some() {
             return;
         }
+
+        // avoid showing duplicated cells from previous poll.
         self.dao_deposited_cells.clear();
         self.dao_prepared_cells.clear();
 
@@ -42,10 +44,10 @@ impl App {
                     }
                 };
 
-                let deposited = match node_manager::query_deposited_cells(rpc.as_ref(), &address) {
+                let (deposited, prepared) = match node_manager::query_dao_cells(rpc.as_ref(), &address) {
                     Ok(v) => v,
                     Err(e) => {
-                        let _ = tx.send(Err(format!("Failed to query deposited cells: {}", e)));
+                        let _ = tx.send(Err(format!("Failed to query DAO cells: {}", e)));
                         continue;
                     }
                 };
@@ -60,13 +62,6 @@ impl App {
                     }
                 }
 
-                let prepared = match node_manager::query_prepared_cells(rpc.as_ref(), &address) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        let _ = tx.send(Err(format!("Failed to query prepared cells: {}", e)));
-                        continue;
-                    }
-                };
                 for cell in prepared {
                     // If the receiver is dropped (e.g. wallet locked), stop.
                     if tx
@@ -89,23 +84,29 @@ impl App {
             None => return,
         };
 
-        match rx.try_recv() {
-            Ok(Ok(DaoQueryEvent::Deposited(lock_args, cell))) => {
-                self.dao_deposited_cells.push((lock_args, cell));
-            }
-            Ok(Ok(DaoQueryEvent::Prepared(lock_args, cell))) => {
-                self.dao_prepared_cells.push((lock_args, cell));
-            }
-            Ok(Ok(DaoQueryEvent::Done)) => {
-                self.dao_query_rx = None;
-            }
-            Ok(Err(e)) => {
-                self.dao_query_rx = None;
-                self.status = Status::Error(e);
-            }
-            Err(mpsc::TryRecvError::Empty) => {}
-            Err(mpsc::TryRecvError::Disconnected) => {
-                self.dao_query_rx = None;
+        // Drain all available DAO query events from the channel buffer.
+        loop {
+            match rx.try_recv() {
+                Ok(Ok(DaoQueryEvent::Deposited(lock_args, cell))) => {
+                    self.dao_deposited_cells.push((lock_args, cell));
+                }
+                Ok(Ok(DaoQueryEvent::Prepared(lock_args, cell))) => {
+                    self.dao_prepared_cells.push((lock_args, cell));
+                }
+                Ok(Ok(DaoQueryEvent::Done)) => {
+                    self.dao_query_rx = None;
+                    break;
+                }
+                Ok(Err(e)) => {
+                    self.dao_query_rx = None;
+                    self.status = Status::Error(e);
+                    break;
+                }
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.dao_query_rx = None;
+                    break;
+                }
             }
         }
     }
