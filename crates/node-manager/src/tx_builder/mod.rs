@@ -13,8 +13,8 @@ pub mod transfer;
 pub mod utils;
 
 pub use dao::{
-    categozire_dao_cells, DaoDepositBuilder, DaoPrepareBuilder, DaoWithdrawBuilder, DepositedCell,
+    categozire_dao_cells, QpDaoDepositBuilder, QpDaoPrepareBuilder, QpDaoWithdrawBuilder, DepositedCell,
     PreparedCell,
 };
 pub use signing::{fetch_input_cells, fill_witness, send_transaction};
-pub use transfer::TransferBuilder;
+pub use transfer::QpTransferBuilder;

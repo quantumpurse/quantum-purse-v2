@@ -13,6 +13,6 @@ pub use rpc::{
     TransactionStatus,
 };
 pub use tx_builder::{
-    fetch_input_cells, fill_witness, categozire_dao_cells, send_transaction, DaoDepositBuilder,
-    DaoPrepareBuilder, DaoWithdrawBuilder, DepositedCell, PreparedCell, TransferBuilder,
+    fetch_input_cells, fill_witness, categozire_dao_cells, send_transaction, QpDaoDepositBuilder,
+    QpDaoPrepareBuilder, QpDaoWithdrawBuilder, DepositedCell, PreparedCell, QpTransferBuilder,
 };

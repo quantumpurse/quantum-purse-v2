@@ -84,7 +84,7 @@ impl App {
                     .map_err(|e| format!("Invalid recipient address: {}", e))?;
 
                 // Build unsigned transaction with correct placeholder size
-                let unsigned_tx = node_manager::TransferBuilder::new(rpc.as_ref(), is_mainnet)
+                let unsigned_tx = node_manager::QpTransferBuilder::new(rpc.as_ref(), is_mainnet)
                     .with_placeholder_lock_size(witness_lock_size)
                     .build_unsigned(&from_address, &to_address, capacity_sh, fee_rate, None)
                     .map_err(|e| format!("Failed to build transaction: {}", e))?;

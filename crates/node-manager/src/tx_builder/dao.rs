@@ -12,9 +12,9 @@ use ckb_sdk::{
     tx_builder::{
         balance_tx_capacity,
         dao::{
-            DaoDepositBuilder as SdkDaoDepositBuilder, DaoDepositReceiver,
-            DaoPrepareBuilder as SdkDaoPrepareBuilder, DaoPrepareItem,
-            DaoWithdrawBuilder as SdkDaoWithdrawBuilder, DaoWithdrawItem, DaoWithdrawReceiver,
+            DaoDepositBuilder, DaoDepositReceiver,
+            DaoPrepareBuilder, DaoPrepareItem,
+            DaoWithdrawBuilder, DaoWithdrawItem, DaoWithdrawReceiver,
         },
         CapacityBalancer, CapacityProvider, TxBuilder,
     },
@@ -77,16 +77,16 @@ fn build_balanced_dao_tx(
 }
 
 /// Builder for DAO deposit transactions.
-pub struct DaoDepositBuilder<'a> {
+pub struct QpDaoDepositBuilder<'a> {
     rpc: &'a dyn CkbRpc,
     is_mainnet: bool,
     placeholder_lock_size: usize,
 }
 
-impl<'a> DaoDepositBuilder<'a> {
+impl<'a> QpDaoDepositBuilder<'a> {
     /// Creates a new DAO deposit builder with default secp256k1 placeholder size.
     pub fn new(rpc: &'a dyn CkbRpc, is_mainnet: bool) -> Self {
-        DaoDepositBuilder {
+        QpDaoDepositBuilder {
             rpc,
             is_mainnet,
             placeholder_lock_size: DEFAULT_PLACEHOLDER_LOCK_SIZE,
@@ -123,7 +123,7 @@ impl<'a> DaoDepositBuilder<'a> {
 
         // Create DAO deposit receiver
         let deposit_receiver = DaoDepositReceiver::new(lock_script.clone(), capacity_sh);
-        let deposit_builder = SdkDaoDepositBuilder::new(vec![deposit_receiver]);
+        let deposit_builder = DaoDepositBuilder::new(vec![deposit_receiver]);
 
         build_balanced_dao_tx(
             &deposit_builder,
@@ -137,16 +137,16 @@ impl<'a> DaoDepositBuilder<'a> {
 }
 
 /// Builder for DAO prepare (withdraw phase 1) transactions.
-pub struct DaoPrepareBuilder<'a> {
+pub struct QpDaoPrepareBuilder<'a> {
     rpc: &'a dyn CkbRpc,
     is_mainnet: bool,
     placeholder_lock_size: usize,
 }
 
-impl<'a> DaoPrepareBuilder<'a> {
+impl<'a> QpDaoPrepareBuilder<'a> {
     /// Creates a new DAO prepare builder with default secp256k1 placeholder size.
     pub fn new(rpc: &'a dyn CkbRpc, is_mainnet: bool) -> Self {
-        DaoPrepareBuilder {
+        QpDaoPrepareBuilder {
             rpc,
             is_mainnet,
             placeholder_lock_size: DEFAULT_PLACEHOLDER_LOCK_SIZE,
@@ -187,7 +187,7 @@ impl<'a> DaoPrepareBuilder<'a> {
             .map(|out_point| DaoPrepareItem::from(CellInput::new(out_point, 0)))
             .collect::<Vec<_>>();
 
-        let prepare_builder = SdkDaoPrepareBuilder::new(items);
+        let prepare_builder = DaoPrepareBuilder::new(items);
 
         // The SDK's DaoPrepareBuilder.build_base produces a transaction with
         // the deposited DAO cell as input 0 (using the user's lock script) but
@@ -261,16 +261,16 @@ impl<'a> DaoPrepareBuilder<'a> {
 }
 
 /// Builder for DAO withdraw (phase 2) transactions.
-pub struct DaoWithdrawBuilder<'a> {
+pub struct QpDaoWithdrawBuilder<'a> {
     rpc: &'a dyn CkbRpc,
     is_mainnet: bool,
     placeholder_lock_size: usize,
 }
 
-impl<'a> DaoWithdrawBuilder<'a> {
+impl<'a> QpDaoWithdrawBuilder<'a> {
     /// Creates a new DAO withdraw builder with default secp256k1 placeholder size.
     pub fn new(rpc: &'a dyn CkbRpc, is_mainnet: bool) -> Self {
-        DaoWithdrawBuilder {
+        QpDaoWithdrawBuilder {
             rpc,
             is_mainnet,
             placeholder_lock_size: DEFAULT_PLACEHOLDER_LOCK_SIZE,
@@ -330,7 +330,7 @@ impl<'a> DaoWithdrawBuilder<'a> {
             fee_rate: Some(FeeRate::from_u64(fee_rate)),
         };
 
-        let withdraw_builder = SdkDaoWithdrawBuilder::new(items, receiver);
+        let withdraw_builder = DaoWithdrawBuilder::new(items, receiver);
 
         build_balanced_dao_tx(
             &withdraw_builder,

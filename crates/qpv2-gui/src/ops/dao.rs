@@ -170,7 +170,7 @@ impl App {
                     .parse()
                     .map_err(|e| format!("Invalid sender address: {}", e))?;
 
-                let unsigned_tx = node_manager::DaoDepositBuilder::new(rpc.as_ref(), is_mainnet)
+                let unsigned_tx = node_manager::QpDaoDepositBuilder::new(rpc.as_ref(), is_mainnet)
                     .with_placeholder_lock_size(witness_lock_size)
                     .build_unsigned(&from_address, capacity_sh, fee_rate)
                     .map_err(|e| format!("Failed to build DAO deposit: {}", e))?;
@@ -225,7 +225,7 @@ impl App {
                     .parse()
                     .map_err(|e| format!("Invalid sender address: {}", e))?;
 
-                let unsigned_tx = node_manager::DaoPrepareBuilder::new(rpc.as_ref(), is_mainnet)
+                let unsigned_tx = node_manager::QpDaoPrepareBuilder::new(rpc.as_ref(), is_mainnet)
                     .with_placeholder_lock_size(witness_lock_size)
                     .build_unsigned(&from_address, vec![deposit_out_point], fee_rate)
                     .map_err(|e| format!("Failed to build DAO prepare: {}", e))?;
@@ -280,7 +280,7 @@ impl App {
                     .parse()
                     .map_err(|e| format!("Invalid sender address: {}", e))?;
 
-                let unsigned_tx = node_manager::DaoWithdrawBuilder::new(rpc.as_ref(), is_mainnet)
+                let unsigned_tx = node_manager::QpDaoWithdrawBuilder::new(rpc.as_ref(), is_mainnet)
                     .with_placeholder_lock_size(witness_lock_size)
                     .build_unsigned(&from_address, vec![prepared_out_point], fee_rate)
                     .map_err(|e| format!("Failed to build DAO withdraw: {}", e))?;

@@ -22,7 +22,7 @@ use ckb_types::{
 const DEFAULT_PLACEHOLDER_LOCK_SIZE: usize = 65;
 
 /// Builder for transfer transactions.
-pub struct TransferBuilder<'a> {
+pub struct QpTransferBuilder<'a> {
     rpc: &'a dyn CkbRpc,
     /// Whether the target network is mainnet (affects cell dep resolution).
     is_mainnet: bool,
@@ -31,10 +31,10 @@ pub struct TransferBuilder<'a> {
     placeholder_lock_size: usize,
 }
 
-impl<'a> TransferBuilder<'a> {
+impl<'a> QpTransferBuilder<'a> {
     /// Creates a new transfer builder with default secp256k1 placeholder size.
     pub fn new(rpc: &'a dyn CkbRpc, is_mainnet: bool) -> Self {
-        TransferBuilder {
+        QpTransferBuilder {
             rpc,
             is_mainnet,
             placeholder_lock_size: DEFAULT_PLACEHOLDER_LOCK_SIZE,
