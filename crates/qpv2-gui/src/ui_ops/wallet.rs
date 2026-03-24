@@ -1,7 +1,4 @@
 //! Wallet lifecycle: lock, config, balance fetching.
-
-use std::sync::mpsc;
-
 use crate::types::{Screen, Status, Tab};
 use crate::App;
 
@@ -61,70 +58,5 @@ impl App {
     pub(crate) fn connect_and_fetch_balances(&mut self) {
         self.rpc_client = Some(node_manager::connect(&self.node_config));
         self.fetch_all_balances();
-    }
-
-    /// Fetch balances for all accounts in a background thread.
-    pub(crate) fn fetch_all_balances(&mut self) {
-        if self.rpc_client.is_none() {
-            return;
-        }
-
-        // Mark all accounts as loading.
-        for lock_args in &self.accounts {
-            self.balances.insert(lock_args.clone(), None);
-        }
-
-        let accounts = self.accounts.clone();
-        if accounts.is_empty() {
-            return;
-        }
-
-        let node_config = self.node_config.clone();
-        let network = self.node_config.network;
-        let (tx, rx) = mpsc::channel();
-        self.balance_receiver = Some(rx);
-
-        std::thread::spawn(move || {
-            let rpc = node_manager::connect(&node_config);
-            for lock_args in accounts {
-                let result = node_manager::fetch_quantum_lock_balance(
-                    rpc.as_ref(),
-                    &lock_args,
-                    network,
-                )
-                .map_err(|e| e.to_string());
-                // If the receiver is dropped (e.g. wallet locked), stop.
-                if tx.send((lock_args, result)).is_err() {
-                    break;
-                }
-            }
-        });
-    }
-
-    /// Drain available balance results from the background thread.
-    pub(crate) fn poll_balance_results(&mut self) {
-        let rx = match &self.balance_receiver {
-            Some(rx) => rx,
-            None => return,
-        };
-
-        // fetching all available results from the mpsc::channel's buffer.
-        loop {
-            match rx.try_recv() {
-                Ok((lock_args, Ok(balance))) => {
-                    self.balances.insert(lock_args, Some(balance));
-                }
-                Ok((lock_args, Err(e))) => {
-                    self.balances.insert(lock_args, None);
-                    self.status = Status::Error(format!("Failed to fetch balance: {}", e));
-                }
-                Err(mpsc::TryRecvError::Empty) => break,
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    // Background thread finished; drop the receiver.
-                    self.balance_receiver = None;
-                    break;
-                }
-            }
-        }
     }
 }

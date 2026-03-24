@@ -2,7 +2,9 @@
 
 use eframe::egui;
 
-use crate::types::{format_ckb, format_ckb_balance, DaoStatus, DaoView, CKB_DECIMAL_PLACES};
+use crate::types::{
+    format_ckb, format_ckb_balance, DaoView, TransactionStatus, CKB_DECIMAL_PLACES,
+};
 use crate::App;
 
 impl App {
@@ -95,9 +97,9 @@ impl App {
                 ui.add_space(22.0);
 
                 // ── Action Cards ──
-                let is_busy = !matches!(self.dao_status, DaoStatus::Idle)
-                    && !matches!(self.dao_status, DaoStatus::Success(_))
-                    && !matches!(self.dao_status, DaoStatus::Error(_));
+                let is_busy = !matches!(self.tx_status, TransactionStatus::Idle)
+                    && !matches!(self.tx_status, TransactionStatus::Success(_))
+                    && !matches!(self.tx_status, TransactionStatus::Error(_));
 
                 match self.dao_view {
                     DaoView::Overview => {
@@ -134,7 +136,7 @@ impl App {
                                 && !is_busy
                             {
                                 self.dao_view = DaoView::Deposit;
-                                self.dao_status = DaoStatus::Idle;
+                                self.tx_status = TransactionStatus::Idle;
                             }
 
                             // Request Withdrawal card
@@ -191,8 +193,8 @@ impl App {
                         ui.add_space(22.0);
 
                         // ── Status Messages ──
-                        match &self.dao_status {
-                            DaoStatus::Success(hash) => {
+                        match &self.tx_status {
+                            TransactionStatus::Success(hash) => {
                                 ui.horizontal(|ui| {
                                     ui.label(
                                         egui::RichText::new("Transaction sent: ")
@@ -208,7 +210,7 @@ impl App {
                                 });
                                 ui.add_space(8.0);
                             }
-                            DaoStatus::Error(e) => {
+                            TransactionStatus::Error(e) => {
                                 ui.label(
                                     egui::RichText::new(e).size(12.0).color(self.colors.danger),
                                 );
@@ -393,10 +395,10 @@ impl App {
 					&& !self.accounts.is_empty()
 					&& !self.dao_deposit_amount.is_empty();
 
-				let btn_text = match &self.dao_status {
-					DaoStatus::Building => "Building transaction...",
-					DaoStatus::AwaitingSignature => "Waiting for Touch ID...",
-					DaoStatus::Sending => "Sending...",
+				let btn_text = match &self.tx_status {
+					TransactionStatus::Building => "Building transaction...",
+					TransactionStatus::AwaitingSignature => "Waiting for Touch ID...",
+					TransactionStatus::Sending => "Sending...",
 					_ => "Confirm Deposit",
 				};
 
@@ -411,12 +413,12 @@ impl App {
 				.min_size(egui::vec2(ui.available_width(), 44.0));
 
 				if ui.add_enabled(can_deposit, deposit_btn).clicked() {
-					self.start_dao_deposit();
+					self.build_dao_deposit_async();
 				}
 
 				// Status messages
-				match &self.dao_status {
-					DaoStatus::Success(hash) => {
+				match &self.tx_status {
+					TransactionStatus::Success(hash) => {
 						ui.add_space(8.0);
 						ui.horizontal(|ui| {
 							ui.label(
@@ -432,7 +434,7 @@ impl App {
 							);
 						});
 					}
-					DaoStatus::Error(e) => {
+					TransactionStatus::Error(e) => {
 						ui.add_space(8.0);
 						ui.label(
 							egui::RichText::new(e)
@@ -457,22 +459,27 @@ impl App {
 					.clicked()
 				{
 					self.dao_view = DaoView::Overview;
-					self.dao_status = DaoStatus::Idle;
+					self.tx_status = TransactionStatus::Idle;
 				}
 			});
     }
 
     /// Renders the Active Positions table.
     pub(crate) fn show_dao_positions_table(&mut self, ui: &mut egui::Ui) {
-        ui.label(egui::RichText::new("Active Positions").size(16.0).strong().color(self.colors.text_muted));
+        ui.label(
+            egui::RichText::new("Active Positions")
+                .size(16.0)
+                .strong()
+                .color(self.colors.text_muted),
+        );
         ui.add_space(12.0);
 
-        let is_busy = !matches!(self.dao_status, DaoStatus::Idle)
-            && !matches!(self.dao_status, DaoStatus::Success(_))
-            && !matches!(self.dao_status, DaoStatus::Error(_));
+        let is_busy = !matches!(self.tx_status, TransactionStatus::Idle)
+            && !matches!(self.tx_status, TransactionStatus::Success(_))
+            && !matches!(self.tx_status, TransactionStatus::Error(_));
 
         if self.dao_deposited_cells.is_empty() && self.dao_prepared_cells.is_empty() {
-            if self.dao_query_rx.is_some() {
+            if self.dao_cells_query_rx.is_some() {
                 ui.label(
                     egui::RichText::new("Loading DAO cells...")
                         .size(12.0)
@@ -490,7 +497,7 @@ impl App {
             ui.add_space(8.0);
             if ui
                 .add_enabled(
-                    self.dao_query_rx.is_none(),
+                    self.dao_cells_query_rx.is_none(),
                     egui::Button::new(egui::RichText::new("Refresh").size(12.0))
                         .fill(self.colors.surface2),
                 )
@@ -678,17 +685,17 @@ impl App {
 
         // Handle deferred actions
         if let Some((out_point, lock_args)) = prepare_action {
-            self.start_dao_prepare(out_point, lock_args);
+            self.build_dao_withdraw_request_async(out_point, lock_args);
         }
         if let Some((out_point, lock_args)) = withdraw_action {
-            self.start_dao_withdraw(out_point, lock_args);
+            self.build_dao_withdraw_async(out_point, lock_args);
         }
 
         // Refresh button
         ui.add_space(12.0);
         if ui
             .add_enabled(
-                self.dao_query_rx.is_none(),
+                self.dao_cells_query_rx.is_none(),
                 egui::Button::new(egui::RichText::new("Refresh").size(12.0))
                     .fill(self.colors.surface2),
             )

@@ -9,10 +9,10 @@ pub use error::NodeManagerError;
 pub use process::NodeProcess;
 pub use rpc::{
     connect, connect_light_client, fetch_lock_script_balance, fetch_quantum_lock_balance, CkbRpc,
-    LightClientRpc,
-    TransactionStatus,
+    LightClientRpc, TransactionStatus,
 };
 pub use tx_builder::{
-    fetch_input_cells, fill_witness, categozire_dao_cells, send_transaction, QpDaoDepositBuilder,
-    QpDaoPrepareBuilder, QpDaoWithdrawBuilder, DepositedCell, PreparedCell, QpTransferBuilder,
+    categozire_dao_cells, fetch_input_cells, fill_witness, send_transaction, DepositedCell,
+    PreparedCell, QpDaoDepositBuilder, QpDaoPrepareBuilder, QpDaoWithdrawBuilder,
+    QpTransferBuilder,
 };

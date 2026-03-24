@@ -1,6 +1,6 @@
 //! GUI for SPHINCS+ key vault with Passkey PRF / Touch ID support.
 
-mod ops;
+mod ui_ops;
 mod types;
 mod ui;
 #[cfg(target_os = "macos")]
@@ -16,8 +16,8 @@ use std::sync::mpsc;
 #[cfg(target_os = "macos")]
 use types::PasskeyOp;
 use types::{
-    AppColors, BalanceResult, DaoQueryResult, DaoStatus, DaoView, Screen, Status, Tab,
-    TransferStatus, TxBuildResult,
+    AppColors, BalanceResult, DaoQueryResult, DaoView, Screen, Status, Tab, TransactionSendResult,
+    TransactionStatus, TxBuildResult,
 };
 
 pub(crate) struct App {
@@ -59,29 +59,28 @@ pub(crate) struct App {
     pub(crate) temp_network: node_manager::NetworkType,
     pub(crate) temp_node_type: NodeType,
 
+    // Transaction state used for both DAO and transfer flows.
+    pub(crate) tx_status: TransactionStatus,
+    // Channel for receiving the final send result (tx hash or error).
+    pub(crate) transaction_send_rx: Option<mpsc::Receiver<TransactionSendResult>>,
+    // Channel for receiving the built unsigned transaction from the background thread.
+    pub(crate) transaction_build_rx: Option<mpsc::Receiver<TxBuildResult>>,
+
     // Transfer form state.
     pub(crate) transfer_recipient: String,
     pub(crate) transfer_amount: String,
     pub(crate) transfer_fee_rate: String,
     pub(crate) transfer_from_account: usize,
-    pub(crate) transfer_status: TransferStatus,
-    // Channel for receiving the built unsigned transaction from the background thread.
-    pub(crate) transfer_build_rx: Option<mpsc::Receiver<TxBuildResult>>,
-    // Channel for receiving the final send result (tx hash or error).
-    pub(crate) transfer_send_rx: Option<mpsc::Receiver<Result<String, String>>>,
 
     // DAO state.
     // Each cell is stored with the lock_args of the account that owns it.
     pub(crate) dao_view: DaoView,
     pub(crate) dao_deposited_cells: Vec<(String, node_manager::DepositedCell)>,
     pub(crate) dao_prepared_cells: Vec<(String, node_manager::PreparedCell)>,
-    pub(crate) dao_query_rx: Option<mpsc::Receiver<DaoQueryResult>>,
+    pub(crate) dao_cells_query_rx: Option<mpsc::Receiver<DaoQueryResult>>,
     pub(crate) dao_deposit_amount: String,
     pub(crate) dao_deposit_fee_rate: String,
     pub(crate) dao_deposit_from_account: usize,
-    pub(crate) dao_status: DaoStatus,
-    pub(crate) dao_build_rx: Option<mpsc::Receiver<TxBuildResult>>,
-    pub(crate) dao_send_rx: Option<mpsc::Receiver<Result<String, String>>>,
 }
 
 impl App {
@@ -113,9 +112,10 @@ impl App {
                 "../../../assets/fonts/Syne-ExtraBold.ttf"
             ))),
         );
-        fonts
-            .families
-            .insert(egui::FontFamily::Name("syne".into()), vec!["syne_extrabold".to_owned()]);
+        fonts.families.insert(
+            egui::FontFamily::Name("syne".into()),
+            vec!["syne_extrabold".to_owned()],
+        );
 
         // Noto Sans Symbols for arrows and basic symbol glyphs (U+2190–U+21FF, etc.).
         fonts.font_data.insert(
@@ -188,19 +188,16 @@ impl App {
             transfer_amount: String::new(),
             transfer_fee_rate: "1000".to_string(),
             transfer_from_account: 0,
-            transfer_status: TransferStatus::Idle,
-            transfer_build_rx: None,
-            transfer_send_rx: None,
+            tx_status: TransactionStatus::Idle,
+            transaction_build_rx: None,
+            transaction_send_rx: None,
             dao_view: DaoView::Overview,
             dao_deposited_cells: Vec::new(),
             dao_prepared_cells: Vec::new(),
-            dao_query_rx: None,
+            dao_cells_query_rx: None,
             dao_deposit_amount: String::new(),
             dao_deposit_fee_rate: "1000".to_string(),
             dao_deposit_from_account: 0,
-            dao_status: DaoStatus::Idle,
-            dao_build_rx: None,
-            dao_send_rx: None,
         }
     }
 
@@ -220,16 +217,14 @@ impl eframe::App for App {
         self.poll_passkey_ops();
 
         // Drain balance results from the background thread.
-        self.poll_balance_results();
+        self.poll_all_balances();
 
-        // Poll transfer build/send channels.
-        self.poll_transfer_build(frame);
-        self.poll_transfer_send();
+        // Poll shared transaction build/send channels.
+        self.poll_transaction_build(frame);
+        self.poll_transaction_send();
 
-        // Poll DAO channels.
-        self.poll_dao_query();
-        self.poll_dao_build(frame);
-        self.poll_dao_send();
+        // Poll DAO-specific channels.
+        self.poll_dao_cells();
 
         // Show node selector popup if open
         self.show_node_selector_popup(ctx);
@@ -260,9 +255,11 @@ impl eframe::App for App {
 
         // Request repaint while an async operation is pending so we poll promptly.
         let balance_pending = self.balance_receiver.is_some();
-        let transfer_pending = self.transfer_build_rx.is_some() || self.transfer_send_rx.is_some();
-        let dao_pending =
-            self.dao_query_rx.is_some() || self.dao_build_rx.is_some() || self.dao_send_rx.is_some();
+        let transfer_pending =
+            self.transaction_build_rx.is_some() || self.transaction_send_rx.is_some();
+        let dao_pending = self.dao_cells_query_rx.is_some()
+            || self.transaction_build_rx.is_some()
+            || self.transaction_send_rx.is_some();
         #[cfg(target_os = "macos")]
         let has_pending_op = self.passkey_op.is_some();
         #[cfg(not(target_os = "macos"))]

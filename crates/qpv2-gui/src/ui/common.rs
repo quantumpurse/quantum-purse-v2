@@ -2,7 +2,7 @@
 
 use eframe::egui;
 
-use crate::types::{Status, Tab};
+use crate::types::{Status, Tab, TransactionStatus};
 use crate::App;
 
 impl App {
@@ -45,6 +45,14 @@ impl App {
             ui.allocate_response(egui::vec2(ui.available_width(), 36.0), egui::Sense::click());
 
         if response.clicked() {
+            if self.active_tab != tab
+                && matches!(
+                    self.tx_status,
+                    TransactionStatus::Success(_) | TransactionStatus::Error(_)
+                )
+            {
+                self.tx_status = TransactionStatus::Idle;
+            }
             self.active_tab = tab;
         }
 

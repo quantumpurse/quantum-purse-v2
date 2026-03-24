@@ -12,8 +12,7 @@ use ckb_sdk::{
     tx_builder::{
         balance_tx_capacity,
         dao::{
-            DaoDepositBuilder, DaoDepositReceiver,
-            DaoPrepareBuilder, DaoPrepareItem,
+            DaoDepositBuilder, DaoDepositReceiver, DaoPrepareBuilder, DaoPrepareItem,
             DaoWithdrawBuilder, DaoWithdrawItem, DaoWithdrawReceiver,
         },
         CapacityBalancer, CapacityProvider, TxBuilder,
@@ -254,7 +253,9 @@ impl<'a> QpDaoPrepareBuilder<'a> {
             &cell_dep_resolver,
             &header_dep_resolver,
         )
-        .map_err(|e| NodeManagerError::RpcError(format!("Failed to balance DAO prepare: {:?}", e)))?;
+        .map_err(|e| {
+            NodeManagerError::RpcError(format!("Failed to balance DAO prepare: {:?}", e))
+        })?;
 
         Ok(tx)
     }

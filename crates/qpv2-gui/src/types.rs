@@ -17,15 +17,26 @@ pub(crate) fn spx_witness_lock_size(variant: SpxVariant) -> usize {
 /// Result of a single account balance fetch from a background thread.
 pub(crate) type BalanceResult = (String, Result<u64, String>);
 
+/// Identifies which transaction flow owns a shared background operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TransactionKind {
+    Transfer,
+    Dao,
+}
+
 /// Result type for transaction building (unsigned tx, input cells, lock_args).
 pub(crate) type TxBuildResult = Result<
     (
+        TransactionKind,
         ckb_types::core::TransactionView,
         Vec<(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)>,
         String,
     ),
     String,
 >;
+
+/// Result type for sending a signed transaction.
+pub(crate) type TransactionSendResult = (TransactionKind, Result<String, String>);
 
 /// Result type for DAO cell queries across all accounts.
 pub(crate) type DaoQueryResult = Result<DaoQueryEvent, String>;
@@ -81,23 +92,14 @@ pub(crate) enum PasskeyOp {
         credential_id: Vec<u8>,
     },
     /// Waiting for unlock credential assertion (no PRF).
-    UnlockAssert {
-        op: passkey_prf::AssertionRequest,
-    },
+    UnlockAssert { op: passkey_prf::AssertionRequest },
     /// Waiting for PRF assertion to create a new account.
-    NewAccountAssert {
-        op: passkey_prf::AssertionRequest,
-    },
+    NewAccountAssert { op: passkey_prf::AssertionRequest },
     /// Waiting for PRF assertion to sign a transfer transaction.
-    SignTransferAssert {
+    SignTransactionAssert {
         op: passkey_prf::AssertionRequest,
-        unsigned_tx: ckb_types::core::TransactionView,
-        input_cells: Vec<(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)>,
-        lock_args: String,
-    },
-    /// Waiting for PRF assertion to sign a DAO transaction.
-    SignDaoAssert {
-        op: passkey_prf::AssertionRequest,
+        // just relaying transaction type to the poller.
+        kind: TransactionKind,
         unsigned_tx: ckb_types::core::TransactionView,
         input_cells: Vec<(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)>,
         lock_args: String,
@@ -106,25 +108,8 @@ pub(crate) enum PasskeyOp {
 
 /// Tracks the state of an in-progress transfer transaction.
 #[derive(Debug, Clone)]
-pub(crate) enum TransferStatus {
+pub(crate) enum TransactionStatus {
     /// No transfer in progress.
-    Idle,
-    /// Building the unsigned transaction.
-    Building,
-    /// Waiting for Touch ID to sign.
-    AwaitingSignature,
-    /// Sending the signed transaction.
-    Sending,
-    /// Transaction sent successfully.
-    Success(String),
-    /// An error occurred.
-    Error(String),
-}
-
-/// Tracks the state of an in-progress DAO transaction.
-#[derive(Debug, Clone)]
-pub(crate) enum DaoStatus {
-    /// No DAO operation in progress.
     Idle,
     /// Building the unsigned transaction.
     Building,

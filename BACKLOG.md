@@ -19,3 +19,9 @@
 ## Performance
 
 - [ ] **Cache CKB addresses instead of recomputing every frame.** `lock_args_to_address` is called inside the `show_accounts_tab` render loop, re-encoding addresses on every repaint. Store computed addresses in a cache, recompute only on unlock, network toggle, or new account creation.
+
+## Security
+
+- [ ] **Implement re-validation before signing**
+- [ ] **Ensure all dispatched calls are managed securely**
+- [ ] **How much concurrency are being managed?**

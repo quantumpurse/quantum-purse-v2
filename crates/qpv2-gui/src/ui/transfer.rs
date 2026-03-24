@@ -2,7 +2,7 @@
 
 use eframe::egui;
 
-use crate::types::{format_ckb_balance, TransferStatus, CKB_DECIMAL_PLACES};
+use crate::types::{format_ckb_balance, TransactionStatus, CKB_DECIMAL_PLACES};
 use crate::App;
 
 impl App {
@@ -27,8 +27,8 @@ impl App {
                 ui.add_space(22.0);
 
                 // Show success/error status from previous transfer
-                match &self.transfer_status {
-                    TransferStatus::Success(tx_hash) => {
+                match &self.tx_status {
+                    TransactionStatus::Success(tx_hash) => {
                         egui::Frame::new()
                             .fill(egui::Color32::from_rgba_unmultiplied(0, 255, 136, 20))
                             .corner_radius(12.0)
@@ -59,7 +59,7 @@ impl App {
                             });
                         ui.add_space(12.0);
                     }
-                    TransferStatus::Error(msg) => {
+                    TransactionStatus::Error(msg) => {
                         egui::Frame::new()
                             .fill(egui::Color32::from_rgba_unmultiplied(255, 70, 70, 20))
                             .corner_radius(12.0)
@@ -85,10 +85,10 @@ impl App {
                         ui.set_max_width(560.0);
 
                         let is_busy = !matches!(
-                            self.transfer_status,
-                            TransferStatus::Idle
-                                | TransferStatus::Success(_)
-                                | TransferStatus::Error(_)
+                            self.tx_status,
+                            TransactionStatus::Idle
+                                | TransactionStatus::Success(_)
+                                | TransactionStatus::Error(_)
                         );
 
                         // ── From Account ──
@@ -235,10 +235,10 @@ impl App {
                             && !self.transfer_recipient.is_empty()
                             && !self.transfer_amount.is_empty();
 
-                        let btn_text = match &self.transfer_status {
-                            TransferStatus::Building => "Building transaction...",
-                            TransferStatus::AwaitingSignature => "Waiting for Touch ID...",
-                            TransferStatus::Sending => "Sending...",
+                        let btn_text = match &self.tx_status {
+                            TransactionStatus::Building => "Building transaction...",
+                            TransactionStatus::AwaitingSignature => "Waiting for Touch ID...",
+                            TransactionStatus::Sending => "Sending...",
                             _ => "Send",
                         };
 
@@ -252,7 +252,7 @@ impl App {
                                 .min_size(egui::vec2(ui.available_width(), 44.0));
 
                         if ui.add_enabled(can_send, send_btn).clicked() {
-                            self.start_transfer();
+                            self.build_transfer_async();
                         }
 
                         if !connected {
