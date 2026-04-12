@@ -413,7 +413,7 @@ impl App {
 				.min_size(egui::vec2(ui.available_width(), 44.0));
 
 				if ui.add_enabled(can_deposit, deposit_btn).clicked() {
-					self.build_dao_deposit_async();
+					self.dao_deposit_async();
 				}
 
 				// Status messages
@@ -685,10 +685,10 @@ impl App {
 
         // Handle deferred actions
         if let Some((out_point, lock_args)) = prepare_action {
-            self.build_dao_withdraw_request_async(out_point, lock_args);
+            self.dao_withdraw_request_async(out_point, lock_args);
         }
         if let Some((out_point, lock_args)) = withdraw_action {
-            self.build_dao_withdraw_async(out_point, lock_args);
+            self.dao_withdraw_async(out_point, lock_args);
         }
 
         // Refresh button

@@ -2,7 +2,7 @@
 
 use eframe::egui;
 
-use crate::types::{format_ckb_balance, TransactionStatus, CKB_DECIMAL_PLACES};
+use crate::types::{format_ckb_balance, TransactionStatus};
 use crate::App;
 
 impl App {
@@ -90,6 +90,7 @@ impl App {
                                 | TransactionStatus::Success(_)
                                 | TransactionStatus::Error(_)
                         );
+                        let is_calculating_max = self.spendable_capacity_rx.is_some();
 
                         // ── From Account ──
                         ui.label(
@@ -116,6 +117,7 @@ impl App {
                             format!("Account #{} ({})", idx, bal_str)
                         };
 
+                        let prev_from_account = self.transfer_from_account;
                         egui::ComboBox::from_id_salt("transfer_from")
                             .selected_text(&from_text)
                             .width(ui.available_width())
@@ -135,6 +137,12 @@ impl App {
                                     ui.selectable_value(&mut self.transfer_from_account, i, label);
                                 }
                             });
+                        // Clear send_all if the user switches accounts.
+                        if self.transfer_from_account != prev_from_account && self.transfer_all
+                        {
+                            self.transfer_all = false;
+                            self.transfer_amount.clear();
+                        }
 
                         ui.add_space(16.0);
 
@@ -166,39 +174,56 @@ impl App {
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
-                                    if !is_busy
-                                        && !self.accounts.is_empty()
-                                        && ui.small_button("MAX").clicked()
-                                    {
-                                        let idx =
-                                            self.transfer_from_account.min(self.accounts.len() - 1);
-                                        let lock_args = &self.accounts[idx];
-                                        if let Some(Some(bal)) = self.balances.get(lock_args) {
-                                            // Leave 1 CKB for fee estimation
-                                            let max = bal.saturating_sub(CKB_DECIMAL_PLACES);
-                                            let whole = max / CKB_DECIMAL_PLACES;
-                                            let frac = max % CKB_DECIMAL_PLACES;
-                                            if frac == 0 {
-                                                self.transfer_amount = format!("{}", whole);
-                                            } else {
-                                                let frac_str = format!("{:08}", frac);
-                                                let trimmed = frac_str.trim_end_matches('0');
-                                                self.transfer_amount =
-                                                    format!("{}.{}", whole, trimmed);
-                                            }
+                                    // Clear button when send_all is active.
+                                    if self.transfer_all && !is_busy {
+                                        if ui.small_button("✕").clicked() {
+                                            self.transfer_all = false;
+                                            self.transfer_amount.clear();
                                         }
+                                    }
+
+                                    let can_calculate_max = !is_busy
+                                        && !is_calculating_max
+                                        && !self.transfer_all
+                                        && !self.accounts.is_empty();
+                                    let max_label = if is_calculating_max { "..." } else { "MAX" };
+                                    if ui
+                                        .add_enabled(
+                                            can_calculate_max,
+                                            egui::Button::new(max_label).small(),
+                                        )
+                                        .clicked()
+                                    {
+                                        self.fetch_spendable_capacity();
                                     }
                                 },
                             );
                         });
                         ui.add_space(4.0);
 
+                        let amount_interactive = !is_busy && !self.transfer_all;
                         let amount_edit = egui::TextEdit::singleline(&mut self.transfer_amount)
                             .hint_text("0.0")
                             .desired_width(ui.available_width())
                             .font(egui::FontId::monospace(13.0))
-                            .interactive(!is_busy);
+                            .interactive(amount_interactive);
                         ui.add(amount_edit);
+
+                        if self.transfer_all {
+                            ui.add_space(6.0);
+                            ui.label(
+                                egui::RichText::new("Fee will be deducted at send time.")
+                                    .size(11.0)
+                                    .color(self.colors.text_muted),
+                            );
+                        } else if is_calculating_max {
+                            ui.add_space(6.0);
+                            ui.label(
+                                egui::RichText::new("Fetching spendable balance...")
+                                    .size(11.0)
+                                    .color(self.colors.text_muted),
+                            );
+                        }
 
                         ui.add_space(16.0);
 
@@ -252,7 +277,7 @@ impl App {
                                 .min_size(egui::vec2(ui.available_width(), 44.0));
 
                         if ui.add_enabled(can_send, send_btn).clicked() {
-                            self.build_transfer_async();
+                            self.transfer_async();
                         }
 
                         if !connected {

@@ -1,8 +1,8 @@
-//! DAO transaction building, signing, and sending.
+//! Background data fetchers (balances, DAO cells, spendable capacity).
 
 use std::sync::mpsc;
 
-use crate::types::DaoQueryEvent;
+use crate::types::{DaoQueryEvent, TransactionStatus};
 use crate::App;
 
 impl App {
@@ -74,6 +74,49 @@ impl App {
             }
 
             let _ = tx.send(Ok(DaoQueryEvent::Done));
+        });
+    }
+
+    /// Fetch the total spendable capacity for the selected account in a background thread.
+    pub(crate) fn fetch_spendable_capacity(&mut self) {
+        if self.accounts.is_empty() {
+            self.tx_status = TransactionStatus::Error("No accounts available.".to_string());
+            return;
+        }
+        if self.spendable_capacity_rx.is_some() {
+            return;
+        }
+
+        let from_idx = self.transfer_from_account.min(self.accounts.len() - 1);
+        let lock_args = self.accounts[from_idx].clone();
+
+        let is_mainnet = self.is_mainnet();
+        let from_addr_str = match qpv2_core::utilities::lock_args_to_address(&lock_args, is_mainnet)
+        {
+            Ok(a) => a,
+            Err(e) => {
+                self.tx_status = TransactionStatus::Error(format!("Invalid sender address: {}", e));
+                return;
+            }
+        };
+
+        let node_config = self.node_config.clone();
+        let (tx, rx) = mpsc::channel();
+        self.spendable_capacity_rx = Some(rx);
+
+        std::thread::spawn(move || {
+            let result = (|| -> Result<u64, String> {
+                let rpc = node_manager::connect(&node_config);
+                let from_address: ckb_sdk::Address = from_addr_str
+                    .parse()
+                    .map_err(|e| format!("Invalid sender address: {}", e))?;
+
+                node_manager::QpTransferBuilder::new(rpc.as_ref(), is_mainnet)
+                    .spendable_capacity(&from_address)
+                    .map_err(|e| format!("Failed to fetch spendable capacity: {}", e))
+            })();
+
+            let _ = tx.send(result);
         });
     }
 

@@ -1,8 +1,8 @@
 //! DAO transaction building, signing, and sending.
 
-use std::sync::mpsc;
 use crate::types::{PasskeyOp, Status, TransactionKind, TransactionStatus};
 use crate::App;
+use std::sync::mpsc;
 
 use crate::types::DaoQueryEvent;
 
@@ -141,13 +141,7 @@ impl App {
                     });
                 }
                 Some(Ok(Some(prf_output))) => {
-                    self.sign_and_send(
-                        kind,
-                        &prf_output,
-                        unsigned_tx,
-                        input_cells,
-                        lock_args,
-                    );
+                    self.sign_and_send(kind, &prf_output, unsigned_tx, input_cells, lock_args);
                 }
                 Some(Ok(None)) => {
                     self.tx_status = TransactionStatus::Error(
@@ -165,7 +159,39 @@ impl App {
             },
         }
     }
-    
+
+    /// Poll the max transfer amount channel and update the amount field when ready.
+    pub(crate) fn poll_spendable_capacity(&mut self) {
+        let rx = match &self.spendable_capacity_rx {
+            Some(rx) => rx,
+            None => return,
+        };
+
+        match rx.try_recv() {
+            Ok(Ok(total_spendable_sh)) => {
+                self.spendable_capacity_rx = None;
+                self.transfer_all = true;
+                let whole = total_spendable_sh / crate::types::CKB_DECIMAL_PLACES;
+                let frac = total_spendable_sh % crate::types::CKB_DECIMAL_PLACES;
+                if frac == 0 {
+                    self.transfer_amount = format!("{}", whole);
+                } else {
+                    let frac_str = format!("{:08}", frac);
+                    let trimmed = frac_str.trim_end_matches('0');
+                    self.transfer_amount = format!("{}.{}", whole, trimmed);
+                }
+            }
+            Ok(Err(e)) => {
+                self.spendable_capacity_rx = None;
+                self.tx_status = TransactionStatus::Error(e);
+            }
+            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Disconnected) => {
+                self.spendable_capacity_rx = None;
+            }
+        }
+    }
+
     /// Poll the transaction from channel and trigger Touch ID on success.
     pub(crate) fn poll_transaction_build(&mut self, frame: &eframe::Frame) {
         let rx = match &self.transaction_build_rx {
@@ -210,7 +236,8 @@ impl App {
                         }
                         Err(passkey_prf::PrfError::Cancelled) => {
                             self.tx_status = TransactionStatus::Idle;
-                            self.status = Status::Info("Transaction building cancelled.".to_string());
+                            self.status =
+                                Status::Info("Transaction building cancelled.".to_string());
                         }
                         Err(e) => {
                             self.tx_status =

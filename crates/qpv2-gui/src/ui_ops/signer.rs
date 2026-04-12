@@ -1,9 +1,9 @@
 //! DAO transaction building, signing, and sending.
 
-use std::sync::mpsc;
-use qpv2_core::KeyVault;
 use crate::types::{TransactionKind, TransactionStatus};
 use crate::App;
+use qpv2_core::KeyVault;
+use std::sync::mpsc;
 
 impl App {
     /// After Touch ID returns the PRF output for DAO, sign and send.

@@ -111,7 +111,7 @@ impl<'a> QpDaoDepositBuilder<'a> {
     ///
     /// # Returns
     /// An unsigned transaction ready for signing
-    pub fn build_unsigned(
+    pub fn build_unsigned_deposit(
         &self,
         from_address: &Address,
         capacity_sh: u64,
@@ -171,7 +171,7 @@ impl<'a> QpDaoPrepareBuilder<'a> {
     ///
     /// # Returns
     /// An unsigned transaction ready for signing
-    pub fn build_unsigned(
+    pub fn build_unsigned_dao_request_withdraw(
         &self,
         from_address: &Address,
         deposit_out_points: Vec<OutPoint>,
@@ -297,7 +297,7 @@ impl<'a> QpDaoWithdrawBuilder<'a> {
     ///
     /// # Returns
     /// An unsigned transaction ready for signing
-    pub fn build_unsigned(
+    pub fn build_unsigned_dao_withdraw(
         &self,
         from_address: &Address,
         prepared_out_points: Vec<OutPoint>,

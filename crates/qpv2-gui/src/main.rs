@@ -1,8 +1,8 @@
 //! GUI for SPHINCS+ key vault with Passkey PRF / Touch ID support.
 
-mod ui_ops;
 mod types;
 mod ui;
+mod ui_ops;
 #[cfg(target_os = "macos")]
 mod window_handle;
 
@@ -71,6 +71,8 @@ pub(crate) struct App {
     pub(crate) transfer_amount: String,
     pub(crate) transfer_fee_rate: String,
     pub(crate) transfer_from_account: usize,
+    pub(crate) transfer_all: bool,
+    pub(crate) spendable_capacity_rx: Option<mpsc::Receiver<Result<u64, String>>>,
 
     // DAO state.
     // Each cell is stored with the lock_args of the account that owns it.
@@ -188,6 +190,8 @@ impl App {
             transfer_amount: String::new(),
             transfer_fee_rate: "1000".to_string(),
             transfer_from_account: 0,
+            transfer_all: false,
+            spendable_capacity_rx: None,
             tx_status: TransactionStatus::Idle,
             transaction_build_rx: None,
             transaction_send_rx: None,
@@ -218,6 +222,7 @@ impl eframe::App for App {
 
         // Drain balance results from the background thread.
         self.poll_all_balances();
+        self.poll_spendable_capacity();
 
         // Poll shared transaction build/send channels.
         self.poll_transaction_build(frame);
@@ -255,8 +260,9 @@ impl eframe::App for App {
 
         // Request repaint while an async operation is pending so we poll promptly.
         let balance_pending = self.balance_receiver.is_some();
-        let transfer_pending =
-            self.transaction_build_rx.is_some() || self.transaction_send_rx.is_some();
+        let transfer_pending = self.spendable_capacity_rx.is_some()
+            || self.transaction_build_rx.is_some()
+            || self.transaction_send_rx.is_some();
         let dao_pending = self.dao_cells_query_rx.is_some()
             || self.transaction_build_rx.is_some()
             || self.transaction_send_rx.is_some();
