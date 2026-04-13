@@ -2,7 +2,7 @@
 
 use eframe::egui;
 
-use crate::types::{format_ckb_balance, TransactionStatus};
+use crate::types::{format_ckb_balance, SpendableCapacityTarget, TransactionStatus};
 use crate::App;
 
 impl App {
@@ -90,7 +90,10 @@ impl App {
                                 | TransactionStatus::Success(_)
                                 | TransactionStatus::Error(_)
                         );
-                        let is_calculating_max = self.spendable_capacity_rx.is_some();
+                        let is_calculating_max = matches!(
+                            self.spendable_capacity_rx,
+                            Some((SpendableCapacityTarget::Transfer, _))
+                        );
 
                         // ── From Account ──
                         ui.label(
@@ -138,8 +141,7 @@ impl App {
                                 }
                             });
                         // Clear send_all if the user switches accounts.
-                        if self.transfer_from_account != prev_from_account && self.transfer_all
-                        {
+                        if self.transfer_from_account != prev_from_account && self.transfer_all {
                             self.transfer_all = false;
                             self.transfer_amount.clear();
                         }
@@ -194,7 +196,9 @@ impl App {
                                         )
                                         .clicked()
                                     {
-                                        self.fetch_spendable_capacity();
+                                        self.fetch_spendable_capacity(
+                                            SpendableCapacityTarget::Transfer,
+                                        );
                                     }
                                 },
                             );

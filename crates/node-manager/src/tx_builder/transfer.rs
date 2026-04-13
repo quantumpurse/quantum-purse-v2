@@ -4,8 +4,8 @@ use crate::error::NodeManagerError;
 use crate::rpc::CkbRpc;
 use ckb_sdk::{
     traits::{
-        CellCollector, CellDepResolver, CellQueryOptions, DefaultCellCollector,
-        DefaultHeaderDepResolver, DefaultTransactionDependencyProvider, ValueRangeOption,
+        CellDepResolver, DefaultCellCollector, DefaultHeaderDepResolver,
+        DefaultTransactionDependencyProvider,
     },
     tx_builder::{
         transfer::CapacityTransferBuilder, CapacityBalancer, CapacityProvider, TxBuilder,
@@ -129,21 +129,6 @@ impl<'a> QpTransferBuilder<'a> {
         Ok(tx)
     }
 
-    /// Returns the total spendable capacity (in shannons) for the given address.
-    /// "Spendable" means live cells with no type script and no output data.
-    pub fn spendable_capacity(&self, from_address: &Address) -> Result<u64, NodeManagerError> {
-        let rpc_url = self.rpc.get_rpc_url();
-        let from_lock_script = Script::from(from_address.payload());
-        let cells = collect_spendable_cells(&rpc_url, &from_lock_script)?;
-        Ok(cells
-            .iter()
-            .map(|c| {
-                let cap: u64 = c.output.capacity().unpack();
-                cap
-            })
-            .sum())
-    }
-
     /// Builds an unsigned transfer transaction that sends all spendable balance
     /// from `from_address` to `to_address`, leaving no change cell.
     ///
@@ -160,7 +145,7 @@ impl<'a> QpTransferBuilder<'a> {
         let to_lock_script = Script::from(to_address.payload());
         let output_data = Bytes::from(data.unwrap_or_default());
 
-        let spendable_cells = collect_spendable_cells(&rpc_url, &from_lock_script)?;
+        let spendable_cells = super::utils::collect_spendable_cells(&rpc_url, &from_lock_script)?;
 
         let total_input_capacity: u64 = spendable_cells
             .iter()
@@ -178,7 +163,7 @@ impl<'a> QpTransferBuilder<'a> {
                 NodeManagerError::RpcError("Failed to resolve sender lock cell dep.".to_string())
             })?;
 
-        let min_cell_capacity = minimal_cell_capacity(&to_lock_script)?;
+        let min_cell_capacity = super::utils::minimal_cell_capacity(&to_lock_script)?;
         if total_input_capacity <= min_cell_capacity {
             return Err(NodeManagerError::RpcError(
                 "Insufficient balance to send all after accounting for transaction fee."
@@ -271,39 +256,4 @@ impl<'a> QpTransferBuilder<'a> {
 
         Ok((tx, final_output_capacity))
     }
-}
-
-fn collect_spendable_cells(
-    rpc_url: &str,
-    lock_script: &Script,
-) -> Result<Vec<ckb_sdk::traits::LiveCell>, NodeManagerError> {
-    let mut cell_collector = DefaultCellCollector::new(rpc_url);
-    let mut query = CellQueryOptions::new_lock(lock_script.clone());
-    query.secondary_script_len_range = Some(ValueRangeOption::new_exact(0));
-    query.data_len_range = Some(ValueRangeOption::new_exact(0));
-    query.min_total_capacity = u64::MAX;
-
-    let (cells, _) = cell_collector
-        .collect_live_cells(&query, false)
-        .map_err(|e| NodeManagerError::RpcError(e.to_string()))?;
-
-    if cells.is_empty() {
-        return Err(NodeManagerError::RpcError(
-            "No spendable cells available for transfer.".to_string(),
-        ));
-    }
-
-    Ok(cells)
-}
-
-/// Computes the minimum capacity (in shannons) for a cell with only a lock
-/// script and the 8-byte capacity field — no type script, no output data.
-fn minimal_cell_capacity(lock_script: &Script) -> Result<u64, NodeManagerError> {
-    let output = CellOutput::new_builder().lock(lock_script.clone()).build();
-    output
-        .occupied_capacity(Capacity::zero())
-        .map(|capacity| capacity.as_u64())
-        .map_err(|e| {
-            NodeManagerError::RpcError(format!("Failed to calculate minimal cell capacity: {}", e))
-        })
 }

@@ -73,6 +73,77 @@ pub fn cell_dep_resolver_from_rpc(
     Ok(resolver)
 }
 
+/// Collects all spendable cells for a given lock script.
+/// "Spendable" means live cells with no type script and no output data.
+pub(crate) fn collect_spendable_cells(
+    rpc_url: &str,
+    lock_script: &ckb_types::packed::Script,
+) -> Result<Vec<ckb_sdk::traits::LiveCell>, crate::error::NodeManagerError> {
+    use ckb_sdk::traits::{
+        CellCollector, CellQueryOptions, DefaultCellCollector, ValueRangeOption,
+    };
+
+    let mut cell_collector = DefaultCellCollector::new(rpc_url);
+    let mut query = CellQueryOptions::new_lock(lock_script.clone());
+    query.secondary_script_len_range = Some(ValueRangeOption::new_exact(0));
+    query.data_len_range = Some(ValueRangeOption::new_exact(0));
+    query.min_total_capacity = u64::MAX;
+
+    let (cells, _) = cell_collector
+        .collect_live_cells(&query, false)
+        .map_err(|e| crate::error::NodeManagerError::RpcError(e.to_string()))?;
+
+    if cells.is_empty() {
+        return Err(crate::error::NodeManagerError::RpcError(
+            "No spendable cells available.".to_string(),
+        ));
+    }
+
+    Ok(cells)
+}
+
+/// Returns the total spendable capacity (in shannons) for the given address.
+/// "Spendable" means live cells with no type script and no output data.
+pub fn spendable_capacity(
+    rpc: &dyn crate::rpc::CkbRpc,
+    from_address: &ckb_sdk::Address,
+) -> Result<u64, crate::error::NodeManagerError> {
+    use ckb_types::packed::Script;
+    use ckb_types::prelude::*;
+
+    let rpc_url = rpc.get_rpc_url();
+    let lock_script = Script::from(from_address.payload());
+    let cells = collect_spendable_cells(&rpc_url, &lock_script)?;
+    Ok(cells
+        .iter()
+        .map(|c| {
+            let cap: u64 = c.output.capacity().unpack();
+            cap
+        })
+        .sum())
+}
+
+/// Computes the minimum capacity (in shannons) for a cell with only a lock
+/// script and the 8-byte capacity field — no type script, no output data.
+pub(crate) fn minimal_cell_capacity(
+    lock_script: &ckb_types::packed::Script,
+) -> Result<u64, crate::error::NodeManagerError> {
+    use ckb_types::core::Capacity;
+    use ckb_types::packed::CellOutput;
+    use ckb_types::prelude::*;
+
+    let output = CellOutput::new_builder().lock(lock_script.clone()).build();
+    output
+        .occupied_capacity(Capacity::zero())
+        .map(|capacity| capacity.as_u64())
+        .map_err(|e| {
+            crate::error::NodeManagerError::RpcError(format!(
+                "Failed to calculate minimal cell capacity: {}",
+                e
+            ))
+        })
+}
+
 /// Calculate maximum withdrawable capacity from a DAO cell.
 pub fn calculate_dao_maximum_withdraw(
     deposit_header: &ckb_types::core::HeaderView,

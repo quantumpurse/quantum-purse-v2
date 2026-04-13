@@ -6,8 +6,8 @@ use byteorder::{ByteOrder, LittleEndian};
 use ckb_sdk::{
     constants::DAO_TYPE_HASH,
     traits::{
-        CellCollector, CellQueryOptions, DefaultCellCollector, DefaultHeaderDepResolver,
-        DefaultTransactionDependencyProvider, ValueRangeOption,
+        CellCollector, CellDepResolver, CellQueryOptions, DefaultCellCollector,
+        DefaultHeaderDepResolver, DefaultTransactionDependencyProvider, ValueRangeOption,
     },
     tx_builder::{
         balance_tx_capacity,
@@ -21,8 +21,8 @@ use ckb_sdk::{
 };
 use ckb_types::{
     bytes::Bytes,
-    core::{FeeRate, ScriptHashType, TransactionView},
-    packed::{CellInput, OutPoint, Script, WitnessArgs},
+    core::{Capacity, FeeRate, ScriptHashType, TransactionBuilder, TransactionView},
+    packed::{CellInput, CellOutput, OutPoint, Script, WitnessArgs},
     prelude::*,
     H256,
 };
@@ -132,6 +132,128 @@ impl<'a> QpDaoDepositBuilder<'a> {
             self.is_mainnet,
             self.placeholder_lock_size,
         )
+    }
+
+    /// Builds an unsigned DAO deposit transaction that deposits all spendable
+    /// capacity, leaving no change cell. Fee is deducted from the deposit amount.
+    ///
+    /// Returns the built transaction together with the final deposit amount in shannons.
+    pub fn build_unsigned_deposit_all(
+        &self,
+        from_address: &Address,
+        fee_rate: u64,
+    ) -> Result<(TransactionView, u64), NodeManagerError> {
+        let rpc_url = self.rpc.get_rpc_url();
+        let lock_script = Script::from(from_address.payload());
+
+        let spendable_cells = super::utils::collect_spendable_cells(&rpc_url, &lock_script)?;
+
+        let total_input_capacity: u64 = spendable_cells
+            .iter()
+            .map(|cell| {
+                let capacity: u64 = cell.output.capacity().unpack();
+                capacity
+            })
+            .sum();
+
+        let cell_dep_resolver =
+            super::utils::cell_dep_resolver_from_rpc(&rpc_url, self.is_mainnet)?;
+        let sender_lock_dep = cell_dep_resolver.resolve(&lock_script).ok_or_else(|| {
+            NodeManagerError::RpcError("Failed to resolve sender lock cell dep.".to_string())
+        })?;
+
+        // Resolve the DAO type script cell dep.
+        let dao_type_script = Script::new_builder()
+            .code_hash(DAO_TYPE_HASH.pack())
+            .hash_type(ScriptHashType::Type)
+            .build();
+        let dao_cell_dep = cell_dep_resolver.resolve(&dao_type_script).ok_or_else(|| {
+            NodeManagerError::RpcError("Failed to resolve DAO type script cell dep.".to_string())
+        })?;
+
+        let placeholder_witness = WitnessArgs::new_builder()
+            .lock(Some(Bytes::from(vec![0u8; self.placeholder_lock_size])).pack())
+            .build();
+
+        let inputs: Vec<CellInput> = spendable_cells
+            .iter()
+            .map(|cell| CellInput::new(cell.out_point.clone(), 0))
+            .collect();
+
+        let witnesses: Vec<_> = std::iter::once(placeholder_witness.as_bytes().pack())
+            .chain(
+                std::iter::repeat_with(|| Bytes::new().pack()).take(inputs.len().saturating_sub(1)),
+            )
+            .collect();
+
+        // DAO deposit output: lock script + DAO type script + 8 bytes of zero data.
+        let dao_output = CellOutput::new_builder()
+            .capacity(Capacity::shannons(total_input_capacity).pack())
+            .lock(lock_script.clone())
+            .type_(Some(dao_type_script.clone()).pack())
+            .build();
+        let dao_data = Bytes::from(vec![0u8; 8]);
+
+        // Build provisional transaction to calculate exact fee.
+        let provisional_tx = TransactionBuilder::default()
+            .set_cell_deps(vec![sender_lock_dep.clone(), dao_cell_dep.clone()])
+            .set_inputs(inputs.clone())
+            .set_outputs(vec![dao_output])
+            .set_outputs_data(vec![dao_data.clone().pack()])
+            .set_witnesses(witnesses)
+            .build();
+
+        let tx_size = provisional_tx.data().as_reader().serialized_size_in_block() as u64;
+        let required_fee = fee_rate.saturating_mul(tx_size).div_ceil(1000);
+        let deposit_capacity = total_input_capacity
+            .checked_sub(required_fee)
+            .ok_or_else(|| {
+                NodeManagerError::RpcError(
+                    "Insufficient balance to pay transaction fee.".to_string(),
+                )
+            })?;
+
+        let final_output = CellOutput::new_builder()
+            .capacity(Capacity::shannons(deposit_capacity).pack())
+            .lock(lock_script)
+            .type_(Some(dao_type_script).pack())
+            .build();
+
+        // Validate the output cell has enough capacity (lock + type + 8 bytes data).
+        let data_capacity = Capacity::bytes(dao_data.len()).map_err(|e| {
+            NodeManagerError::RpcError(format!("Failed to calculate output data capacity: {}", e))
+        })?;
+        if final_output
+            .is_lack_of_capacity(data_capacity)
+            .map_err(|e| {
+                NodeManagerError::RpcError(format!(
+                    "Failed to validate final output capacity: {}",
+                    e
+                ))
+            })?
+        {
+            return Err(NodeManagerError::RpcError(
+                "Insufficient balance to create a valid DAO deposit after fee deduction."
+                    .to_string(),
+            ));
+        }
+
+        let tx = TransactionBuilder::default()
+            .set_cell_deps(vec![sender_lock_dep, dao_cell_dep])
+            .set_inputs(inputs)
+            .set_outputs(vec![final_output])
+            .set_outputs_data(vec![dao_data.pack()])
+            .set_witnesses(
+                std::iter::once(placeholder_witness.as_bytes().pack())
+                    .chain(
+                        std::iter::repeat_with(|| Bytes::new().pack())
+                            .take(spendable_cells.len().saturating_sub(1)),
+                    )
+                    .collect(),
+            )
+            .build();
+
+        Ok((tx, deposit_capacity))
     }
 }
 

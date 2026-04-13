@@ -2,7 +2,7 @@
 
 use std::sync::mpsc;
 
-use crate::types::{DaoQueryEvent, TransactionStatus};
+use crate::types::{DaoQueryEvent, SpendableCapacityTarget, TransactionStatus};
 use crate::App;
 
 impl App {
@@ -77,8 +77,9 @@ impl App {
         });
     }
 
-    /// Fetch the total spendable capacity for the selected account in a background thread.
-    pub(crate) fn fetch_spendable_capacity(&mut self) {
+    /// Fetch the total spendable capacity for an account in a background thread.
+    /// The `target` determines which account index to use and where to route the result.
+    pub(crate) fn fetch_spendable_capacity(&mut self, target: SpendableCapacityTarget) {
         if self.accounts.is_empty() {
             self.tx_status = TransactionStatus::Error("No accounts available.".to_string());
             return;
@@ -87,7 +88,11 @@ impl App {
             return;
         }
 
-        let from_idx = self.transfer_from_account.min(self.accounts.len() - 1);
+        let from_idx = match target {
+            SpendableCapacityTarget::Transfer => self.transfer_from_account,
+            SpendableCapacityTarget::DaoDeposit => self.dao_deposit_from_account,
+        }
+        .min(self.accounts.len() - 1);
         let lock_args = self.accounts[from_idx].clone();
 
         let is_mainnet = self.is_mainnet();
@@ -102,7 +107,7 @@ impl App {
 
         let node_config = self.node_config.clone();
         let (tx, rx) = mpsc::channel();
-        self.spendable_capacity_rx = Some(rx);
+        self.spendable_capacity_rx = Some((target, rx));
 
         std::thread::spawn(move || {
             let result = (|| -> Result<u64, String> {
@@ -111,8 +116,7 @@ impl App {
                     .parse()
                     .map_err(|e| format!("Invalid sender address: {}", e))?;
 
-                node_manager::QpTransferBuilder::new(rpc.as_ref(), is_mainnet)
-                    .spendable_capacity(&from_address)
+                node_manager::spendable_capacity(rpc.as_ref(), &from_address)
                     .map_err(|e| format!("Failed to fetch spendable capacity: {}", e))
             })();
 

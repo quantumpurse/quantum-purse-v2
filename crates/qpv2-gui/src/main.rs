@@ -2,7 +2,7 @@
 
 mod types;
 mod ui;
-mod ui_ops;
+mod handlers;
 #[cfg(target_os = "macos")]
 mod window_handle;
 
@@ -16,8 +16,8 @@ use std::sync::mpsc;
 #[cfg(target_os = "macos")]
 use types::PasskeyOp;
 use types::{
-    AppColors, BalanceResult, DaoQueryResult, DaoView, Screen, Status, Tab, TransactionSendResult,
-    TransactionStatus, TxBuildResult,
+    AppColors, BalanceResult, DaoQueryResult, DaoView, Screen, SpendableCapacityTarget, Status,
+    Tab, TransactionSendResult, TransactionStatus, TxBuildResult,
 };
 
 pub(crate) struct App {
@@ -72,7 +72,8 @@ pub(crate) struct App {
     pub(crate) transfer_fee_rate: String,
     pub(crate) transfer_from_account: usize,
     pub(crate) transfer_all: bool,
-    pub(crate) spendable_capacity_rx: Option<mpsc::Receiver<Result<u64, String>>>,
+    pub(crate) spendable_capacity_rx:
+        Option<(SpendableCapacityTarget, mpsc::Receiver<Result<u64, String>>)>,
 
     // DAO state.
     // Each cell is stored with the lock_args of the account that owns it.
@@ -83,6 +84,7 @@ pub(crate) struct App {
     pub(crate) dao_deposit_amount: String,
     pub(crate) dao_deposit_fee_rate: String,
     pub(crate) dao_deposit_from_account: usize,
+    pub(crate) dao_deposit_all: bool,
 }
 
 impl App {
@@ -202,6 +204,7 @@ impl App {
             dao_deposit_amount: String::new(),
             dao_deposit_fee_rate: "1000".to_string(),
             dao_deposit_from_account: 0,
+            dao_deposit_all: false,
         }
     }
 
@@ -259,19 +262,17 @@ impl eframe::App for App {
         }
 
         // Request repaint while an async operation is pending so we poll promptly.
-        let balance_pending = self.balance_receiver.is_some();
-        let transfer_pending = self.spendable_capacity_rx.is_some()
+        let async_pending = self.balance_receiver.is_some()
+            || self.spendable_capacity_rx.is_some()
             || self.transaction_build_rx.is_some()
-            || self.transaction_send_rx.is_some();
-        let dao_pending = self.dao_cells_query_rx.is_some()
-            || self.transaction_build_rx.is_some()
-            || self.transaction_send_rx.is_some();
+            || self.transaction_send_rx.is_some()
+            || self.dao_cells_query_rx.is_some();
         #[cfg(target_os = "macos")]
         let has_pending_op = self.passkey_op.is_some();
         #[cfg(not(target_os = "macos"))]
         let has_pending_op = false;
 
-        if has_pending_op || balance_pending || transfer_pending || dao_pending {
+        if has_pending_op || async_pending {
             ctx.request_repaint();
         }
     }

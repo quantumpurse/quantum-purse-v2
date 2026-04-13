@@ -1,10 +1,10 @@
 //! DAO transaction building, signing, and sending.
 
-use crate::types::{PasskeyOp, Status, TransactionKind, TransactionStatus};
+use crate::types::{
+    DaoQueryEvent, PasskeyOp, SpendableCapacityTarget, Status, TransactionKind, TransactionStatus,
+};
 use crate::App;
 use std::sync::mpsc;
-
-use crate::types::DaoQueryEvent;
 
 impl App {
     /// Poll op passkey operations each frame.
@@ -160,25 +160,26 @@ impl App {
         }
     }
 
-    /// Poll the max transfer amount channel and update the amount field when ready.
+    /// Poll the spendable capacity channel and route the result by target.
     pub(crate) fn poll_spendable_capacity(&mut self) {
-        let rx = match &self.spendable_capacity_rx {
-            Some(rx) => rx,
+        let (target, rx) = match &self.spendable_capacity_rx {
+            Some((t, rx)) => (*t, rx),
             None => return,
         };
 
         match rx.try_recv() {
             Ok(Ok(total_spendable_sh)) => {
                 self.spendable_capacity_rx = None;
-                self.transfer_all = true;
-                let whole = total_spendable_sh / crate::types::CKB_DECIMAL_PLACES;
-                let frac = total_spendable_sh % crate::types::CKB_DECIMAL_PLACES;
-                if frac == 0 {
-                    self.transfer_amount = format!("{}", whole);
-                } else {
-                    let frac_str = format!("{:08}", frac);
-                    let trimmed = frac_str.trim_end_matches('0');
-                    self.transfer_amount = format!("{}.{}", whole, trimmed);
+                let formatted = crate::types::format_ckb(total_spendable_sh);
+                match target {
+                    SpendableCapacityTarget::Transfer => {
+                        self.transfer_all = true;
+                        self.transfer_amount = formatted;
+                    }
+                    SpendableCapacityTarget::DaoDeposit => {
+                        self.dao_deposit_all = true;
+                        self.dao_deposit_amount = formatted;
+                    }
                 }
             }
             Ok(Err(e)) => {
@@ -290,6 +291,7 @@ impl App {
                     }
                     TransactionKind::Dao => {
                         self.dao_deposit_amount.clear();
+                        self.dao_deposit_all = false;
                         self.fetch_all_balances();
                         self.fetch_dao_cells();
                     }

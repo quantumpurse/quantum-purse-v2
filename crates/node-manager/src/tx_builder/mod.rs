@@ -18,3 +18,4 @@ pub use dao::{
 };
 pub use signing::{fetch_input_cells, fill_witness, send_transaction};
 pub use transfer::QpTransferBuilder;
+pub use utils::spendable_capacity;

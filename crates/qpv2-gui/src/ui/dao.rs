@@ -3,7 +3,7 @@
 use eframe::egui;
 
 use crate::types::{
-    format_ckb, format_ckb_balance, DaoView, TransactionStatus, CKB_DECIMAL_PLACES,
+    format_ckb, format_ckb_balance, DaoView, SpendableCapacityTarget, TransactionStatus,
 };
 use crate::App;
 
@@ -280,6 +280,7 @@ impl App {
 					format!("Account #{} ({})", idx, bal_str)
 				};
 
+				let prev_from_account = self.dao_deposit_from_account;
 				egui::ComboBox::from_id_salt("dao_deposit_from")
 					.selected_text(&from_text)
 					.width(ui.available_width())
@@ -301,8 +302,18 @@ impl App {
 							);
 						}
 					});
+				// Clear deposit_all if the user switches accounts.
+				if self.dao_deposit_from_account != prev_from_account && self.dao_deposit_all {
+					self.dao_deposit_all = false;
+					self.dao_deposit_amount.clear();
+				}
 
 				ui.add_space(16.0);
+
+				let is_calculating_max = matches!(
+					self.spendable_capacity_rx,
+					Some((SpendableCapacityTarget::DaoDeposit, _))
+				);
 
 				// Amount input
 				ui.horizontal(|ui| {
@@ -312,38 +323,55 @@ impl App {
 							.color(self.colors.text_muted),
 					);
 					ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-						if !is_busy && !self.accounts.is_empty()
-							&& ui.small_button("MAX").clicked()
-						{
-							let idx = self
-								.dao_deposit_from_account
-								.min(self.accounts.len() - 1);
-							let lock_args = &self.accounts[idx];
-							if let Some(Some(bal)) = self.balances.get(lock_args) {
-								// Leave 1 CKB for fee
-								let max = bal.saturating_sub(CKB_DECIMAL_PLACES);
-								let whole = max / CKB_DECIMAL_PLACES;
-								let frac = max % CKB_DECIMAL_PLACES;
-								if frac == 0 {
-									self.dao_deposit_amount = format!("{}", whole);
-								} else {
-									let frac_str = format!("{:08}", frac);
-									let trimmed = frac_str.trim_end_matches('0');
-									self.dao_deposit_amount =
-										format!("{}.{}", whole, trimmed);
-								}
+						// Clear button when deposit_all is active.
+						if self.dao_deposit_all && !is_busy {
+							if ui.small_button("✕").clicked() {
+								self.dao_deposit_all = false;
+								self.dao_deposit_amount.clear();
 							}
+						}
+
+						let can_calculate_max = !is_busy
+							&& !is_calculating_max
+							&& !self.dao_deposit_all
+							&& !self.accounts.is_empty();
+						let max_label = if is_calculating_max { "..." } else { "MAX" };
+						if ui
+							.add_enabled(
+								can_calculate_max,
+								egui::Button::new(max_label).small(),
+							)
+							.clicked()
+						{
+							self.fetch_spendable_capacity(SpendableCapacityTarget::DaoDeposit);
 						}
 					});
 				});
 				ui.add_space(4.0);
 
+				let amount_interactive = !is_busy && !self.dao_deposit_all;
 				let amount_edit = egui::TextEdit::singleline(&mut self.dao_deposit_amount)
-					.hint_text("Min: 102 CKB")
+					.hint_text("Min: 114 CKB")
 					.desired_width(ui.available_width())
 					.font(egui::FontId::monospace(13.0))
-					.interactive(!is_busy);
+					.interactive(amount_interactive);
 				ui.add(amount_edit);
+
+				if self.dao_deposit_all {
+					ui.add_space(6.0);
+					ui.label(
+						egui::RichText::new("Fee will be deducted at deposit time.")
+							.size(11.0)
+							.color(self.colors.text_muted),
+					);
+				} else if is_calculating_max {
+					ui.add_space(6.0);
+					ui.label(
+						egui::RichText::new("Fetching spendable balance...")
+							.size(11.0)
+							.color(self.colors.text_muted),
+					);
+				}
 
 				ui.add_space(16.0);
 

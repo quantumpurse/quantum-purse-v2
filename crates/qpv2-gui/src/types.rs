@@ -24,6 +24,13 @@ pub(crate) enum TransactionKind {
     Dao,
 }
 
+/// Identifies which flow triggered a spendable capacity fetch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SpendableCapacityTarget {
+    Transfer,
+    DaoDeposit,
+}
+
 /// Result type for transaction building (unsigned tx, input cells, lock_args).
 pub(crate) type TxBuildResult = Result<
     (

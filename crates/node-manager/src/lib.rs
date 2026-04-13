@@ -12,7 +12,7 @@ pub use rpc::{
     LightClientRpc, TransactionStatus,
 };
 pub use tx_builder::{
-    categozire_dao_cells, fetch_input_cells, fill_witness, send_transaction, DepositedCell,
-    PreparedCell, QpDaoDepositBuilder, QpDaoPrepareBuilder, QpDaoWithdrawBuilder,
+    categozire_dao_cells, fetch_input_cells, fill_witness, send_transaction, spendable_capacity,
+    DepositedCell, PreparedCell, QpDaoDepositBuilder, QpDaoPrepareBuilder, QpDaoWithdrawBuilder,
     QpTransferBuilder,
 };

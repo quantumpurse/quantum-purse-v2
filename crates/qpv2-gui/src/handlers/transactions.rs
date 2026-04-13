@@ -144,15 +144,6 @@ impl App {
             }
         };
 
-        let amount_ckb: f64 = match self.dao_deposit_amount.trim().parse() {
-            Ok(v) if v > 0.0 => v,
-            _ => {
-                self.tx_status = TransactionStatus::Error("Invalid amount.".to_string());
-                return;
-            }
-        };
-        let capacity_sh = (amount_ckb * CKB_DECIMAL_PLACES as f64) as u64;
-
         let fee_rate: u64 = match self.dao_deposit_fee_rate.trim().parse() {
             Ok(v) => v,
             Err(_) => {
@@ -171,6 +162,22 @@ impl App {
         };
         let witness_lock_size = spx_witness_lock_size(variant);
 
+        let deposit_all = self.dao_deposit_all;
+
+        // Parse amount only when not depositing all.
+        let capacity_sh = if deposit_all {
+            0 // Unused; build_unsigned_deposit_all computes the amount internally.
+        } else {
+            let amount_ckb: f64 = match self.dao_deposit_amount.trim().parse() {
+                Ok(v) if v > 0.0 => v,
+                _ => {
+                    self.tx_status = TransactionStatus::Error("Invalid amount.".to_string());
+                    return;
+                }
+            };
+            (amount_ckb * CKB_DECIMAL_PLACES as f64) as u64
+        };
+
         self.tx_status = TransactionStatus::Building;
         let node_config = self.node_config.clone();
 
@@ -184,10 +191,19 @@ impl App {
                     .parse()
                     .map_err(|e| format!("Invalid sender address: {}", e))?;
 
-                let unsigned_tx = node_manager::QpDaoDepositBuilder::new(rpc.as_ref(), is_mainnet)
-                    .with_placeholder_lock_size(witness_lock_size)
-                    .build_unsigned_deposit(&from_address, capacity_sh, fee_rate)
-                    .map_err(|e| format!("Failed to build DAO deposit: {}", e))?;
+                let builder = node_manager::QpDaoDepositBuilder::new(rpc.as_ref(), is_mainnet)
+                    .with_placeholder_lock_size(witness_lock_size);
+
+                let unsigned_tx = if deposit_all {
+                    let (tx, _) = builder
+                        .build_unsigned_deposit_all(&from_address, fee_rate)
+                        .map_err(|e| format!("Failed to build DAO deposit: {}", e))?;
+                    tx
+                } else {
+                    builder
+                        .build_unsigned_deposit(&from_address, capacity_sh, fee_rate)
+                        .map_err(|e| format!("Failed to build DAO deposit: {}", e))?
+                };
 
                 let input_cells = node_manager::fetch_input_cells(rpc.as_ref(), &unsigned_tx)
                     .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
