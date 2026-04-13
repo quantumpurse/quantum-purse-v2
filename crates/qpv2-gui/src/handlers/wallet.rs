@@ -1,5 +1,5 @@
 //! Wallet lifecycle: lock, config, balance fetching.
-use crate::types::{Screen, Status, Tab};
+use crate::types::{Screen, Status, Tab, TransactionStatus};
 use crate::App;
 
 impl App {
@@ -17,10 +17,19 @@ impl App {
         self.active_tab = Tab::Dashboard;
         self.screen = Screen::Locked;
         self.status = Status::None;
+
+        // Clear form state so stale values don't persist across sessions.
+        self.transfer_recipient.clear();
+        self.transfer_amount.clear();
+        self.transfer_all = false;
+        self.transfer_from_account = 0;
+        self.dao_deposit_amount.clear();
+        self.dao_deposit_all = false;
+        self.dao_deposit_from_account = 0;
+        self.tx_status = TransactionStatus::Idle;
     }
 
     /// Called when the node type dropdown changes in settings.
-    #[allow(dead_code)]
     pub(crate) fn on_node_type_changed(&mut self) {
         let default_url = self.node_config.default_rpc_url().to_string();
         self.node_config.rpc_url = default_url.clone();

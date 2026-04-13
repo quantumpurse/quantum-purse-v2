@@ -1,4 +1,4 @@
-//! DAO transaction building, signing, and sending.
+//! Transaction signing and sending after Touch ID authentication.
 
 use crate::types::{TransactionKind, TransactionStatus};
 use crate::App;

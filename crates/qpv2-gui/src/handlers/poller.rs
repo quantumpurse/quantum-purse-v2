@@ -1,4 +1,4 @@
-//! DAO transaction building, signing, and sending.
+//! Async polling for background operations (passkeys, balances, transactions).
 
 use crate::types::{
     DaoQueryEvent, PasskeyOp, SpendableCapacityTarget, Status, TransactionKind, TransactionStatus,
@@ -287,6 +287,7 @@ impl App {
                     TransactionKind::Transfer => {
                         self.transfer_recipient.clear();
                         self.transfer_amount.clear();
+                        self.transfer_all = false;
                         self.fetch_all_balances();
                     }
                     TransactionKind::Dao => {

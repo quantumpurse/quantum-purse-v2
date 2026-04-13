@@ -1,8 +1,8 @@
 //! GUI for SPHINCS+ key vault with Passkey PRF / Touch ID support.
 
+mod handlers;
 mod types;
 mod ui;
-mod handlers;
 #[cfg(target_os = "macos")]
 mod window_handle;
 
@@ -59,12 +59,12 @@ pub(crate) struct App {
     pub(crate) temp_network: node_manager::NetworkType,
     pub(crate) temp_node_type: NodeType,
 
-    // Transaction state used for both DAO and transfer flows.
+    // Transaction state shared by both transfer and DAO flows.
     pub(crate) tx_status: TransactionStatus,
-    // Channel for receiving the final send result (tx hash or error).
     pub(crate) transaction_send_rx: Option<mpsc::Receiver<TransactionSendResult>>,
-    // Channel for receiving the built unsigned transaction from the background thread.
     pub(crate) transaction_build_rx: Option<mpsc::Receiver<TxBuildResult>>,
+    pub(crate) spendable_capacity_rx:
+        Option<(SpendableCapacityTarget, mpsc::Receiver<Result<u64, String>>)>,
 
     // Transfer form state.
     pub(crate) transfer_recipient: String,
@@ -72,8 +72,6 @@ pub(crate) struct App {
     pub(crate) transfer_fee_rate: String,
     pub(crate) transfer_from_account: usize,
     pub(crate) transfer_all: bool,
-    pub(crate) spendable_capacity_rx:
-        Option<(SpendableCapacityTarget, mpsc::Receiver<Result<u64, String>>)>,
 
     // DAO state.
     // Each cell is stored with the lock_args of the account that owns it.
