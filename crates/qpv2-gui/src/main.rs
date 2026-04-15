@@ -12,6 +12,10 @@ use qpv2_core::types::SpxVariant;
 use qpv2_core::KeyVault;
 use std::collections::HashMap;
 use std::sync::mpsc;
+use std::time::Duration;
+
+/// Interval between periodic data refreshes (balances, tx history, DAO cells).
+const POLL_INTERVAL: Duration = Duration::from_secs(3);
 
 #[cfg(target_os = "macos")]
 use types::PasskeyOp;
@@ -152,6 +156,14 @@ impl App {
 
         cc.egui_ctx.set_fonts(fonts);
 
+        // Background timer thread: wakes the UI every POLL_INTERVAL so the
+        // periodic refresh logic in update() gets a chance to run.
+        let repaint_ctx = cc.egui_ctx.clone();
+        std::thread::spawn(move || loop {
+            std::thread::sleep(POLL_INTERVAL);
+            repaint_ctx.request_repaint();
+        });
+
         // Check if a wallet already exists by trying to read wallet info.
         let screen = if KeyVault::new(SpxVariant::Sha2128S).wallet_exists() {
             Screen::Locked
@@ -248,7 +260,7 @@ impl eframe::App for App {
         // Periodic refresh of balances, transaction history, and DAO cells.
         // todo verify if other pollings needs this condition.
         if self.screen == Screen::Unlocked
-            && self.last_poll_time.elapsed() >= std::time::Duration::from_secs(3)
+            && self.last_poll_time.elapsed() >= POLL_INTERVAL
         {
             self.last_poll_time = std::time::Instant::now();
             self.fetch_all_balances();
