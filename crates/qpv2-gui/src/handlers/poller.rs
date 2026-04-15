@@ -2,6 +2,7 @@
 
 use crate::types::{
     DaoQueryEvent, PasskeyOp, SpendableCapacityTarget, Status, TransactionKind, TransactionStatus,
+    TxHistoryEvent,
 };
 use crate::App;
 use std::sync::mpsc;
@@ -288,13 +289,10 @@ impl App {
                         self.transfer_recipient.clear();
                         self.transfer_amount.clear();
                         self.transfer_all = false;
-                        self.fetch_all_balances();
                     }
                     TransactionKind::Dao => {
                         self.dao_deposit_amount.clear();
                         self.dao_deposit_all = false;
-                        self.fetch_all_balances();
-                        self.fetch_dao_cells();
                     }
                 }
             }
@@ -369,6 +367,38 @@ impl App {
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => {
                     self.dao_cells_query_rx = None;
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Poll the transaction history channel.
+    pub(crate) fn poll_tx_history(&mut self) {
+        let rx = match &self.tx_history_rx {
+            Some(rx) => rx,
+            None => return,
+        };
+
+        loop {
+            match rx.try_recv() {
+                Ok(Ok(TxHistoryEvent::Record(record))) => {
+                    self.tx_history.push(record);
+                }
+                Ok(Ok(TxHistoryEvent::Done)) => {
+                    // Sort by block number descending and deduplicate by tx hash.
+                    self.tx_history
+                        .sort_by(|a, b| b.block_number.cmp(&a.block_number));
+                    self.tx_history.dedup_by(|a, b| a.tx_hash == b.tx_hash);
+                    self.tx_history_rx = None;
+                    break;
+                }
+                Ok(Err(_e)) => {
+                    // Silently ignore individual fetch errors; partial results are fine.
+                }
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.tx_history_rx = None;
                     break;
                 }
             }

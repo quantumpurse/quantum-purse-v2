@@ -1,7 +1,7 @@
 use crate::config::{NetworkType, NodeConfig, NodeType};
 use crate::error::NodeManagerError;
 use ckb_jsonrpc_types::JsonBytes;
-use ckb_sdk::rpc::ckb_indexer::{Cell, CellsCapacity, Order, Pagination, SearchKey};
+use ckb_sdk::rpc::ckb_indexer::{Cell, CellsCapacity, Order, Pagination, SearchKey, Tx};
 use ckb_sdk::rpc::ckb_light_client::{LightClientRpcClient, ScriptStatus, SetScriptsCommand};
 use ckb_sdk::rpc::{CkbRpcClient, ResponseFormatGetter};
 use ckb_types::H256;
@@ -49,6 +49,15 @@ pub trait CkbRpc {
         &self,
         hash: H256,
     ) -> Result<Option<ckb_jsonrpc_types::TransactionWithStatusResponse>, NodeManagerError>;
+
+    /// Queries transactions matching the given search key via the indexer.
+    fn get_transactions(
+        &self,
+        search_key: SearchKey,
+        order: Order,
+        limit: u32,
+        after: Option<JsonBytes>,
+    ) -> Result<Pagination<Tx>, NodeManagerError>;
 
     /// Gets the RPC URL (temporary method for SDK components).
     /// TODO: Remove when we implement custom collectors using the trait.
@@ -149,6 +158,18 @@ impl CkbRpc for FullNodeRpc {
     ) -> Result<Option<ckb_jsonrpc_types::TransactionWithStatusResponse>, NodeManagerError> {
         self.client
             .get_transaction(hash)
+            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
+    }
+
+    fn get_transactions(
+        &self,
+        search_key: SearchKey,
+        order: Order,
+        limit: u32,
+        after: Option<JsonBytes>,
+    ) -> Result<Pagination<Tx>, NodeManagerError> {
+        self.client
+            .get_transactions(search_key, order, limit.into(), after)
             .map_err(|e| NodeManagerError::RpcError(e.to_string()))
     }
 
@@ -292,6 +313,50 @@ impl CkbRpc for LightClientRpc {
         }))
     }
 
+    fn get_transactions(
+        &self,
+        search_key: SearchKey,
+        order: Order,
+        limit: u32,
+        after: Option<JsonBytes>,
+    ) -> Result<Pagination<Tx>, NodeManagerError> {
+        let resp = self
+            .client
+            .get_transactions(search_key, order, limit.into(), after)
+            .map_err(|e| NodeManagerError::RpcError(e.to_string()))?;
+
+        // TODO: Create an issue on CKB SDK.
+        // The light client's TxWithCell/TxWithCells have private fields (likely
+        // an oversight in ckb-sdk — the indexer equivalents are pub). This forces a
+        // JSON round-trip to extract data. Remove this if the SDK makes them public.
+        // The light client uses `transaction` (full TransactionView) where the
+        // indexer uses `tx_hash` (H256 only). Transform `transaction.hash` → `tx_hash`.
+        let mut json_value = serde_json::to_value(&resp)
+            .map_err(|e| NodeManagerError::RpcError(e.to_string()))?;
+
+        if let Some(objects) = json_value.get_mut("objects").and_then(|v| v.as_array_mut()) {
+            for obj in objects.iter_mut() {
+                if let Some(map) = obj.as_object_mut() {
+                    if let Some(tx_hash) = map
+                        .get("transaction")
+                        .and_then(|t| t.get("hash"))
+                        .cloned()
+                    {
+                        map.remove("transaction");
+                        map.insert("tx_hash".to_string(), tx_hash);
+                    }
+                }
+            }
+        }
+
+        serde_json::from_value(json_value).map_err(|e| {
+            NodeManagerError::RpcError(format!(
+                "Failed to normalize light client transactions: {}",
+                e
+            ))
+        })
+    }
+
     fn get_rpc_url(&self) -> String {
         self.rpc_url.clone()
     }
@@ -416,4 +481,111 @@ pub fn fetch_quantum_lock_balance(
     };
 
     fetch_lock_script_balance(rpc, code_hash, hash_type, lock_args_hex)
+}
+
+/// Queries all transactions for a QuantumPurse lock script via the indexer.
+///
+/// Paginates through the full result set using `last_cursor`. Returns grouped
+/// `Tx` entries in descending order (newest first), one per unique transaction.
+pub fn fetch_recent_transactions(
+    rpc: &dyn CkbRpc,
+    lock_args_hex: &str,
+    network: NetworkType,
+    after_block: Option<u64>,
+    limit: Option<usize>,
+) -> Result<Vec<Tx>, NodeManagerError> {
+    use ckb_sdk::rpc::ckb_indexer::{ScriptType, SearchKeyFilter};
+
+    let (code_hash_str, hash_type_str) = match network {
+        NetworkType::Mainnet => (
+            qpv2_core::constants::CKB_MAINNET_CODE_HASH,
+            qpv2_core::constants::CKB_MAINNET_HASH_TYPE,
+        ),
+        NetworkType::Testnet => (
+            qpv2_core::constants::CKB_TESTNET_CODE_HASH,
+            qpv2_core::constants::CKB_TESTNET_HASH_TYPE,
+        ),
+    };
+
+    let script_hash_type = match hash_type_str {
+        "type" => ckb_jsonrpc_types::ScriptHashType::Type,
+        "data1" => ckb_jsonrpc_types::ScriptHashType::Data1,
+        _ => ckb_jsonrpc_types::ScriptHashType::Data,
+    };
+
+    let code_hash = code_hash_str
+        .strip_prefix("0x")
+        .unwrap_or(code_hash_str);
+    let code_hash_bytes: [u8; 32] = {
+        let bytes = hex::decode(code_hash)
+            .map_err(|e| NodeManagerError::RpcError(format!("Invalid code hash hex: {}", e)))?;
+        if bytes.len() != 32 {
+            return Err(NodeManagerError::RpcError(format!(
+                "Code hash must be 32 bytes, got {}.",
+                bytes.len()
+            )));
+        }
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(&bytes);
+        arr
+    };
+
+    let lock_args_clean = lock_args_hex
+        .strip_prefix("0x")
+        .unwrap_or(lock_args_hex);
+    let args_bytes = hex::decode(lock_args_clean)
+        .map_err(|e| NodeManagerError::RpcError(format!("Invalid lock args hex: {}", e)))?;
+
+    let script = ckb_jsonrpc_types::Script {
+        code_hash: ckb_types::H256(code_hash_bytes),
+        hash_type: script_hash_type,
+        args: JsonBytes::from_bytes(args_bytes.into()),
+    };
+
+    let search_key = SearchKey {
+        script,
+        script_type: ScriptType::Lock,
+        script_search_mode: None,
+        filter: Some(SearchKeyFilter {
+            script: None,
+            script_len_range: None,
+            output_data: None,
+            output_data_filter_mode: None,
+            output_data_len_range: None,
+            output_capacity_range: None,
+            block_range: after_block.map(|b| {
+                [
+                    ckb_jsonrpc_types::Uint64::from(b + 1),
+                    ckb_jsonrpc_types::Uint64::from(u64::MAX),
+                ]
+            }),
+        }),
+        with_data: None,
+        group_by_transaction: Some(true),
+    };
+
+    // Paginate through results (newest first).
+    let page_size = 100;
+    let mut all_txs = Vec::new();
+    let mut cursor: Option<JsonBytes> = None;
+
+    loop {
+        let page = rpc.get_transactions(search_key.clone(), Order::Desc, page_size, cursor)?;
+        let is_last = page.objects.len() < page_size as usize;
+        all_txs.extend(page.objects);
+
+        if let Some(max) = limit {
+            if all_txs.len() >= max {
+                all_txs.truncate(max);
+                break;
+            }
+        }
+
+        if is_last {
+            break;
+        }
+        cursor = Some(page.last_cursor);
+    }
+
+    Ok(all_txs)
 }

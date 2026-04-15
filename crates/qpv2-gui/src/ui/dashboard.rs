@@ -2,7 +2,9 @@
 
 use eframe::egui;
 
-use crate::types::{format_ckb_balance, format_with_commas, Tab};
+use crate::types::{
+    format_ckb_balance, format_relative_time, format_with_commas, Tab, TxKind, TxRecord,
+};
 use crate::App;
 
 impl App {
@@ -219,11 +221,268 @@ impl App {
 
                 ui.add_space(20.0);
 
+                // ── Recent Transactions ──
+                if !self.tx_history.is_empty() || self.tx_history_rx.is_some() {
+                    let syne = egui::FontFamily::Name("syne".into());
+
+                    // Section header with pill badge.
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new("Recent Transactions")
+                                .size(15.0)
+                                .family(syne)
+                                .strong()
+                                .color(self.colors.text),
+                        );
+                        ui.add_space(10.0);
+
+                        let badge_text = if self.tx_history_rx.is_some() {
+                            "loading...".to_string()
+                        } else {
+                            format!("{} total", self.tx_history.len())
+                        };
+                        egui::Frame::new()
+                            .fill(egui::Color32::from_rgba_unmultiplied(0, 255, 180, 20))
+                            .corner_radius(10.0)
+                            .inner_margin(egui::Margin::symmetric(8, 2))
+                            .show(ui, |ui| {
+                                ui.label(
+                                    egui::RichText::new(badge_text)
+                                        .size(8.5)
+                                        .family(egui::FontFamily::Monospace)
+                                        .color(self.colors.accent),
+                                );
+                            });
+                    });
+
+                    ui.add_space(12.0);
+
+                    // Transaction cards.
+                    // Clone to avoid borrow conflict with self in draw_tx_card.
+                    let records: Vec<TxRecord> = self.tx_history.clone();
+                    let accounts = &self.accounts;
+                    for record in &records {
+                        let owner_idx = accounts
+                            .iter()
+                            .position(|a| *a == record.owner_lock_args);
+                        let counterparty_idx = record
+                            .internal_counterparty_lock_args
+                            .as_ref()
+                            .and_then(|args| accounts.iter().position(|a| a == args));
+                        Self::draw_tx_card(
+                            ui,
+                            &self.colors,
+                            record,
+                            owner_idx,
+                            counterparty_idx,
+                        );
+                        ui.add_space(7.0);
+                    }
+                }
+
+                ui.add_space(12.0);
+
                 // ── Status messages ──
                 self.show_status(ui);
             });
         });
 
         let _ = frame; // Suppress unused warning.
+    }
+
+    /// Render a single transaction card
+    fn draw_tx_card(
+        ui: &mut egui::Ui,
+        colors: &crate::types::AppColors,
+        record: &TxRecord,
+        account_index: Option<usize>,
+        counterparty_index: Option<usize>,
+    ) {
+        let syne = egui::FontFamily::Name("syne".into());
+
+        // Pick icon and icon background color based on transaction type.
+        let (icon, icon_bg) = match record.tx_kind {
+            TxKind::Outgoing => (
+                "\u{2191}",
+                egui::Color32::from_rgba_unmultiplied(255, 77, 109, 31),
+            ),
+            TxKind::Incoming => (
+                "\u{2193}",
+                egui::Color32::from_rgba_unmultiplied(0, 255, 180, 26),
+            ),
+            TxKind::DaoDeposit | TxKind::DaoPrepare | TxKind::DaoWithdraw => (
+                "\u{2b21}",
+                egui::Color32::from_rgba_unmultiplied(155, 127, 212, 38),
+            ),
+        };
+
+        let id = ui.make_persistent_id(&record.tx_hash);
+        let margin = egui::Margin::symmetric(17, 13);
+
+        // ── Hover effect (cosmetic only) ──
+        // egui::Frame decides fill/stroke before layout, so we read the hover
+        // state from the *previous* frame's rect (stored in egui temp data).
+        // The one-frame delay is imperceptible and avoids double-painting.
+        let last_rect: Option<egui::Rect> = ui.ctx().data(|d| d.get_temp(id));
+        let is_hovered = last_rect.is_some_and(|r| ui.rect_contains_pointer(r));
+
+        let fill = if is_hovered {
+            colors.surface2
+        } else {
+            colors.surface
+        };
+        let stroke_color = if is_hovered {
+            colors.border2
+        } else {
+            colors.border
+        };
+
+        let content_response = egui::Frame::new()
+            .fill(fill)
+            .corner_radius(12.0)
+            .inner_margin(margin)
+            .stroke(egui::Stroke::new(1.0, stroke_color))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 13.0;
+
+                    // Icon with colored background.
+                    let (icon_rect, _) =
+                        ui.allocate_exact_size(egui::vec2(36.0, 36.0), egui::Sense::hover());
+                    ui.painter()
+                        .rect_filled(icon_rect, 9.0, icon_bg);
+                    ui.painter().text(
+                        icon_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        icon,
+                        egui::FontId::proportional(16.0),
+                        colors.text,
+                    );
+
+                    // Middle: name + tx hash.
+                    let name = match record.tx_kind {
+                        TxKind::DaoDeposit => "DAO Deposit".to_string(),
+                        TxKind::DaoPrepare => "DAO Request Withdrawal".to_string(),
+                        TxKind::DaoWithdraw => "DAO Withdraw".to_string(),
+                        TxKind::Incoming => "Received".to_string(),
+                        TxKind::Outgoing => "Sent".to_string(),
+                    };
+
+                    ui.vertical(|ui| {
+                        ui.label(
+                            egui::RichText::new(name)
+                                .size(13.0)
+                                .color(colors.text),
+                        );
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            ui.label(
+                                egui::RichText::new(&record.tx_hash)
+                                    .size(9.0)
+                                    .family(egui::FontFamily::Monospace)
+                                    .color(colors.text_muted),
+                            );
+                            // Account index badge: "#N" for external,
+                            // "#N → #M" for outgoing internal, "#N ← #M" for incoming internal.
+                            if let Some(idx) = account_index {
+                                let badge_text =
+                                    if let Some(cp_idx) = counterparty_index {
+                                        let arrow = match record.tx_kind {
+                                            TxKind::Incoming => "\u{2190}", // ←
+                                            _ => "\u{2192}",               // →
+                                        };
+                                        format!("#{} {} #{}", idx, arrow, cp_idx)
+                                    } else {
+                                        format!("#{}", idx)
+                                    };
+                                egui::Frame::new()
+                                    .fill(egui::Color32::from_rgba_unmultiplied(
+                                        0, 200, 255, 25,
+                                    ))
+                                    .corner_radius(6.0)
+                                    .inner_margin(egui::Margin::symmetric(5, 1))
+                                    .show(ui, |ui| {
+                                        ui.label(
+                                            egui::RichText::new(badge_text)
+                                                .size(8.0)
+                                                .family(egui::FontFamily::Monospace)
+                                                .color(colors.accent2),
+                                        );
+                                    });
+                            }
+                        });
+                    });
+
+                    // Right side: amount + time.
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.vertical(|ui| {
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Min),
+                                |ui| {
+                                    if record.is_pending {
+                                        ui.label(
+                                            egui::RichText::new("Pending")
+                                                .size(14.0)
+                                                .family(syne.clone())
+                                                .color(colors.warn),
+                                        );
+                                    } else {
+                                        let is_internal =
+                                            counterparty_index.is_some();
+                                        let (prefix, color) = if is_internal {
+                                            // Internal transfer: neutral color, no +/-.
+                                            ("", colors.text_muted)
+                                        } else {
+                                            match record.tx_kind {
+                                                TxKind::Incoming => ("+", colors.accent),
+                                                _ => ("\u{2212}", colors.danger),
+                                            }
+                                        };
+                                        let whole = record.amount / crate::types::CKB_DECIMAL_PLACES;
+                                        let frac = record.amount % crate::types::CKB_DECIMAL_PLACES;
+                                        let amount_str = if frac == 0 {
+                                            format!("{}{} CKB", prefix, format_with_commas(whole))
+                                        } else {
+                                            let frac_str = format!("{:08}", frac);
+                                            format!("{}{}.{} CKB", prefix, format_with_commas(whole), &frac_str[..2])
+                                        };
+                                        ui.label(
+                                            egui::RichText::new(amount_str)
+                                                .size(14.0)
+                                                .family(syne.clone())
+                                                .color(color),
+                                        );
+                                    }
+                                },
+                            );
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Min),
+                                |ui| {
+                                    let time_str = if record.timestamp > 0 {
+                                        format_relative_time(record.timestamp)
+                                    } else {
+                                        "...".to_string()
+                                    };
+                                    ui.label(
+                                        egui::RichText::new(time_str)
+                                            .size(10.0)
+                                            .color(colors.text_muted),
+                                    );
+                                },
+                            );
+                        });
+                    });
+                });
+            });
+
+        // Store this frame's rect for next frame's hover detection.
+        let card_rect = content_response.response.rect;
+        ui.ctx().data_mut(|d| d.insert_temp(id, card_rect));
+
+        if is_hovered {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
     }
 }

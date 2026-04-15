@@ -17,7 +17,7 @@ use std::sync::mpsc;
 use types::PasskeyOp;
 use types::{
     AppColors, BalanceResult, DaoQueryResult, DaoView, Screen, SpendableCapacityTarget, Status,
-    Tab, TransactionSendResult, TransactionStatus, TxBuildResult,
+    Tab, TransactionSendResult, TransactionStatus, TxBuildResult, TxRecord, TxHistoryEvent,
 };
 
 pub(crate) struct App {
@@ -83,6 +83,13 @@ pub(crate) struct App {
     pub(crate) dao_deposit_fee_rate: String,
     pub(crate) dao_deposit_from_account: usize,
     pub(crate) dao_deposit_all: bool,
+
+    // Recent transaction history for the dashboard.
+    pub(crate) tx_history: Vec<TxRecord>,
+    pub(crate) tx_history_rx: Option<mpsc::Receiver<Result<TxHistoryEvent, String>>>,
+
+    // Periodic polling timer for balances, tx history, and DAO cells.
+    pub(crate) last_poll_time: std::time::Instant,
 }
 
 impl App {
@@ -203,6 +210,9 @@ impl App {
             dao_deposit_fee_rate: "1000".to_string(),
             dao_deposit_from_account: 0,
             dao_deposit_all: false,
+            tx_history: Vec::new(),
+            tx_history_rx: None,
+            last_poll_time: std::time::Instant::now(),
         }
     }
 
@@ -231,6 +241,20 @@ impl eframe::App for App {
 
         // Poll DAO-specific channels.
         self.poll_dao_cells();
+
+        // Poll transaction history.
+        self.poll_tx_history();
+
+        // Periodic refresh of balances, transaction history, and DAO cells.
+        // todo verify if other pollings needs this condition.
+        if self.screen == Screen::Unlocked
+            && self.last_poll_time.elapsed() >= std::time::Duration::from_secs(3)
+        {
+            self.last_poll_time = std::time::Instant::now();
+            self.fetch_all_balances();
+            self.fetch_tx_history(true);
+            self.fetch_dao_cells();
+        }
 
         // Show node selector popup if open
         self.show_node_selector_popup(ctx);
@@ -264,7 +288,8 @@ impl eframe::App for App {
             || self.spendable_capacity_rx.is_some()
             || self.transaction_build_rx.is_some()
             || self.transaction_send_rx.is_some()
-            || self.dao_cells_query_rx.is_some();
+            || self.dao_cells_query_rx.is_some()
+            || self.tx_history_rx.is_some();
         #[cfg(target_os = "macos")]
         let has_pending_op = self.passkey_op.is_some();
         #[cfg(not(target_os = "macos"))]

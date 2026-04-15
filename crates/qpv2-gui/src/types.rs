@@ -55,6 +55,39 @@ pub(crate) enum DaoQueryEvent {
     Done,
 }
 
+/// Classification of a transaction from the wallet's perspective.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum TxKind {
+    Incoming,
+    Outgoing,
+    DaoDeposit,
+    DaoPrepare,
+    DaoWithdraw,
+}
+
+/// A resolved transaction record for display on the dashboard.
+#[derive(Debug, Clone)]
+pub(crate) struct TxRecord {
+    pub tx_hash: String,
+    pub tx_kind: TxKind,
+    /// Net amount in shannons (always positive).
+    pub amount: u64,
+    pub block_number: u64,
+    /// Unix timestamp in seconds, resolved from block header.
+    pub timestamp: u64,
+    pub is_pending: bool,
+    /// Lock args of the wallet account that owns this transaction.
+    pub owner_lock_args: String,
+    /// For internal transfers: lock args of the other wallet account involved.
+    pub internal_counterparty_lock_args: Option<String>,
+}
+
+/// Streaming event from the transaction history background thread.
+pub(crate) enum TxHistoryEvent {
+    Record(TxRecord),
+    Done,
+}
+
 /// Sidebar navigation tabs matching the mockup layout.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum Tab {
@@ -215,5 +248,24 @@ pub(crate) fn format_ckb_balance(shannons: u64) -> String {
         // Show first 2 decimal places.
         let frac_str = format!("{:08}", frac);
         format!("{}.{} CKB", format_with_commas(whole), &frac_str[..2])
+    }
+}
+
+/// Format a Unix timestamp as relative time ("3h ago", "1d ago").
+pub(crate) fn format_relative_time(timestamp_secs: u64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let diff = now.saturating_sub(timestamp_secs);
+
+    if diff < 60 {
+        "just now".to_string()
+    } else if diff < 3600 {
+        format!("{}m ago", diff / 60)
+    } else if diff < 86400 {
+        format!("{}h ago", diff / 3600)
+    } else {
+        format!("{}d ago", diff / 86400)
     }
 }

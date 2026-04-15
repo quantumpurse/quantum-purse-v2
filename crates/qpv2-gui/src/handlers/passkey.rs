@@ -163,7 +163,11 @@ impl App {
                 self.accounts = lock_args;
                 self.screen = Screen::Unlocked;
                 self.status = Status::Info("Wallet created successfully!".to_string());
-                self.connect_and_fetch_balances();
+                self.rpc_client = Some(node_manager::connect(&self.node_config));
+                self.last_poll_time = std::time::Instant::now();
+                self.fetch_all_balances();
+                self.fetch_tx_history(true);
+                self.fetch_dao_cells();
             }
             Err(e) => {
                 self.status = Status::Error(format!("Failed to read accounts: {}", e));
@@ -179,7 +183,10 @@ impl App {
                 self.accounts = lock_args;
                 self.screen = Screen::Unlocked;
                 self.status = Status::None;
-                self.connect_and_fetch_balances();
+                self.rpc_client = Some(node_manager::connect(&self.node_config));
+                self.last_poll_time = std::time::Instant::now();
+                self.fetch_all_balances();
+                self.fetch_tx_history(true);
                 self.fetch_dao_cells();
             }
             Err(e) => {

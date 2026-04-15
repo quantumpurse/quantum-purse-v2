@@ -62,10 +62,4 @@ impl App {
         // Refresh balances with new connection.
         self.fetch_all_balances();
     }
-
-    /// Connect to the RPC endpoint and fetch balances for all accounts.
-    pub(crate) fn connect_and_fetch_balances(&mut self) {
-        self.rpc_client = Some(node_manager::connect(&self.node_config));
-        self.fetch_all_balances();
-    }
 }
