@@ -350,12 +350,15 @@ impl App {
         loop {
             match rx.try_recv() {
                 Ok(Ok(DaoQueryEvent::Deposited(lock_args, cell))) => {
-                    self.dao_deposited_cells.push((lock_args, cell));
+                    self.dao_deposited_staging.push((lock_args, cell));
                 }
                 Ok(Ok(DaoQueryEvent::Prepared(lock_args, cell))) => {
-                    self.dao_prepared_cells.push((lock_args, cell));
+                    self.dao_prepared_staging.push((lock_args, cell));
                 }
                 Ok(Ok(DaoQueryEvent::Done)) => {
+                    // Atomic swap: replace display vectors with complete staging data.
+                    std::mem::swap(&mut self.dao_deposited_cells, &mut self.dao_deposited_staging);
+                    std::mem::swap(&mut self.dao_prepared_cells, &mut self.dao_prepared_staging);
                     self.dao_cells_query_rx = None;
                     break;
                 }

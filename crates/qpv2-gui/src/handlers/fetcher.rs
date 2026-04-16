@@ -15,9 +15,8 @@ impl App {
             return;
         }
 
-        // avoid showing duplicated cells from previous poll.
-        self.dao_deposited_cells.clear();
-        self.dao_prepared_cells.clear();
+        self.dao_deposited_staging.clear();
+        self.dao_prepared_staging.clear();
 
         let is_mainnet = self.is_mainnet();
         let node_config = self.node_config.clone();

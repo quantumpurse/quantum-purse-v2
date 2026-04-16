@@ -82,6 +82,9 @@ pub(crate) struct App {
     pub(crate) dao_view: DaoView,
     pub(crate) dao_deposited_cells: Vec<(String, node_manager::DepositedCell)>,
     pub(crate) dao_prepared_cells: Vec<(String, node_manager::PreparedCell)>,
+    // Staging vectors: accumulated during polling, swapped into display on Done.
+    dao_deposited_staging: Vec<(String, node_manager::DepositedCell)>,
+    dao_prepared_staging: Vec<(String, node_manager::PreparedCell)>,
     pub(crate) dao_cells_query_rx: Option<mpsc::Receiver<DaoQueryResult>>,
     pub(crate) dao_deposit_amount: String,
     pub(crate) dao_deposit_fee_rate: String,
@@ -217,6 +220,8 @@ impl App {
             dao_view: DaoView::Overview,
             dao_deposited_cells: Vec::new(),
             dao_prepared_cells: Vec::new(),
+            dao_deposited_staging: Vec::new(),
+            dao_prepared_staging: Vec::new(),
             dao_cells_query_rx: None,
             dao_deposit_amount: String::new(),
             dao_deposit_fee_rate: "1000".to_string(),
