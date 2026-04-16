@@ -54,7 +54,7 @@ impl App {
                         .response;
 
                     if new_card.interact(egui::Sense::click()).clicked() {
-                        self.start_create_new_account(frame);
+                        self.create_new_account_start(frame);
                     }
 
                     // Import (CLI only)

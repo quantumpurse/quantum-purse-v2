@@ -331,16 +331,14 @@ impl CkbRpc for LightClientRpc {
         // JSON round-trip to extract data. Remove this if the SDK makes them public.
         // The light client uses `transaction` (full TransactionView) where the
         // indexer uses `tx_hash` (H256 only). Transform `transaction.hash` → `tx_hash`.
-        let mut json_value = serde_json::to_value(&resp)
-            .map_err(|e| NodeManagerError::RpcError(e.to_string()))?;
+        let mut json_value =
+            serde_json::to_value(&resp).map_err(|e| NodeManagerError::RpcError(e.to_string()))?;
 
         if let Some(objects) = json_value.get_mut("objects").and_then(|v| v.as_array_mut()) {
             for obj in objects.iter_mut() {
                 if let Some(map) = obj.as_object_mut() {
-                    if let Some(tx_hash) = map
-                        .get("transaction")
-                        .and_then(|t| t.get("hash"))
-                        .cloned()
+                    if let Some(tx_hash) =
+                        map.get("transaction").and_then(|t| t.get("hash")).cloned()
                     {
                         map.remove("transaction");
                         map.insert("tx_hash".to_string(), tx_hash);
@@ -513,9 +511,7 @@ pub fn fetch_recent_transactions(
         _ => ckb_jsonrpc_types::ScriptHashType::Data,
     };
 
-    let code_hash = code_hash_str
-        .strip_prefix("0x")
-        .unwrap_or(code_hash_str);
+    let code_hash = code_hash_str.strip_prefix("0x").unwrap_or(code_hash_str);
     let code_hash_bytes: [u8; 32] = {
         let bytes = hex::decode(code_hash)
             .map_err(|e| NodeManagerError::RpcError(format!("Invalid code hash hex: {}", e)))?;
@@ -530,9 +526,7 @@ pub fn fetch_recent_transactions(
         arr
     };
 
-    let lock_args_clean = lock_args_hex
-        .strip_prefix("0x")
-        .unwrap_or(lock_args_hex);
+    let lock_args_clean = lock_args_hex.strip_prefix("0x").unwrap_or(lock_args_hex);
     let args_bytes = hex::decode(lock_args_clean)
         .map_err(|e| NodeManagerError::RpcError(format!("Invalid lock args hex: {}", e)))?;
 

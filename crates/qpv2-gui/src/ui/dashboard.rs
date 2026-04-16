@@ -262,20 +262,12 @@ impl App {
                     let records: Vec<TxRecord> = self.tx_history.clone();
                     let accounts = &self.accounts;
                     for record in &records {
-                        let owner_idx = accounts
-                            .iter()
-                            .position(|a| *a == record.owner_lock_args);
+                        let owner_idx = accounts.iter().position(|a| *a == record.owner_lock_args);
                         let counterparty_idx = record
                             .internal_counterparty_lock_args
                             .as_ref()
                             .and_then(|args| accounts.iter().position(|a| a == args));
-                        Self::draw_tx_card(
-                            ui,
-                            &self.colors,
-                            record,
-                            owner_idx,
-                            counterparty_idx,
-                        );
+                        Self::draw_tx_card(ui, &self.colors, record, owner_idx, counterparty_idx);
                         ui.add_space(7.0);
                     }
                 }
@@ -351,8 +343,7 @@ impl App {
                     // Icon with colored background.
                     let (icon_rect, _) =
                         ui.allocate_exact_size(egui::vec2(36.0, 36.0), egui::Sense::hover());
-                    ui.painter()
-                        .rect_filled(icon_rect, 9.0, icon_bg);
+                    ui.painter().rect_filled(icon_rect, 9.0, icon_bg);
                     ui.painter().text(
                         icon_rect.center(),
                         egui::Align2::CENTER_CENTER,
@@ -371,11 +362,7 @@ impl App {
                     };
 
                     ui.vertical(|ui| {
-                        ui.label(
-                            egui::RichText::new(name)
-                                .size(13.0)
-                                .color(colors.text),
-                        );
+                        ui.label(egui::RichText::new(name).size(13.0).color(colors.text));
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 6.0;
                             ui.label(
@@ -387,20 +374,17 @@ impl App {
                             // Account index badge: "#N" for external,
                             // "#N → #M" for outgoing internal, "#N ← #M" for incoming internal.
                             if let Some(idx) = account_index {
-                                let badge_text =
-                                    if let Some(cp_idx) = counterparty_index {
-                                        let arrow = match record.tx_kind {
-                                            TxKind::Incoming => "\u{2190}", // ←
-                                            _ => "\u{2192}",               // →
-                                        };
-                                        format!("#{} {} #{}", idx, arrow, cp_idx)
-                                    } else {
-                                        format!("#{}", idx)
+                                let badge_text = if let Some(cp_idx) = counterparty_index {
+                                    let arrow = match record.tx_kind {
+                                        TxKind::Incoming => "\u{2190}", // ←
+                                        _ => "\u{2192}",                // →
                                     };
+                                    format!("#{} {} #{}", idx, arrow, cp_idx)
+                                } else {
+                                    format!("#{}", idx)
+                                };
                                 egui::Frame::new()
-                                    .fill(egui::Color32::from_rgba_unmultiplied(
-                                        0, 200, 255, 25,
-                                    ))
+                                    .fill(egui::Color32::from_rgba_unmultiplied(0, 200, 255, 25))
                                     .corner_radius(6.0)
                                     .inner_margin(egui::Margin::symmetric(5, 1))
                                     .show(ui, |ui| {
@@ -418,60 +402,58 @@ impl App {
                     // Right side: amount + time.
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.vertical(|ui| {
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Min),
-                                |ui| {
-                                    if record.is_pending {
-                                        ui.label(
-                                            egui::RichText::new("Pending")
-                                                .size(14.0)
-                                                .family(syne.clone())
-                                                .color(colors.warn),
-                                        );
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                                if record.is_pending {
+                                    ui.label(
+                                        egui::RichText::new("Pending")
+                                            .size(14.0)
+                                            .family(syne.clone())
+                                            .color(colors.warn),
+                                    );
+                                } else {
+                                    let is_internal = counterparty_index.is_some();
+                                    let (prefix, color) = if is_internal {
+                                        // Internal transfer: neutral color, no +/-.
+                                        ("", colors.text_muted)
                                     } else {
-                                        let is_internal =
-                                            counterparty_index.is_some();
-                                        let (prefix, color) = if is_internal {
-                                            // Internal transfer: neutral color, no +/-.
-                                            ("", colors.text_muted)
-                                        } else {
-                                            match record.tx_kind {
-                                                TxKind::Incoming => ("+", colors.accent),
-                                                _ => ("\u{2212}", colors.danger),
-                                            }
-                                        };
-                                        let whole = record.amount / crate::types::CKB_DECIMAL_PLACES;
-                                        let frac = record.amount % crate::types::CKB_DECIMAL_PLACES;
-                                        let amount_str = if frac == 0 {
-                                            format!("{}{} CKB", prefix, format_with_commas(whole))
-                                        } else {
-                                            let frac_str = format!("{:08}", frac);
-                                            format!("{}{}.{} CKB", prefix, format_with_commas(whole), &frac_str[..2])
-                                        };
-                                        ui.label(
-                                            egui::RichText::new(amount_str)
-                                                .size(14.0)
-                                                .family(syne.clone())
-                                                .color(color),
-                                        );
-                                    }
-                                },
-                            );
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Min),
-                                |ui| {
-                                    let time_str = if record.timestamp > 0 {
-                                        format_relative_time(record.timestamp)
+                                        match record.tx_kind {
+                                            TxKind::Incoming => ("+", colors.accent),
+                                            _ => ("\u{2212}", colors.danger),
+                                        }
+                                    };
+                                    let whole = record.amount / crate::types::CKB_DECIMAL_PLACES;
+                                    let frac = record.amount % crate::types::CKB_DECIMAL_PLACES;
+                                    let amount_str = if frac == 0 {
+                                        format!("{}{} CKB", prefix, format_with_commas(whole))
                                     } else {
-                                        "...".to_string()
+                                        let frac_str = format!("{:08}", frac);
+                                        format!(
+                                            "{}{}.{} CKB",
+                                            prefix,
+                                            format_with_commas(whole),
+                                            &frac_str[..2]
+                                        )
                                     };
                                     ui.label(
-                                        egui::RichText::new(time_str)
-                                            .size(10.0)
-                                            .color(colors.text_muted),
+                                        egui::RichText::new(amount_str)
+                                            .size(14.0)
+                                            .family(syne.clone())
+                                            .color(color),
                                     );
-                                },
-                            );
+                                }
+                            });
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                                let time_str = if record.timestamp > 0 {
+                                    format_relative_time(record.timestamp)
+                                } else {
+                                    "...".to_string()
+                                };
+                                ui.label(
+                                    egui::RichText::new(time_str)
+                                        .size(10.0)
+                                        .color(colors.text_muted),
+                                );
+                            });
                         });
                     });
                 });

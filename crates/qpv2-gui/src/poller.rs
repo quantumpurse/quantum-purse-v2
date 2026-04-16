@@ -1,5 +1,6 @@
 //! Async polling for background operations (passkeys, balances, transactions).
 
+use crate::passkey::{PRF_SALT, RP_ID};
 use crate::types::{
     DaoQueryEvent, PasskeyOp, SpendableCapacityTarget, Status, TransactionKind, TransactionStatus,
     TxHistoryEvent,
@@ -39,11 +40,13 @@ impl App {
                         }
 
                         // Registration succeeded — now assert with PRF to get the encryption key.
-                        let rp_id = "quantumpurse.org";
-                        let salt = b"quantumpurse-kv-seed-encryption\0";
                         let credential_id = registration.credential_id.clone();
-                        match passkey_prf::assert_async(&window, rp_id, &credential_id, Some(salt))
-                        {
+                        match passkey_prf::assert_async(
+                            &window,
+                            RP_ID,
+                            &credential_id,
+                            Some(PRF_SALT),
+                        ) {
                             Ok(assert_pending) => {
                                 self.passkey_op = Some(PasskeyOp::PostRegistrationAssert {
                                     op: assert_pending,
@@ -78,7 +81,7 @@ impl App {
                     });
                 }
                 Some(Ok(Some(prf_output))) => {
-                    self.finish_wallet_creation(variant, &credential_id, &prf_output);
+                    self.create_wallet_finish(variant, &credential_id, &prf_output);
                 }
                 Some(Ok(None)) => {
                     self.status = Status::Error(
@@ -97,7 +100,7 @@ impl App {
                     self.passkey_op = Some(PasskeyOp::UnlockAssert { op });
                 }
                 Some(Ok(_)) => {
-                    self.finish_unlock();
+                    self.unlock_finish();
                 }
                 Some(Err(passkey_prf::PrfError::Cancelled)) => {
                     self.status = Status::Info("Cancelled.".to_string());
@@ -111,7 +114,7 @@ impl App {
                     self.passkey_op = Some(PasskeyOp::NewAccountAssert { op });
                 }
                 Some(Ok(Some(prf_output))) => {
-                    self.finish_create_new_account(&prf_output);
+                    self.create_new_account_finish(&prf_output);
                 }
                 Some(Ok(None)) => {
                     self.status = Status::Error(
@@ -223,9 +226,8 @@ impl App {
                         }
                     };
 
-                    let rp_id = "quantumpurse.org";
-                    let salt = b"quantumpurse-kv-seed-encryption\0";
-                    match passkey_prf::assert_async(&window, rp_id, &credential_id, Some(salt)) {
+                    match passkey_prf::assert_async(&window, RP_ID, &credential_id, Some(PRF_SALT))
+                    {
                         Ok(op) => {
                             self.passkey_op = Some(PasskeyOp::SignTransactionAssert {
                                 op,
@@ -357,7 +359,10 @@ impl App {
                 }
                 Ok(Ok(DaoQueryEvent::Done)) => {
                     // Atomic swap: replace display vectors with complete staging data.
-                    std::mem::swap(&mut self.dao_deposited_cells, &mut self.dao_deposited_staging);
+                    std::mem::swap(
+                        &mut self.dao_deposited_cells,
+                        &mut self.dao_deposited_staging,
+                    );
                     std::mem::swap(&mut self.dao_prepared_cells, &mut self.dao_prepared_staging);
                     self.dao_cells_query_rx = None;
                     break;

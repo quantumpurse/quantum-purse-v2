@@ -163,12 +163,8 @@ impl App {
 
             // Wallet lock script code hash for filtering outputs that belong to us.
             let wallet_code_hash = match network {
-                node_manager::NetworkType::Mainnet => {
-                    qpv2_core::constants::CKB_MAINNET_CODE_HASH
-                }
-                node_manager::NetworkType::Testnet => {
-                    qpv2_core::constants::CKB_TESTNET_CODE_HASH
-                }
+                node_manager::NetworkType::Mainnet => qpv2_core::constants::CKB_MAINNET_CODE_HASH,
+                node_manager::NetworkType::Testnet => qpv2_core::constants::CKB_TESTNET_CODE_HASH,
             };
             let all_lock_args_set: HashSet<&str> =
                 all_lock_args.iter().map(|s| s.as_str()).collect();
@@ -274,9 +270,7 @@ impl App {
                     .iter()
                     .find(|a| a.as_str() != owner_lock_args)
                     .cloned();
-                let tx_hash_clean = tx_hash_str
-                    .strip_prefix("0x")
-                    .unwrap_or(&tx_hash_str);
+                let tx_hash_clean = tx_hash_str.strip_prefix("0x").unwrap_or(&tx_hash_str);
                 let tx_hash_bytes = match hex::decode(tx_hash_clean) {
                     Ok(b) if b.len() == 32 => {
                         let mut arr = [0u8; 32];
@@ -286,14 +280,12 @@ impl App {
                     _ => continue,
                 };
 
-                let tx_status =
-                    match rpc.get_transaction(tx_hash_bytes) {
-                        Ok(Some(s)) => s,
-                        _ => continue,
-                    };
+                let tx_status = match rpc.get_transaction(tx_hash_bytes) {
+                    Ok(Some(s)) => s,
+                    _ => continue,
+                };
 
-                let is_pending = tx_status.status != "Committed"
-                    && tx_status.status != "committed";
+                let is_pending = tx_status.status != "Committed" && tx_status.status != "committed";
 
                 let tx_view = match tx_status.transaction {
                     Some(tv) => tv,
@@ -404,9 +396,9 @@ impl App {
                             .outputs
                             .iter()
                             .find(|out| {
-                                out.type_.as_ref().is_some_and(|t| {
-                                    format!("{:#x}", t.code_hash) == dao_type_hash
-                                })
+                                out.type_
+                                    .as_ref()
+                                    .is_some_and(|t| format!("{:#x}", t.code_hash) == dao_type_hash)
                             })
                             .map(|out| out.capacity.value())
                             .unwrap_or(owner_capacity)

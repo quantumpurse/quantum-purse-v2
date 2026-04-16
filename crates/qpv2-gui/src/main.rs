@@ -1,8 +1,13 @@
 //! GUI for SPHINCS+ key vault with Passkey PRF / Touch ID support.
 
-mod handlers;
+mod ckb;
+#[cfg(target_os = "macos")]
+mod passkey;
+mod poller;
+mod transactor;
 mod types;
 mod ui;
+mod wallet;
 #[cfg(target_os = "macos")]
 mod window_handle;
 
@@ -15,13 +20,13 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 /// Interval between periodic data refreshes (balances, tx history, DAO cells).
-const POLL_INTERVAL: Duration = Duration::from_secs(3);
+const POLL_INTERVAL: Duration = Duration::from_secs(10);
 
 #[cfg(target_os = "macos")]
 use types::PasskeyOp;
 use types::{
     AppColors, BalanceResult, DaoQueryResult, DaoView, Screen, SpendableCapacityTarget, Status,
-    Tab, TransactionSendResult, TransactionStatus, TxBuildResult, TxRecord, TxHistoryEvent,
+    Tab, TransactionSendResult, TransactionStatus, TxBuildResult, TxHistoryEvent, TxRecord,
 };
 
 pub(crate) struct App {
@@ -264,9 +269,7 @@ impl eframe::App for App {
 
         // Periodic refresh of balances, transaction history, and DAO cells.
         // todo verify if other pollings needs this condition.
-        if self.screen == Screen::Unlocked
-            && self.last_poll_time.elapsed() >= POLL_INTERVAL
-        {
+        if self.screen == Screen::Unlocked && self.last_poll_time.elapsed() >= POLL_INTERVAL {
             self.last_poll_time = std::time::Instant::now();
             self.fetch_all_balances();
             self.fetch_tx_history(true);
@@ -283,7 +286,7 @@ impl eframe::App for App {
                     .frame(egui::Frame::new().fill(self.colors.bg))
                     .show(ctx, |ui| {
                         self.draw_gradient_bg(ui);
-                        self.show_setup(ui, frame);
+                        self.show_welcome(ui, frame);
                     });
             }
             Screen::Locked => {

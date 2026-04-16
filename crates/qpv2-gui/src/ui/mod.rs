@@ -4,7 +4,6 @@ mod accounts;
 mod common;
 mod dao;
 mod dashboard;
+mod main_stages;
 mod node_selector;
-mod setup;
-mod sidebar;
 mod transfer;
