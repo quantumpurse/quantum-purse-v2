@@ -153,7 +153,7 @@ impl KeyVault {
     ///
     /// **Returns**:
     /// - `Result<bool, String>` - `true` if a master seed exists, or `false` if it doesn't.
-    pub fn has_master_seed(&self) -> Result<bool, String> {
+    pub fn has_master_seed() -> Result<bool, String> {
         let payload = db::get_encrypted_seed().map_err(|e| e.to_string())?;
         Ok(payload.is_some())
     }
@@ -196,7 +196,7 @@ impl KeyVault {
     ) -> Result<(), String> {
         Self::validate_auth(&auth)?;
 
-        if self.has_master_seed()? {
+        if Self::has_master_seed()? {
             return Err("Master seed already exists".to_string());
         }
 
@@ -630,8 +630,8 @@ impl KeyVault {
     ///
     /// **Returns**:
     /// - `bool` - `true` if a wallet exists.
-    pub fn wallet_exists(&self) -> bool {
-        self.has_master_seed().unwrap_or(false)
+    pub fn wallet_exists() -> bool {
+        Self::has_master_seed().unwrap_or(false)
     }
 
     /// Reads and returns the stored wallet info.
@@ -653,7 +653,7 @@ impl KeyVault {
     ///
     /// **Returns**:
     /// - `Result<(), String>` - Ok if methods match, or an error message explaining the mismatch.
-    pub fn check_auth_compatibility(&self, expected: &AuthMethod) -> Result<(), String> {
+    pub fn check_auth_compatibility(expected: &AuthMethod) -> Result<(), String> {
         let wallet_info = Self::read_wallet_info()?;
 
         match (&wallet_info.auth_method, expected) {

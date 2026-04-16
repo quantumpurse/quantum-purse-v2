@@ -209,7 +209,7 @@ impl App {
                 self.transaction_build_rx = None;
                 #[cfg(target_os = "macos")]
                 {
-                    let window = match Self::get_ns_window(frame) {
+                    let window = match crate::window_handle::get_ns_window(frame) {
                         Ok(w) => w,
                         Err(e) => {
                             self.tx_status =

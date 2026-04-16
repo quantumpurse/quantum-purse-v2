@@ -173,7 +173,7 @@ impl App {
         });
 
         // Check if a wallet already exists by trying to read wallet info.
-        let screen = if KeyVault::new(SpxVariant::Sha2128S).wallet_exists() {
+        let screen = if KeyVault::wallet_exists() {
             Screen::Locked
         } else {
             Screen::Setup
@@ -236,14 +236,6 @@ impl App {
             tx_history_rx: None,
             last_poll_time: std::time::Instant::now(),
         }
-    }
-
-    /// Extract the NSWindow from the eframe Frame (macOS only).
-    #[cfg(target_os = "macos")]
-    fn get_ns_window(
-        frame: &eframe::Frame,
-    ) -> Result<objc2::rc::Retained<objc2_app_kit::NSWindow>, String> {
-        window_handle::get_ns_window(frame)
     }
 }
 

@@ -224,7 +224,7 @@ fn main() -> Result<(), String> {
                 let vault = KeyVault::new(variant);
 
                 // Check authentication compatibility. CLI only supports password
-                vault.check_auth_compatibility(&AuthMethod::Password)?;
+                KeyVault::check_auth_compatibility(&AuthMethod::Password)?;
 
                 let password = prompt_for_input("Enter password: ")?;
                 let seed_phrase = vault.export_seed_phrase(AuthKey::Password(password))?;
@@ -246,7 +246,7 @@ fn main() -> Result<(), String> {
                     let vault = KeyVault::new(variant);
 
                     // Check authentication compatibility. CLI only supports password
-                    vault.check_auth_compatibility(&AuthMethod::Password)?;
+                    KeyVault::check_auth_compatibility(&AuthMethod::Password)?;
 
                     let password = prompt_for_input("Enter password: ")?;
                     let lock_args = vault.gen_new_account(AuthKey::Password(password))?;
@@ -273,7 +273,7 @@ fn main() -> Result<(), String> {
                     let vault = KeyVault::new(variant);
 
                     // Check authentication compatibility. CLI only supports password
-                    vault.check_auth_compatibility(&AuthMethod::Password)?;
+                    KeyVault::check_auth_compatibility(&AuthMethod::Password)?;
 
                     let password = prompt_for_input("Enter password: ")?;
                     let accounts = vault.recover_accounts(AuthKey::Password(password), count)?;
@@ -289,7 +289,7 @@ fn main() -> Result<(), String> {
                     let vault = KeyVault::new(variant);
 
                     // Check authentication compatibility. CLI only supports password
-                    vault.check_auth_compatibility(&AuthMethod::Password)?;
+                    KeyVault::check_auth_compatibility(&AuthMethod::Password)?;
 
                     let password = prompt_for_input("Enter password: ")?;
                     let accounts =
@@ -311,7 +311,7 @@ fn main() -> Result<(), String> {
             let vault = KeyVault::new(variant);
 
             // Check authentication compatibility. CLI only supports password
-            vault.check_auth_compatibility(&AuthMethod::Password)?;
+            KeyVault::check_auth_compatibility(&AuthMethod::Password)?;
 
             let message_bytes = hex::decode(&message).map_err(|e| e.to_string())?;
             let password = prompt_for_input("Enter password: ")?;
@@ -349,7 +349,7 @@ fn main() -> Result<(), String> {
                 let vault = KeyVault::new(variant);
 
                 // Check authentication compatibility. CLI only supports password
-                vault.check_auth_compatibility(&AuthMethod::Password)?;
+                KeyVault::check_auth_compatibility(&AuthMethod::Password)?;
 
                 let message_bytes = hex::decode(&message).map_err(|e| e.to_string())?;
                 let password = prompt_for_input("Enter password: ")?;

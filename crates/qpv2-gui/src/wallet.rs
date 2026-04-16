@@ -70,7 +70,7 @@ impl App {
 
     /// Kick off async passkey registration.
     pub(crate) fn create_wallet_start(&mut self, frame: &mut eframe::Frame) {
-        let window = match Self::get_ns_window(frame) {
+        let window = match crate::window_handle::get_ns_window(frame) {
             Ok(w) => w,
             Err(e) => {
                 self.status = Status::Error(format!("Failed to get window: {}", e));
@@ -156,7 +156,7 @@ impl App {
 
     /// Kick off async credential-only assertion (no PRF) for unlock.
     pub(crate) fn unlock_start(&mut self, frame: &mut eframe::Frame) {
-        let window = match Self::get_ns_window(frame) {
+        let window = match crate::window_handle::get_ns_window(frame) {
             Ok(w) => w,
             Err(e) => {
                 self.status = Status::Error(format!("Failed to get window: {}", e));
@@ -202,7 +202,7 @@ impl App {
 
     /// Kick off async PRF assertion to create a new account (requires seed decryption).
     pub(crate) fn create_new_account_start(&mut self, frame: &mut eframe::Frame) {
-        let window = match Self::get_ns_window(frame) {
+        let window = match crate::window_handle::get_ns_window(frame) {
             Ok(w) => w,
             Err(e) => {
                 self.status = Status::Error(format!("Failed to get window: {}", e));
