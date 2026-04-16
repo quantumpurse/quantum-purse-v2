@@ -638,7 +638,7 @@ impl KeyVault {
     ///
     /// **Returns**:
     /// - `Result<WalletInfo, String>` - The wallet info on success, or an error if not found.
-    pub fn read_wallet_info(&self) -> Result<WalletInfo, String> {
+    pub fn read_wallet_info() -> Result<WalletInfo, String> {
         db::get_wallet_info()
             .map_err(|e| e.to_string())?
             .ok_or_else(|| {
@@ -654,7 +654,7 @@ impl KeyVault {
     /// **Returns**:
     /// - `Result<(), String>` - Ok if methods match, or an error message explaining the mismatch.
     pub fn check_auth_compatibility(&self, expected: &AuthMethod) -> Result<(), String> {
-        let wallet_info = self.read_wallet_info()?;
+        let wallet_info = Self::read_wallet_info()?;
 
         match (&wallet_info.auth_method, expected) {
             (AuthMethod::Password, AuthMethod::Password) => Ok(()),

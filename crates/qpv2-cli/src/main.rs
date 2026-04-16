@@ -384,13 +384,11 @@ fn main() -> Result<(), String> {
         }
 
         Commands::Info => {
-            let variant = KeyVault::get_spx_variant()?;
             let accounts = KeyVault::get_all_sphincs_lock_args()?;
             let data_path = qpv2_core::db::get_data_dir().map_err(|e| e.to_string())?;
 
             // Read wallet info to get authentication method
-            let temp_vault = KeyVault::new(variant);
-            let wallet_info = temp_vault.read_wallet_info()?;
+            let wallet_info = KeyVault::read_wallet_info()?;
 
             let (auth_method_display, compatible_frontends) = match wallet_info.auth_method {
                 AuthMethod::Password => ("Password", "CLI and GUI"),
@@ -401,10 +399,10 @@ fn main() -> Result<(), String> {
             println!("║                     Wallet Information                         ║");
             println!("╚════════════════════════════════════════════════════════════════╝");
             println!();
-            println!("  SPHINCS+ Variant      : {}", variant);
+            println!("  SPHINCS+ Variant      : {}", wallet_info.spx_variant);
             println!(
                 "  Mnemonic Words        : {}",
-                variant.required_bip39_size_in_word_total()
+                wallet_info.spx_variant.required_bip39_size_in_word_total()
             );
             println!("  Authentication Method : {}", auth_method_display);
             println!("  Compatible Frontends  : {}", compatible_frontends);

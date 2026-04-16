@@ -1,7 +1,7 @@
 //! Accounts tab rendering.
 
 use eframe::egui;
-use qpv2_core::types::{AuthMethod, SpxVariant};
+use qpv2_core::types::AuthMethod;
 use qpv2_core::KeyVault;
 
 use crate::types::{format_ckb_balance, Status};
@@ -251,7 +251,7 @@ impl App {
                     ui.add_space(8.0);
 
                     // Wallet info
-                    if let Ok(info) = KeyVault::new(SpxVariant::Sha2128S).read_wallet_info() {
+                    if let Ok(info) = KeyVault::read_wallet_info() {
                         ui.label(
                             egui::RichText::new(format!("SPHINCS+ {}", info.spx_variant))
                                 .size(10.0)
