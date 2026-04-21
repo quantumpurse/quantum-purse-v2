@@ -520,19 +520,7 @@ impl App {
                         .color(self.colors.text_muted),
                 );
             }
-
-            // Refresh button
-            ui.add_space(8.0);
-            if ui
-                .add_enabled(
-                    self.dao_cells_query_rx.is_none(),
-                    egui::Button::new(egui::RichText::new("Refresh").size(12.0))
-                        .fill(self.colors.surface2),
-                )
-                .clicked()
-            {
-                self.fetch_dao_cells();
-            }
+            
             return;
         }
 
@@ -717,19 +705,6 @@ impl App {
         }
         if let Some((out_point, lock_args)) = withdraw_action {
             self.dao_withdraw_async(out_point, lock_args);
-        }
-
-        // Refresh button
-        ui.add_space(12.0);
-        if ui
-            .add_enabled(
-                self.dao_cells_query_rx.is_none(),
-                egui::Button::new(egui::RichText::new("Refresh").size(12.0))
-                    .fill(self.colors.surface2),
-            )
-            .clicked()
-        {
-            self.fetch_dao_cells();
         }
     }
 }
