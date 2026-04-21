@@ -380,3 +380,26 @@ pub fn lock_args_to_address(lock_args: &str, is_mainnet: bool) -> Result<String,
 
     Ok(address.to_string())
 }
+
+/// Converts an arbitrary on-chain lock `Script` to its bech32m address string.
+///
+/// Unlike `lock_args_to_address`, this accepts any lock script (any code_hash /
+/// hash_type), so it works for external recipients in Transfer's Address Book.
+///
+/// **Parameters**:
+/// - `script: &ckb_types::packed::Script` - The lock script to convert.
+/// - `is_mainnet: bool` - `true` for mainnet, `false` for testnet.
+///
+/// **Returns**:
+/// - `String` - The bech32m-encoded CKB address (post-2021 full format).
+pub fn script_to_address(script: &ckb_types::packed::Script, is_mainnet: bool) -> String {
+    use ckb_sdk::{Address, AddressPayload, NetworkType};
+
+    let network = if is_mainnet {
+        NetworkType::Mainnet
+    } else {
+        NetworkType::Testnet
+    };
+    let payload = AddressPayload::from(script.clone());
+    Address::new(network, payload, true).to_string()
+}

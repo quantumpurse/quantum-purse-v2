@@ -359,6 +359,7 @@ impl App {
                 let mut internal_counterparty: Option<String> = None;
                 let mut internal_capacity: u64 = 0;
                 let mut external_capacity: u64 = 0;
+                let mut external_recipient: Option<String> = None;
 
                 for out in &tx_view.inner.outputs {
                     let cap = out.capacity.value();
@@ -373,6 +374,20 @@ impl App {
                         }
                         None => {
                             external_capacity += cap;
+                            // Skip DAO type outputs — those belong to DAO flow,
+                            // not a user-facing recipient address.
+                            let is_dao_output = out
+                                .type_
+                                .as_ref()
+                                .is_some_and(|t| format!("{:#x}", t.code_hash) == dao_type_hash);
+                            if external_recipient.is_none() && !is_dao_output {
+                                let packed: ckb_types::packed::Script = out.lock.clone().into();
+                                let is_mainnet =
+                                    matches!(network, node_manager::NetworkType::Mainnet);
+                                external_recipient = Some(
+                                    qpv2_core::utilities::script_to_address(&packed, is_mainnet),
+                                );
+                            }
                         }
                     }
                 }
@@ -412,6 +427,11 @@ impl App {
                     _ => internal_counterparty,
                 };
 
+                let external_recipient_address = match tx_kind {
+                    TxKind::Outgoing => external_recipient,
+                    _ => None,
+                };
+
                 let record = TxRecord {
                     tx_hash: tx_hash_str,
                     tx_kind,
@@ -421,6 +441,7 @@ impl App {
                     is_pending,
                     owner_lock_args,
                     internal_counterparty_lock_args,
+                    external_recipient_address,
                 };
 
                 if sender.send(Ok(TxHistoryEvent::Record(record))).is_err() {

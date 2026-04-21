@@ -80,6 +80,9 @@ pub(crate) struct TxRecord {
     pub owner_lock_args: String,
     /// For internal transfers: lock args of the other wallet account involved.
     pub internal_counterparty_lock_args: Option<String>,
+    /// For Outgoing to external addresses: the first external recipient's full
+    /// bech32m address. Used to build the Address Book in the Transfer tab.
+    pub external_recipient_address: Option<String>,
 }
 
 /// Streaming event from the transaction history background thread.

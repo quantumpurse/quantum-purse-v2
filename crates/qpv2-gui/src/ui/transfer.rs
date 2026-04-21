@@ -1,8 +1,10 @@
 //! Transfer tab rendering.
 
+use std::collections::HashSet;
+
 use eframe::egui;
 
-use crate::types::{format_ckb_balance, SpendableCapacityTarget, TransactionStatus};
+use crate::types::{format_ckb_balance, SpendableCapacityTarget, TransactionStatus, TxKind};
 use crate::App;
 
 impl App {
@@ -12,77 +14,26 @@ impl App {
             ui.vertical(|ui| {
                 ui.set_width(ui.available_width() - 30.0);
 
-                ui.heading(
-                    egui::RichText::new("Transfer CKB")
-                        .size(26.0)
-                        .strong()
-                        .color(self.colors.text),
-                );
-                ui.label(
-                    egui::RichText::new("Send CKB to any Nervos address.")
-                        .size(13.0)
-                        .color(self.colors.text_muted),
-                );
-
-                ui.add_space(22.0);
-
-                // Show success/error status from previous transfer
-                match &self.tx_status {
-                    TransactionStatus::Success(tx_hash) => {
-                        egui::Frame::new()
-                            .fill(egui::Color32::from_rgba_unmultiplied(0, 255, 136, 20))
-                            .corner_radius(12.0)
-                            .inner_margin(egui::Margin::symmetric(20, 14))
-                            .show(ui, |ui| {
-                                ui.set_max_width(560.0);
-                                ui.label(
-                                    egui::RichText::new("Transaction sent successfully!")
-                                        .strong()
-                                        .color(self.colors.accent),
-                                );
-                                ui.add_space(4.0);
-                                ui.horizontal(|ui| {
-                                    ui.label(
-                                        egui::RichText::new(format!(
-                                            "Tx: 0x{}..{}",
-                                            &tx_hash[..8],
-                                            &tx_hash[tx_hash.len() - 8..]
-                                        ))
-                                        .size(11.0)
-                                        .color(self.colors.text_muted)
-                                        .family(egui::FontFamily::Monospace),
-                                    );
-                                    if ui.small_button("Copy").clicked() {
-                                        ui.ctx().copy_text(format!("0x{}", tx_hash));
-                                    }
-                                });
-                            });
-                        ui.add_space(12.0);
-                    }
-                    TransactionStatus::Error(msg) => {
-                        egui::Frame::new()
-                            .fill(egui::Color32::from_rgba_unmultiplied(255, 70, 70, 20))
-                            .corner_radius(12.0)
-                            .inner_margin(egui::Margin::symmetric(20, 14))
-                            .show(ui, |ui| {
-                                ui.set_max_width(560.0);
-                                ui.label(
-                                    egui::RichText::new(format!("Error: {}", msg))
-                                        .color(self.colors.danger),
-                                );
-                            });
-                        ui.add_space(12.0);
-                    }
-                    _ => {}
-                }
-
                 egui::Frame::new()
                     .fill(self.colors.surface)
-                    .corner_radius(20.0)
-                    .inner_margin(egui::Margin::symmetric(30, 26))
+                    .corner_radius(18.0)
+                    .inner_margin(egui::Margin::symmetric(28, 26))
                     .stroke(egui::Stroke::new(1.0, self.colors.border))
                     .show(ui, |ui| {
-                        ui.set_max_width(560.0);
+                        // ── Form title + subtitle (inside the card, matching DAO Deposit) ──
+                        ui.label(
+                            egui::RichText::new("Transfer CKB")
+                                .size(20.0)
+                                .strong()
+                                .color(self.colors.text),
+                        );
+                        ui.label(
+                            egui::RichText::new("Send CKB to any Nervos address.")
+                                .size(12.0)
+                                .color(self.colors.text_muted),
+                        );
+
+                        ui.add_space(20.0);
 
                         let is_busy = !matches!(
                             self.tx_status,
@@ -148,12 +99,42 @@ impl App {
 
                         ui.add_space(16.0);
 
-                        // ── Recipient Address ──
-                        ui.label(
-                            egui::RichText::new("To")
-                                .size(12.0)
-                                .color(self.colors.text_muted),
-                        );
+                        // ── Recipient Address + prefix-based network badge ──
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new("To")
+                                    .size(12.0)
+                                    .color(self.colors.text_muted),
+                            );
+                            // Lightweight prefix check (avoids parsing every frame).
+                            let trimmed = self.transfer_recipient.trim();
+                            if !trimmed.is_empty() {
+                                let (label, fill, color) = if trimmed.starts_with("ckb1q") {
+                                    ("mainnet", self.colors.accent_tint, self.colors.accent)
+                                } else if trimmed.starts_with("ckt1q") {
+                                    ("testnet", self.colors.accent2_tint, self.colors.accent2)
+                                } else {
+                                    (
+                                        "invalid prefix",
+                                        egui::Color32::from_rgba_unmultiplied(255, 70, 70, 20),
+                                        self.colors.danger,
+                                    )
+                                };
+                                ui.add_space(8.0);
+                                egui::Frame::new()
+                                    .fill(fill)
+                                    .corner_radius(10.0)
+                                    .inner_margin(egui::Margin::symmetric(8, 2))
+                                    .show(ui, |ui| {
+                                        ui.label(
+                                            egui::RichText::new(label)
+                                                .size(8.5)
+                                                .family(egui::FontFamily::Monospace)
+                                                .color(color),
+                                        );
+                                    });
+                            }
+                        });
                         ui.add_space(4.0);
 
                         let recipient_edit =
@@ -253,7 +234,24 @@ impl App {
                             ui.add(fee_edit);
                         });
 
-                        ui.add_space(20.0);
+                        ui.add_space(12.0);
+
+                        // ── Irreversibility warning (mirrors DAO Deposit's lock warning) ──
+                        egui::Frame::new()
+                            .fill(egui::Color32::from_rgba_premultiplied(255, 170, 0, 15))
+                            .corner_radius(8.0)
+                            .inner_margin(egui::Margin::symmetric(12, 10))
+                            .show(ui, |ui| {
+                                ui.label(
+                                    egui::RichText::new(
+                                        "Transfers are final. Double-check the recipient address before sending.",
+                                    )
+                                    .size(11.0)
+                                    .color(self.colors.bg),
+                                );
+                            });
+
+                        ui.add_space(16.0);
 
                         // ── Send Button ──
                         let connected = self.rpc_client.is_some();
@@ -284,6 +282,42 @@ impl App {
                             self.transfer_async();
                         }
 
+                        // ── Inline status (matches DAO Deposit layout) ──
+                        match &self.tx_status {
+                            TransactionStatus::Success(tx_hash) => {
+                                ui.add_space(8.0);
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        egui::RichText::new("Transaction sent: ")
+                                            .size(12.0)
+                                            .color(self.colors.accent),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(format!(
+                                            "0x{}..{}",
+                                            &tx_hash[..8],
+                                            &tx_hash[tx_hash.len() - 8..]
+                                        ))
+                                        .size(11.0)
+                                        .color(self.colors.text_muted)
+                                        .family(egui::FontFamily::Monospace),
+                                    );
+                                    if ui.small_button("Copy").clicked() {
+                                        ui.ctx().copy_text(format!("0x{}", tx_hash));
+                                    }
+                                });
+                            }
+                            TransactionStatus::Error(msg) => {
+                                ui.add_space(8.0);
+                                ui.label(
+                                    egui::RichText::new(msg)
+                                        .size(12.0)
+                                        .color(self.colors.danger),
+                                );
+                            }
+                            _ => {}
+                        }
+
                         if !connected {
                             ui.add_space(8.0);
                             ui.label(
@@ -291,6 +325,118 @@ impl App {
                                     .size(11.0)
                                     .color(self.colors.warn),
                             );
+                        }
+
+                        ui.add_space(8.0);
+
+                        // ── Cancel / Clear (mirrors DAO Deposit) ──
+                        if ui
+                            .add_enabled(
+                                !is_busy,
+                                egui::Button::new(egui::RichText::new("Clear").size(13.0))
+                                    .fill(self.colors.surface2)
+                                    .min_size(egui::vec2(ui.available_width(), 36.0)),
+                            )
+                            .clicked()
+                        {
+                            self.transfer_recipient.clear();
+                            self.transfer_amount.clear();
+                            self.transfer_all = false;
+                            self.tx_status = TransactionStatus::Idle;
+                        }
+
+                        // ── Address Book (unique external recipients from tx_history) ──
+                        // Collect up to 5 most-recent unique external recipients.
+                        // tx_history is already sorted newest-first by the poller.
+                        let mut seen: HashSet<String> = HashSet::new();
+                        let entries: Vec<String> = self
+                            .tx_history
+                            .iter()
+                            .filter(|r| matches!(r.tx_kind, TxKind::Outgoing))
+                            .filter_map(|r| r.external_recipient_address.as_ref())
+                            .filter(|a| seen.insert((*a).clone()))
+                            .take(5)
+                            .cloned()
+                            .collect();
+
+                        ui.add_space(18.0);
+                        ui.separator();
+                        ui.add_space(10.0);
+                        ui.label(
+                            egui::RichText::new("Address Book")
+                                .size(13.0)
+                                .strong()
+                                .color(self.colors.text),
+                        );
+                        ui.add_space(8.0);
+
+                        if entries.is_empty() {
+                            ui.label(
+                                egui::RichText::new(
+                                    "No recent recipients yet. Sent addresses will appear here.",
+                                )
+                                .size(11.0)
+                                .color(self.colors.text_muted),
+                            );
+                        } else {
+                            let avatar_palette = [
+                                self.colors.accent,
+                                self.colors.accent2,
+                                self.colors.accent3,
+                                self.colors.warn,
+                            ];
+                            for (i, addr) in entries.iter().enumerate() {
+                                let fill = avatar_palette[i % avatar_palette.len()];
+                                // Avatar letter: first non-prefix char, uppercased.
+                                let letter = addr
+                                    .chars()
+                                    .nth(5)
+                                    .map(|c| c.to_ascii_uppercase().to_string())
+                                    .unwrap_or_else(|| "?".to_string());
+                                // Short display: first 10 + … + last 6.
+                                let short = if addr.len() > 20 {
+                                    format!("{}…{}", &addr[..10], &addr[addr.len() - 6..])
+                                } else {
+                                    addr.clone()
+                                };
+
+                                ui.horizontal(|ui| {
+                                    egui::Frame::new()
+                                        .fill(fill)
+                                        .corner_radius(8.0)
+                                        .inner_margin(egui::Margin::symmetric(8, 4))
+                                        .show(ui, |ui| {
+                                            ui.label(
+                                                egui::RichText::new(letter)
+                                                    .size(12.0)
+                                                    .strong()
+                                                    .color(self.colors.bg),
+                                            );
+                                        });
+                                    ui.add_space(10.0);
+                                    ui.label(
+                                        egui::RichText::new(short)
+                                            .size(11.0)
+                                            .family(egui::FontFamily::Monospace)
+                                            .color(self.colors.text_muted),
+                                    );
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            let use_btn = egui::Button::new(
+                                                egui::RichText::new("Use \u{2192}")
+                                                    .size(11.0)
+                                                    .color(self.colors.accent),
+                                            )
+                                            .fill(egui::Color32::TRANSPARENT);
+                                            if ui.add_enabled(!is_busy, use_btn).clicked() {
+                                                self.transfer_recipient = addr.clone();
+                                            }
+                                        },
+                                    );
+                                });
+                                ui.add_space(6.0);
+                            }
                         }
                     });
             }); // vertical
