@@ -1,8 +1,8 @@
 //! Passkey constants and platform helpers (macOS only).
 
-use qpv2_core::{KeyVault, types::AuthMethod};
 use crate::types::Status;
 use crate::App;
+use qpv2_core::{types::AuthMethod, KeyVault};
 
 pub(crate) const RP_ID: &str = "quantumpurse.org";
 pub(crate) const PRF_SALT: &[u8] = b"quantumpurse-kv-seed-encryption\0";

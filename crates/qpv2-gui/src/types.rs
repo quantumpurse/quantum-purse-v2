@@ -209,10 +209,10 @@ impl Default for AppColors {
             accent3: egui::Color32::from_rgb(155, 127, 212), // #9b7fd4
             accent_tint: egui::Color32::from_rgba_unmultiplied(0, 255, 180, 20), // rgba(0,255,180,0.08)
             accent2_tint: egui::Color32::from_rgba_unmultiplied(0, 200, 255, 20), // rgba(0,200,255,0.08)
-            danger: egui::Color32::from_rgb(255, 77, 109), // #ff4d6d
-            warn: egui::Color32::from_rgb(255, 209, 102),  // #ffd166
-            text: egui::Color32::from_rgb(232, 244, 240),  // #e8f4f0
-            text_muted: egui::Color32::from_rgb(90, 122, 112), // #5a7a70
+            danger: egui::Color32::from_rgb(255, 77, 109),                        // #ff4d6d
+            warn: egui::Color32::from_rgb(255, 209, 102),                         // #ffd166
+            text: egui::Color32::from_rgb(232, 244, 240),                         // #e8f4f0
+            text_muted: egui::Color32::from_rgb(90, 122, 112),                    // #5a7a70
         }
     }
 }

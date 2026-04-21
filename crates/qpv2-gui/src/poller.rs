@@ -372,16 +372,13 @@ impl App {
                             .cmp(&a.prepare_block_number)
                             .then_with(|| a.out_point.as_slice().cmp(b.out_point.as_slice()))
                     });
-                    
+
                     // Atomic swap: replace display vectors with complete staging data.
                     std::mem::swap(
                         &mut self.dao_deposited_cells,
                         &mut self.dao_deposited_staging,
                     );
-                    std::mem::swap(
-                        &mut self.dao_prepared_cells,
-                        &mut self.dao_prepared_staging
-                    );
+                    std::mem::swap(&mut self.dao_prepared_cells, &mut self.dao_prepared_staging);
                     self.dao_cells_query_rx = None;
                     break;
                 }

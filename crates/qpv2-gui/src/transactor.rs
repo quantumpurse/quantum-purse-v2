@@ -18,8 +18,7 @@ impl App {
         let lock_args = self.accounts[from_idx].clone();
 
         let is_mainnet = self.is_mainnet();
-        let from_addr_str = match qpv2_core::utilities::lock_args_to_address(&lock_args, is_mainnet)
-        {
+        let from_addr_str = match crate::ckb::lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
             Err(e) => {
                 self.tx_status = TransactionStatus::Error(format!("Invalid sender address: {}", e));
@@ -133,8 +132,7 @@ impl App {
         let lock_args = self.accounts[from_idx].clone();
 
         let is_mainnet = self.is_mainnet();
-        let from_addr_str = match qpv2_core::utilities::lock_args_to_address(&lock_args, is_mainnet)
-        {
+        let from_addr_str = match crate::ckb::lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
             Err(e) => {
                 self.tx_status = TransactionStatus::Error(format!("Invalid sender address: {}", e));
@@ -220,8 +218,7 @@ impl App {
         lock_args: String,
     ) {
         let is_mainnet = self.is_mainnet();
-        let from_addr_str = match qpv2_core::utilities::lock_args_to_address(&lock_args, is_mainnet)
-        {
+        let from_addr_str = match crate::ckb::lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
             Err(e) => {
                 self.tx_status = TransactionStatus::Error(format!("Invalid sender address: {}", e));
@@ -280,8 +277,7 @@ impl App {
         lock_args: String,
     ) {
         let is_mainnet = self.is_mainnet();
-        let from_addr_str = match qpv2_core::utilities::lock_args_to_address(&lock_args, is_mainnet)
-        {
+        let from_addr_str = match crate::ckb::lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
             Err(e) => {
                 self.tx_status = TransactionStatus::Error(format!("Invalid sender address: {}", e));

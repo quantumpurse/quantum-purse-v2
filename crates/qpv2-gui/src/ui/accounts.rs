@@ -102,20 +102,21 @@ impl App {
 
                 // ── Section title ──
                 // Shared pill builder: identical shape/size/font across all badges.
-                let pill = |ui: &mut egui::Ui, fill: egui::Color32, text: String, color: egui::Color32| {
-                    egui::Frame::new()
-                        .fill(fill)
-                        .corner_radius(10.0)
-                        .inner_margin(egui::Margin::symmetric(8, 2))
-                        .show(ui, |ui| {
-                            ui.label(
-                                egui::RichText::new(text)
-                                    .size(8.5)
-                                    .family(egui::FontFamily::Monospace)
-                                    .color(color),
-                            );
-                        });
-                };
+                let pill =
+                    |ui: &mut egui::Ui, fill: egui::Color32, text: String, color: egui::Color32| {
+                        egui::Frame::new()
+                            .fill(fill)
+                            .corner_radius(10.0)
+                            .inner_margin(egui::Margin::symmetric(8, 2))
+                            .show(ui, |ui| {
+                                ui.label(
+                                    egui::RichText::new(text)
+                                        .size(8.5)
+                                        .family(egui::FontFamily::Monospace)
+                                        .color(color),
+                                );
+                            });
+                    };
 
                 ui.horizontal(|ui| {
                     ui.label(
@@ -169,13 +170,11 @@ impl App {
                     ];
 
                     for (i, lock_args) in self.accounts.clone().iter().enumerate() {
-                        let address_text = match qpv2_core::utilities::lock_args_to_address(
-                            lock_args,
-                            self.is_mainnet(),
-                        ) {
-                            Ok(addr) => addr,
-                            Err(_) => format!("0x{}", lock_args),
-                        };
+                        let address_text =
+                            match crate::ckb::lock_args_to_address(lock_args, self.is_mainnet()) {
+                                Ok(addr) => addr,
+                                Err(_) => format!("0x{}", lock_args),
+                            };
 
                         let balance_text = match self.balances.get(lock_args) {
                             Some(Some(shannons)) => format_ckb_balance(*shannons),

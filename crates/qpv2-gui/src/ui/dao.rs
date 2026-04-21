@@ -520,7 +520,7 @@ impl App {
                         .color(self.colors.text_muted),
                 );
             }
-            
+
             return;
         }
 

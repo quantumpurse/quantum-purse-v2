@@ -3,10 +3,74 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
 
+use qpv2_core::constants::{
+    CKB_MAINNET_CODE_HASH, CKB_MAINNET_HASH_TYPE, CKB_TESTNET_CODE_HASH, CKB_TESTNET_HASH_TYPE,
+};
+
 use crate::types::{
     DaoQueryEvent, SpendableCapacityTarget, TransactionStatus, TxHistoryEvent, TxKind, TxRecord,
 };
 use crate::App;
+
+/// Converts a hex-encoded wallet lock_args to a bech32m CKB address (post-2021 format).
+///
+/// Assumes the wallet's quantum-resistant lock script code_hash / hash_type.
+/// Use `script_to_address` for arbitrary external locks instead.
+pub(crate) fn lock_args_to_address(lock_args: &str, is_mainnet: bool) -> Result<String, String> {
+    use ckb_sdk::{Address, AddressPayload, NetworkType};
+    use ckb_types::{bytes::Bytes, core::ScriptHashType};
+
+    let (code_hash_hex, hash_type_str, network) = if is_mainnet {
+        (
+            CKB_MAINNET_CODE_HASH,
+            CKB_MAINNET_HASH_TYPE,
+            NetworkType::Mainnet,
+        )
+    } else {
+        (
+            CKB_TESTNET_CODE_HASH,
+            CKB_TESTNET_HASH_TYPE,
+            NetworkType::Testnet,
+        )
+    };
+
+    let code_hash_bytes = hex::decode(code_hash_hex.trim_start_matches("0x"))
+        .map_err(|e| format!("Failed to decode code_hash: {:?}", e))?;
+    let mut code_hash_array = [0u8; 32];
+    code_hash_array.copy_from_slice(&code_hash_bytes);
+
+    let script_hash_type = match hash_type_str {
+        "type" => ScriptHashType::Type,
+        "data1" => ScriptHashType::Data1,
+        _ => return Err(format!("Unsupported hash_type: {}", hash_type_str)),
+    };
+
+    let args_bytes =
+        hex::decode(lock_args).map_err(|e| format!("Failed to decode lock_args: {:?}", e))?;
+
+    let payload = AddressPayload::new_full(
+        script_hash_type,
+        code_hash_array.into(),
+        Bytes::from(args_bytes),
+    );
+    Ok(Address::new(network, payload, true).to_string())
+}
+
+/// Converts an arbitrary on-chain lock `Script` to its bech32m address string.
+///
+/// Unlike `lock_args_to_address`, this accepts any lock script (any code_hash /
+/// hash_type), so it works for external recipients in the Address Book.
+pub(crate) fn script_to_address(script: &ckb_types::packed::Script, is_mainnet: bool) -> String {
+    use ckb_sdk::{Address, AddressPayload, NetworkType};
+
+    let network = if is_mainnet {
+        NetworkType::Mainnet
+    } else {
+        NetworkType::Testnet
+    };
+    let payload = AddressPayload::from(script.clone());
+    Address::new(network, payload, true).to_string()
+}
 
 impl App {
     /// Kick off background queries for deposited + prepared DAO cells across all accounts.
@@ -29,14 +93,13 @@ impl App {
             let rpc = node_manager::connect(&node_config);
 
             for lock_args in &all_lock_args {
-                let address_str =
-                    match qpv2_core::utilities::lock_args_to_address(lock_args, is_mainnet) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            let _ = tx.send(Err(format!("Invalid address: {}", e)));
-                            continue;
-                        }
-                    };
+                let address_str = match lock_args_to_address(lock_args, is_mainnet) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        let _ = tx.send(Err(format!("Invalid address: {}", e)));
+                        continue;
+                    }
+                };
                 let address: ckb_sdk::Address = match address_str.parse() {
                     Ok(v) => v,
                     Err(e) => {
@@ -98,8 +161,7 @@ impl App {
         let lock_args = self.accounts[from_idx].clone();
 
         let is_mainnet = self.is_mainnet();
-        let from_addr_str = match qpv2_core::utilities::lock_args_to_address(&lock_args, is_mainnet)
-        {
+        let from_addr_str = match lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
             Err(e) => {
                 self.tx_status = TransactionStatus::Error(format!("Invalid sender address: {}", e));
@@ -128,7 +190,7 @@ impl App {
 
     /// Fetch recent transaction history for all accounts in a background thread.
     ///
-    /// When `incremental` is false (cold start), clears existing records and fetches. When true, 
+    /// When `incremental` is false (cold start), clears existing records and fetches. When true,
     /// only fetches transactions newer than the highest confirmed block already in the list.
     pub(crate) fn fetch_tx_history(&mut self, incremental: bool) {
         if self.accounts.is_empty() || self.tx_history_rx.is_some() {
@@ -384,9 +446,7 @@ impl App {
                                 let packed: ckb_types::packed::Script = out.lock.clone().into();
                                 let is_mainnet =
                                     matches!(network, node_manager::NetworkType::Mainnet);
-                                external_recipient = Some(
-                                    qpv2_core::utilities::script_to_address(&packed, is_mainnet),
-                                );
+                                external_recipient = Some(script_to_address(&packed, is_mainnet));
                             }
                         }
                     }
