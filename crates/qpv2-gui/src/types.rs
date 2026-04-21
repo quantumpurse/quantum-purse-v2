@@ -109,7 +109,7 @@ pub(crate) enum Screen {
 }
 
 /// Status messages shown to the user.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Status {
     None,
     Info(String),

@@ -22,6 +22,9 @@ use std::time::Duration;
 /// Interval between periodic data refreshes (balances, tx history, DAO cells).
 const POLL_INTERVAL: Duration = Duration::from_secs(10);
 
+/// How long a non-None status banner stays visible before auto-clearing.
+const STATUS_DURATION: Duration = Duration::from_secs(5);
+
 #[cfg(target_os = "macos")]
 use types::PasskeyOp;
 use types::{
@@ -102,6 +105,11 @@ pub(crate) struct App {
 
     // Periodic polling timer for balances, tx history, and DAO cells.
     pub(crate) last_poll_time: std::time::Instant,
+
+    // Snapshot of the last-observed status + when it became non-None. Used by
+    // tick_status() to detect writes via PartialEq and auto-clear after STATUS_DURATION
+    pub(crate) status_seen: Status,
+    pub(crate) status_set_at: Option<std::time::Instant>,
 }
 
 impl App {
@@ -235,12 +243,42 @@ impl App {
             tx_history: Vec::new(),
             tx_history_rx: None,
             last_poll_time: std::time::Instant::now(),
+            status_seen: Status::None,
+            status_set_at: None,
+        }
+    }
+
+    /// Auto-clear the status banner after STATUS_DURATION. Detects writes by
+    /// diffing against a snapshot rather than wrapping all 47 `self.status = ...`
+    /// call sites in a setter.
+    fn tick_status(&mut self, ctx: &egui::Context) {
+        if self.status != self.status_seen {
+            self.status_seen = self.status.clone();
+            self.status_set_at = match self.status {
+                Status::None => None,
+                _ => Some(std::time::Instant::now()),
+            };
+            if self.status_set_at.is_some() {
+                // Force a repaint at the expiry boundary so the banner
+                // disappears without waiting for the next 10s poll tick.
+                ctx.request_repaint_after(STATUS_DURATION);
+            }
+        }
+        if let Some(t) = self.status_set_at {
+            if t.elapsed() >= STATUS_DURATION {
+                self.status = Status::None;
+                self.status_seen = Status::None;
+                self.status_set_at = None;
+            }
         }
     }
 }
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        // Auto-clear any stale status banner.
+        self.tick_status(ctx);
+
         // Poll passkey operations each frame.
         #[cfg(target_os = "macos")]
         self.poll_passkey_ops();
