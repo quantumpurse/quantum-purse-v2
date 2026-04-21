@@ -185,6 +185,8 @@ pub(crate) struct AppColors {
     pub(crate) accent: egui::Color32,
     pub(crate) accent2: egui::Color32,
     pub(crate) accent3: egui::Color32,
+    pub(crate) accent_tint: egui::Color32,
+    pub(crate) accent2_tint: egui::Color32,
     pub(crate) danger: egui::Color32,
     pub(crate) warn: egui::Color32,
     pub(crate) text: egui::Color32,
@@ -202,6 +204,8 @@ impl Default for AppColors {
             accent: egui::Color32::from_rgb(0, 255, 180),  // #00ffb4
             accent2: egui::Color32::from_rgb(0, 200, 255), // #00c8ff
             accent3: egui::Color32::from_rgb(155, 127, 212), // #9b7fd4
+            accent_tint: egui::Color32::from_rgba_unmultiplied(0, 255, 180, 20), // rgba(0,255,180,0.08)
+            accent2_tint: egui::Color32::from_rgba_unmultiplied(0, 200, 255, 20), // rgba(0,200,255,0.08)
             danger: egui::Color32::from_rgb(255, 77, 109), // #ff4d6d
             warn: egui::Color32::from_rgb(255, 209, 102),  // #ffd166
             text: egui::Color32::from_rgb(232, 244, 240),  // #e8f4f0

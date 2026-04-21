@@ -101,20 +101,56 @@ impl App {
                 ui.add_space(18.0);
 
                 // ── Section title ──
+                // Shared pill builder: identical shape/size/font across all badges.
+                let pill = |ui: &mut egui::Ui, fill: egui::Color32, text: String, color: egui::Color32| {
+                    egui::Frame::new()
+                        .fill(fill)
+                        .corner_radius(10.0)
+                        .inner_margin(egui::Margin::symmetric(8, 2))
+                        .show(ui, |ui| {
+                            ui.label(
+                                egui::RichText::new(text)
+                                    .size(8.5)
+                                    .family(egui::FontFamily::Monospace)
+                                    .color(color),
+                            );
+                        });
+                };
+
                 ui.horizontal(|ui| {
                     ui.label(
                         egui::RichText::new("Saved Accounts")
-                            .size(17.0)
+                            .size(15.0)
                             .strong()
                             .color(self.colors.text),
                     );
-                    ui.add_space(8.0);
-                    ui.label(
-                        egui::RichText::new(format!("{} accounts", self.accounts.len()))
-                            .size(9.0)
-                            .color(self.colors.accent)
-                            .family(egui::FontFamily::Monospace),
+                    ui.add_space(10.0);
+                    pill(
+                        ui,
+                        self.colors.accent_tint,
+                        format!("{} total", self.accounts.len()),
+                        self.colors.accent,
                     );
+
+                    if let Ok(info) = KeyVault::read_wallet_info() {
+                        ui.add_space(6.0);
+                        pill(
+                            ui,
+                            self.colors.surface2,
+                            format!("SPHINCS+ {}", info.spx_variant),
+                            self.colors.text_muted,
+                        );
+                        ui.add_space(6.0);
+                        pill(
+                            ui,
+                            self.colors.accent2_tint,
+                            match info.auth_method {
+                                AuthMethod::PasskeyPrf { .. } => "Touch ID".into(),
+                                AuthMethod::Password => "Password".into(),
+                            },
+                            self.colors.accent2,
+                        );
+                    }
                 });
 
                 ui.add_space(10.0);
@@ -231,40 +267,6 @@ impl App {
 
                 ui.add_space(16.0);
 
-                // ── Wallet info ──
-                ui.horizontal(|ui| {
-                    // Node settings
-                    let settings_btn = egui::Button::new("\u{2699} Node Settings")
-                        .fill(egui::Color32::TRANSPARENT)
-                        .stroke(egui::Stroke::new(1.0, self.colors.border));
-
-                    if ui.add(settings_btn).clicked() {
-                        self.save_node_config();
-                    }
-
-                    ui.add_space(8.0);
-
-                    // Wallet info
-                    if let Ok(info) = KeyVault::read_wallet_info() {
-                        ui.label(
-                            egui::RichText::new(format!("SPHINCS+ {}", info.spx_variant))
-                                .size(10.0)
-                                .color(self.colors.text_muted)
-                                .family(egui::FontFamily::Monospace),
-                        );
-                        ui.label(
-                            egui::RichText::new(match info.auth_method {
-                                AuthMethod::PasskeyPrf { .. } => "Touch ID",
-                                AuthMethod::Password => "Password",
-                            })
-                            .size(10.0)
-                            .color(self.colors.accent2)
-                            .family(egui::FontFamily::Monospace),
-                        );
-                    }
-                });
-
-                ui.add_space(10.0);
                 self.show_status(ui);
             }); // vertical
         }); // horizontal
