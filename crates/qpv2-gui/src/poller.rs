@@ -358,12 +358,30 @@ impl App {
                     self.dao_prepared_staging.push((lock_args, cell));
                 }
                 Ok(Ok(DaoQueryEvent::Done)) => {
+                    // Sort newest block first so rows keep their position across
+                    // refreshes (the indexer doesn't guarantee a stable return order).
+                    // out_point bytes break ties if two cells share a block.
+                    use ckb_types::prelude::Entity;
+                    self.dao_deposited_staging.sort_by(|(_, a), (_, b)| {
+                        b.block_number
+                            .cmp(&a.block_number)
+                            .then_with(|| a.out_point.as_slice().cmp(b.out_point.as_slice()))
+                    });
+                    self.dao_prepared_staging.sort_by(|(_, a), (_, b)| {
+                        b.prepare_block_number
+                            .cmp(&a.prepare_block_number)
+                            .then_with(|| a.out_point.as_slice().cmp(b.out_point.as_slice()))
+                    });
+                    
                     // Atomic swap: replace display vectors with complete staging data.
                     std::mem::swap(
                         &mut self.dao_deposited_cells,
                         &mut self.dao_deposited_staging,
                     );
-                    std::mem::swap(&mut self.dao_prepared_cells, &mut self.dao_prepared_staging);
+                    std::mem::swap(
+                        &mut self.dao_prepared_cells,
+                        &mut self.dao_prepared_staging
+                    );
                     self.dao_cells_query_rx = None;
                     break;
                 }
