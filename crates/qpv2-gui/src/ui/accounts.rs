@@ -115,12 +115,6 @@ impl App {
                             .color(self.colors.accent)
                             .family(egui::FontFamily::Monospace),
                     );
-
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("\u{1f504} Refresh").clicked() {
-                            self.fetch_all_balances();
-                        }
-                    });
                 });
 
                 ui.add_space(10.0);
