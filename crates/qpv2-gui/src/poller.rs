@@ -401,8 +401,10 @@ impl App {
                     self.tx_history_rx = None;
                     break;
                 }
-                Ok(Err(_e)) => {
-                    // Silently ignore individual fetch errors; partial results are fine.
+                Ok(Err(e)) => {
+                    // Surface the error but keep draining so partial results from
+                    // other accounts still land in the list at Done.
+                    self.status = Status::Error(e);
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => {

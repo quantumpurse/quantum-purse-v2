@@ -128,9 +128,8 @@ impl App {
 
     /// Fetch recent transaction history for all accounts in a background thread.
     ///
-    /// When `incremental` is false (cold start), clears existing records and fetches
-    /// the 50 most recent transactions. When true, only fetches transactions newer
-    /// than the highest confirmed block already in the list.
+    /// When `incremental` is false (cold start), clears existing records and fetches. When true, 
+    /// only fetches transactions newer than the highest confirmed block already in the list.
     pub(crate) fn fetch_tx_history(&mut self, incremental: bool) {
         if self.accounts.is_empty() || self.tx_history_rx.is_some() {
             return;
