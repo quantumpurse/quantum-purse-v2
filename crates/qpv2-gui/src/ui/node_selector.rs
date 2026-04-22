@@ -32,44 +32,139 @@ impl App {
                     .show(ui, |ui| {
                         ui.set_width(selector_rect.width() - 24.0);
 
-                        // Network selection (compact horizontal)
-                        ui.horizontal(|ui| {
-                            ui.radio_value(
-                                &mut self.temp_network,
-                                node_manager::NetworkType::Mainnet,
-                                "Mainnet",
-                            );
-                            ui.radio_value(
-                                &mut self.temp_network,
-                                node_manager::NetworkType::Testnet,
-                                "Testnet",
-                            );
+                        // ── NETWORK section ──
+                        ui.label(
+                            egui::RichText::new("NETWORK")
+                                .size(8.5)
+                                .family(egui::FontFamily::Monospace)
+                                .color(self.colors.text_muted),
+                        );
+                        ui.add_space(4.0);
+                        // Override hover styling locally. The app sets `override_text_color`
+                        // globally in main.rs, which forces radio labels to stay cream on
+                        // hover — the tint behind the text looks weak. Clearing the override
+                        // inside this scope lets per-state text colors shine through.
+                        ui.scope(|ui| {
+                            let vis = &mut ui.style_mut().visuals;
+                            vis.override_text_color = None;
+                            vis.widgets.hovered.fg_stroke.color = self.colors.accent;
+                            vis.widgets.hovered.weak_bg_fill = self.colors.accent_tint;
+                            ui.horizontal(|ui| {
+                                ui.radio_value(
+                                    &mut self.temp_network,
+                                    node_manager::NetworkType::Mainnet,
+                                    "Mainnet",
+                                )
+                                .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                ui.radio_value(
+                                    &mut self.temp_network,
+                                    node_manager::NetworkType::Testnet,
+                                    "Testnet",
+                                )
+                                .on_hover_cursor(egui::CursorIcon::PointingHand);
+                            });
                         });
 
-                        ui.add_space(8.0);
+                        ui.add_space(10.0);
                         ui.separator();
                         ui.add_space(8.0);
 
-                        // Node type selection
-                        ui.vertical(|ui| {
-                            ui.radio_value(
-                                &mut self.temp_node_type,
-                                NodeType::PublicRpc,
-                                "Public RPC",
-                            );
-                            ui.radio_value(
-                                &mut self.temp_node_type,
-                                NodeType::LightClient,
-                                "Light Client",
-                            );
-                            ui.radio_value(
-                                &mut self.temp_node_type,
-                                NodeType::FullNode,
-                                "Full Node",
-                            );
-                        });
+                        // ── ACTIVE NODE section ──
+                        ui.label(
+                            egui::RichText::new("ACTIVE NODE")
+                                .size(8.5)
+                                .family(egui::FontFamily::Monospace)
+                                .color(self.colors.text_muted),
+                        );
+                        ui.add_space(6.0);
 
-                        ui.add_space(8.0);
+                        // Node type rows: icon + name + colored badge. Clickable full-width row.
+                        // Mockup emojis, rendered monochrome by Noto Sans Symbols 2
+                        // (loaded in main.rs). 🖥 U+1F5A5, 💡 U+1F4A1, 🌐 U+1F310.
+                        let row_defs = [
+                            (
+                                NodeType::FullNode,
+                                "\u{1F5A5}", // 🖥 desktop computer
+                                "Full Node",
+                                "FULL",
+                                self.colors.accent_tint,
+                                self.colors.accent,
+                            ),
+                            (
+                                NodeType::LightClient,
+                                "\u{1F4A1}", // 💡 light bulb
+                                "Light Client",
+                                "LIGHT",
+                                self.colors.accent2_tint,
+                                self.colors.accent2,
+                            ),
+                            (
+                                NodeType::PublicRpc,
+                                "\u{1F310}", // 🌐 globe with meridians
+                                "Public RPC",
+                                "RPC",
+                                self.colors.warn_tint,
+                                self.colors.warn,
+                            ),
+                        ];
+
+                        for (ntype, icon, name, badge_text, badge_fill, accent_color) in row_defs {
+                            let selected = self.temp_node_type == ntype;
+                            let row_bg = if selected {
+                                self.colors.accent_tint
+                            } else {
+                                egui::Color32::TRANSPARENT
+                            };
+                            let response = egui::Frame::new()
+                                .fill(row_bg)
+                                .corner_radius(6.0)
+                                .inner_margin(egui::Margin::symmetric(8, 6))
+                                .show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        ui.label(
+                                            egui::RichText::new(icon)
+                                                .size(14.0)
+                                                .color(accent_color),
+                                        );
+                                        ui.add_space(6.0);
+                                        let name_color = if selected {
+                                            self.colors.accent
+                                        } else {
+                                            self.colors.text
+                                        };
+                                        ui.label(
+                                            egui::RichText::new(name).size(12.5).color(name_color),
+                                        );
+                                        ui.with_layout(
+                                            egui::Layout::right_to_left(egui::Align::Center),
+                                            |ui| {
+                                                egui::Frame::new()
+                                                    .fill(badge_fill)
+                                                    .corner_radius(4.0)
+                                                    .inner_margin(egui::Margin::symmetric(6, 1))
+                                                    .show(ui, |ui| {
+                                                        ui.label(
+                                                            egui::RichText::new(badge_text)
+                                                                .size(8.5)
+                                                                .family(egui::FontFamily::Monospace)
+                                                                .color(accent_color),
+                                                        );
+                                                    });
+                                            },
+                                        );
+                                    });
+                                })
+                                .response;
+
+                            let click = response
+                                .interact(egui::Sense::click())
+                                .on_hover_cursor(egui::CursorIcon::PointingHand);
+                            if click.clicked() {
+                                self.temp_node_type = ntype;
+                            }
+                        }
+
+                        ui.add_space(10.0);
 
                         // Apply button
                         let apply_btn = egui::Button::new("Apply")

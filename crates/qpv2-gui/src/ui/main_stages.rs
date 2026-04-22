@@ -226,10 +226,12 @@ impl App {
                         self.colors.text,
                     );
 
-                    // Dropdown arrow
+                    // Dropdown arrow. The network badge's right edge is at `inner.right() - 5.0`
+                    // and "MAIN"/"TEST" at 8pt is ~24px wide, so its left edge sits ~-29.
+                    // Anchor the arrow's RIGHT edge at -36 to leave ~7px clear of the badge.
                     painter.text(
                         egui::pos2(inner.right() - 28.0, row_y),
-                        egui::Align2::LEFT_TOP,
+                        egui::Align2::RIGHT_TOP,
                         "\u{25bc}",
                         egui::FontId::proportional(9.0),
                         self.colors.text_muted,
