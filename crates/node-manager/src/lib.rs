@@ -1,6 +1,7 @@
 pub mod config;
 pub mod error;
 pub mod process;
+pub mod queries;
 pub mod rpc;
 pub mod tx_builder;
 
@@ -12,10 +13,10 @@ pub use ckb_sdk::rpc::ckb_indexer::{CellType, Tx, TxWithCell, TxWithCells};
 pub use config::{NetworkType, NodeConfig, NodeType};
 pub use error::NodeManagerError;
 pub use process::NodeProcess;
+pub use queries::{DepositedCell, PreparedCell};
 pub use rpc::{CkbRpc, LightClientRpc, TransactionStatus};
 pub use tx_builder::{
-    fill_witness, DepositedCell, PreparedCell, QpDaoDepositBuilder, QpDaoPrepareBuilder,
-    QpDaoWithdrawBuilder, QpTransferBuilder,
+    fill_witness, QpDaoDepositBuilder, QpDaoPrepareBuilder, QpDaoWithdrawBuilder, QpTransferBuilder,
 };
 
 /// High-level handle that owns the RPC client and exposes every node-related
@@ -62,7 +63,7 @@ impl NodeManager {
         &self,
         from_address: &ckb_sdk::Address,
     ) -> Result<u64, NodeManagerError> {
-        tx_builder::utils::spendable_capacity(self.rpc.as_ref(), from_address)
+        queries::spendable_capacity(self.rpc.as_ref(), from_address)
     }
 
     /// Queries all DAO cells for an address and partitions them into
@@ -71,7 +72,7 @@ impl NodeManager {
         &self,
         address: &ckb_sdk::Address,
     ) -> Result<(Vec<DepositedCell>, Vec<PreparedCell>), NodeManagerError> {
-        tx_builder::categozire_dao_cells(self.rpc.as_ref(), address)
+        queries::categozire_dao_cells(self.rpc.as_ref(), address)
     }
 
     /// Total balance (in shannons) for the QuantumPurse lock with the given
@@ -80,7 +81,7 @@ impl NodeManager {
         &self,
         lock_args_hex: &str,
     ) -> Result<u64, NodeManagerError> {
-        rpc::fetch_quantum_lock_balance(self.rpc.as_ref(), lock_args_hex, self.config.network)
+        queries::fetch_quantum_lock_balance(self.rpc.as_ref(), lock_args_hex, self.config.network)
     }
 
     /// Recent transactions touching the QuantumPurse lock with the given
@@ -91,7 +92,7 @@ impl NodeManager {
         after_block: Option<u64>,
         limit: Option<usize>,
     ) -> Result<Vec<Tx>, NodeManagerError> {
-        rpc::fetch_recent_transactions(
+        queries::fetch_recent_transactions(
             self.rpc.as_ref(),
             lock_args_hex,
             self.config.network,
