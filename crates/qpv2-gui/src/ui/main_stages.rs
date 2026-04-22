@@ -199,13 +199,10 @@ impl App {
                     // Node info row
                     let row_y = inner.top() + 14.0;
 
-                    // Connection dot
-                    let connected = self.rpc_client.is_some();
-                    let dot_color = if connected {
-                        self.colors.accent
-                    } else {
-                        self.colors.text_muted
-                    };
+                    // TODO: replace with a real liveness probe (periodic
+                    // tip-header ping). The node manager is always constructed
+                    // at startup, so this dot is currently purely cosmetic.
+                    let dot_color = self.colors.accent;
                     painter.circle_filled(
                         egui::pos2(inner.left() + 4.0, row_y + 7.0),
                         3.0,

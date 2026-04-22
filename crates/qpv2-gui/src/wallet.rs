@@ -18,7 +18,6 @@ impl App {
         self.accounts.clear();
         self.balances.clear();
         self.confirm_remove = false;
-        self.rpc_client = None;
         self.active_tab = Tab::Dashboard;
         self.screen = Screen::Locked;
         self.status = Status::None;
@@ -60,8 +59,8 @@ impl App {
             return;
         }
 
-        // Reconnect RPC client.
-        self.rpc_client = Some(node_manager::connect(&self.node_config));
+        // Rebuild the node manager with the new config.
+        self.node_manager = node_manager::NodeManager::new(self.node_config.clone());
         self.status = Status::Info("Configuration saved. RPC reconnected.".to_string());
 
         // Refresh balances with new connection.
@@ -141,7 +140,6 @@ impl App {
                 self.accounts = lock_args;
                 self.screen = Screen::Unlocked;
                 self.status = Status::Info("Wallet created successfully!".to_string());
-                self.rpc_client = Some(node_manager::connect(&self.node_config));
                 self.last_poll_time = std::time::Instant::now();
                 self.fetch_all_balances();
                 self.fetch_tx_history(true);
@@ -188,7 +186,6 @@ impl App {
                 self.accounts = lock_args;
                 self.screen = Screen::Unlocked;
                 self.status = Status::None;
-                self.rpc_client = Some(node_manager::connect(&self.node_config));
                 self.last_poll_time = std::time::Instant::now();
                 self.fetch_all_balances();
                 self.fetch_tx_history(true);
@@ -251,21 +248,17 @@ impl App {
             Ok(lock_args) => {
                 // Mark as loading and fetch balance in the background.
                 self.balances.insert(lock_args.clone(), None);
-                if self.rpc_client.is_some() {
-                    let node_config = self.node_config.clone();
-                    let network = self.node_config.network;
-                    let args = lock_args.clone();
-                    let (tx, rx) = std::sync::mpsc::channel();
-                    self.balance_receiver = Some(rx);
+                let nm = self.node_manager.clone();
+                let args = lock_args.clone();
+                let (tx, rx) = std::sync::mpsc::channel();
+                self.balance_receiver = Some(rx);
 
-                    std::thread::spawn(move || {
-                        let rpc = node_manager::connect(&node_config);
-                        let result =
-                            node_manager::fetch_quantum_lock_balance(rpc.as_ref(), &args, network)
-                                .map_err(|e| e.to_string());
-                        let _ = tx.send((args, result));
-                    });
-                }
+                std::thread::spawn(move || {
+                    let result = nm
+                        .fetch_quantum_lock_balance(&args)
+                        .map_err(|e| e.to_string());
+                    let _ = tx.send((args, result));
+                });
                 self.accounts.push(lock_args);
                 self.status = Status::Info("New account created!".to_string());
             }

@@ -68,15 +68,13 @@ impl App {
         };
 
         self.tx_status = TransactionStatus::Building;
-        let node_config = self.node_config.clone();
+        let nm = self.node_manager.clone();
 
         let (tx, rx) = mpsc::channel();
         self.transaction_build_rx = Some(rx);
 
         std::thread::spawn(move || {
             let result = (|| -> Result<_, String> {
-                let rpc = node_manager::connect(&node_config);
-
                 // Parse addresses
                 let from_address: ckb_sdk::Address = from_addr_str
                     .parse()
@@ -85,7 +83,8 @@ impl App {
                     .parse()
                     .map_err(|e| format!("Invalid recipient address: {}", e))?;
 
-                let builder = node_manager::QpTransferBuilder::new(rpc.as_ref(), is_mainnet)
+                let builder = nm
+                    .transfer_builder()
                     .with_placeholder_lock_size(witness_lock_size);
 
                 let unsigned_tx = if send_all {
@@ -106,7 +105,8 @@ impl App {
                 };
 
                 // Fetch input cells for CKB_TX_MESSAGE_ALL
-                let input_cells = node_manager::fetch_input_cells(rpc.as_ref(), &unsigned_tx)
+                let input_cells = nm
+                    .fetch_input_cells(&unsigned_tx)
                     .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
                 Ok((
@@ -175,19 +175,19 @@ impl App {
         };
 
         self.tx_status = TransactionStatus::Building;
-        let node_config = self.node_config.clone();
+        let nm = self.node_manager.clone();
 
         let (tx, rx) = mpsc::channel();
         self.transaction_build_rx = Some(rx);
 
         std::thread::spawn(move || {
             let result = (|| -> Result<_, String> {
-                let rpc = node_manager::connect(&node_config);
                 let from_address: ckb_sdk::Address = from_addr_str
                     .parse()
                     .map_err(|e| format!("Invalid sender address: {}", e))?;
 
-                let builder = node_manager::QpDaoDepositBuilder::new(rpc.as_ref(), is_mainnet)
+                let builder = nm
+                    .dao_deposit_builder()
                     .with_placeholder_lock_size(witness_lock_size);
 
                 let unsigned_tx = if deposit_all {
@@ -201,7 +201,8 @@ impl App {
                         .map_err(|e| format!("Failed to build DAO deposit: {}", e))?
                 };
 
-                let input_cells = node_manager::fetch_input_cells(rpc.as_ref(), &unsigned_tx)
+                let input_cells = nm
+                    .fetch_input_cells(&unsigned_tx)
                     .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
                 Ok((TransactionKind::Dao, unsigned_tx, input_cells, lock_args))
@@ -239,19 +240,19 @@ impl App {
         let witness_lock_size = spx_witness_lock_size(variant);
 
         self.tx_status = TransactionStatus::Building;
-        let node_config = self.node_config.clone();
+        let nm = self.node_manager.clone();
 
         let (tx, rx) = mpsc::channel();
         self.transaction_build_rx = Some(rx);
 
         std::thread::spawn(move || {
             let result = (|| -> Result<_, String> {
-                let rpc = node_manager::connect(&node_config);
                 let from_address: ckb_sdk::Address = from_addr_str
                     .parse()
                     .map_err(|e| format!("Invalid sender address: {}", e))?;
 
-                let unsigned_tx = node_manager::QpDaoPrepareBuilder::new(rpc.as_ref(), is_mainnet)
+                let unsigned_tx = nm
+                    .dao_prepare_builder()
                     .with_placeholder_lock_size(witness_lock_size)
                     .build_unsigned_dao_request_withdraw(
                         &from_address,
@@ -260,7 +261,8 @@ impl App {
                     )
                     .map_err(|e| format!("Failed to build DAO prepare: {}", e))?;
 
-                let input_cells = node_manager::fetch_input_cells(rpc.as_ref(), &unsigned_tx)
+                let input_cells = nm
+                    .fetch_input_cells(&unsigned_tx)
                     .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
                 Ok((TransactionKind::Dao, unsigned_tx, input_cells, lock_args))
@@ -298,24 +300,25 @@ impl App {
         let witness_lock_size = spx_witness_lock_size(variant);
 
         self.tx_status = TransactionStatus::Building;
-        let node_config = self.node_config.clone();
+        let nm = self.node_manager.clone();
 
         let (tx, rx) = mpsc::channel();
         self.transaction_build_rx = Some(rx);
 
         std::thread::spawn(move || {
             let result = (|| -> Result<_, String> {
-                let rpc = node_manager::connect(&node_config);
                 let from_address: ckb_sdk::Address = from_addr_str
                     .parse()
                     .map_err(|e| format!("Invalid sender address: {}", e))?;
 
-                let unsigned_tx = node_manager::QpDaoWithdrawBuilder::new(rpc.as_ref(), is_mainnet)
+                let unsigned_tx = nm
+                    .dao_withdraw_builder()
                     .with_placeholder_lock_size(witness_lock_size)
                     .build_unsigned_dao_withdraw(&from_address, vec![prepared_out_point], fee_rate)
                     .map_err(|e| format!("Failed to build DAO withdraw: {}", e))?;
 
-                let input_cells = node_manager::fetch_input_cells(rpc.as_ref(), &unsigned_tx)
+                let input_cells = nm
+                    .fetch_input_cells(&unsigned_tx)
                     .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
                 Ok((TransactionKind::Dao, unsigned_tx, input_cells, lock_args))
@@ -407,14 +410,14 @@ impl App {
         };
 
         self.tx_status = TransactionStatus::Sending;
-        let node_config = self.node_config.clone();
+        let nm = self.node_manager.clone();
         let (tx_send, rx_send) = mpsc::channel();
         self.transaction_send_rx = Some(rx_send);
 
         // Spawn a thread to handle transaction submission.
         std::thread::spawn(move || {
-            let rpc = node_manager::connect(&node_config);
-            let result = node_manager::send_transaction(rpc.as_ref(), &signed_tx)
+            let result = nm
+                .send_transaction(&signed_tx)
                 .map(|hash| format!("{:#x}", hash))
                 .map_err(|e| format!("Failed to send transaction: {}", e));
             let _ = tx_send.send((kind, result));

@@ -12,7 +12,7 @@ mod wallet;
 mod window_handle;
 
 use eframe::egui;
-use node_manager::{CkbRpc, NodeConfig, NodeType};
+use node_manager::{NodeConfig, NodeManager, NodeType};
 use qpv2_core::types::SpxVariant;
 use qpv2_core::KeyVault;
 use std::collections::HashMap;
@@ -48,9 +48,11 @@ pub(crate) struct App {
     // Balance cache: lock_args -> balance in shannons (None = not yet fetched).
     pub(crate) balances: HashMap<String, Option<u64>>,
 
-    // Node configuration and RPC connection.
+    // Node configuration and the single RPC client shared across UI and
+    // background threads. Built once in `App::new()` and rebuilt only when
+    // the user saves a new config in settings.
     pub(crate) node_config: NodeConfig,
-    pub(crate) rpc_client: Option<Box<dyn CkbRpc>>,
+    pub(crate) node_manager: NodeManager,
 
     // Editable settings fields (buffered until saved).
     pub(crate) settings_rpc_url: String,
@@ -188,6 +190,7 @@ impl App {
         };
 
         let node_config = NodeConfig::load_or_default().unwrap_or_default();
+        let node_manager = NodeManager::new(node_config.clone());
         let settings_rpc_url = node_config.rpc_url.clone();
         let settings_binary_path = node_config
             .binary_path
@@ -210,7 +213,7 @@ impl App {
             confirm_remove: false,
             balances: HashMap::new(),
             node_config,
-            rpc_client: None,
+            node_manager,
             settings_rpc_url,
             settings_binary_path,
             settings_data_dir,

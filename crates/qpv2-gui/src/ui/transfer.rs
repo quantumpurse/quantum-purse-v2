@@ -254,10 +254,8 @@ impl App {
                         ui.add_space(16.0);
 
                         // ── Send Button ──
-                        let connected = self.rpc_client.is_some();
                         let has_accounts = !self.accounts.is_empty();
-                        let can_send = connected
-                            && has_accounts
+                        let can_send = has_accounts
                             && !is_busy
                             && !self.transfer_recipient.is_empty()
                             && !self.transfer_amount.is_empty();
@@ -316,15 +314,6 @@ impl App {
                                 );
                             }
                             _ => {}
-                        }
-
-                        if !connected {
-                            ui.add_space(8.0);
-                            ui.label(
-                                egui::RichText::new("Not connected to node.")
-                                    .size(11.0)
-                                    .color(self.colors.warn),
-                            );
                         }
 
                         // ── Address Book (unique external recipients from tx_history) ──

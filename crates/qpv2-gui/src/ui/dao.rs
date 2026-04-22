@@ -417,9 +417,7 @@ impl App {
                 ui.add_space(20.0);
 
                 // Action buttons
-                let connected = self.rpc_client.is_some();
-                let can_deposit = connected
-                    && !is_busy
+                let can_deposit = !is_busy
                     && !self.accounts.is_empty()
                     && !self.dao_deposit_amount.is_empty();
 

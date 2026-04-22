@@ -83,15 +83,13 @@ impl App {
         self.dao_prepared_staging.clear();
 
         let is_mainnet = self.is_mainnet();
-        let node_config = self.node_config.clone();
+        let nm = self.node_manager.clone();
         let all_lock_args: Vec<String> = self.accounts.clone();
 
         let (tx, rx) = mpsc::channel();
         self.dao_cells_query_rx = Some(rx);
 
         std::thread::spawn(move || {
-            let rpc = node_manager::connect(&node_config);
-
             for lock_args in &all_lock_args {
                 let address_str = match lock_args_to_address(lock_args, is_mainnet) {
                     Ok(v) => v,
@@ -108,14 +106,13 @@ impl App {
                     }
                 };
 
-                let (deposited, prepared) =
-                    match node_manager::categozire_dao_cells(rpc.as_ref(), &address) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            let _ = tx.send(Err(format!("Failed to query DAO cells: {}", e)));
-                            continue;
-                        }
-                    };
+                let (deposited, prepared) = match nm.categorize_dao_cells(&address) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        let _ = tx.send(Err(format!("Failed to query DAO cells: {}", e)));
+                        continue;
+                    }
+                };
 
                 for cell in deposited {
                     // If the receiver is dropped (e.g. wallet locked), stop.
@@ -169,18 +166,17 @@ impl App {
             }
         };
 
-        let node_config = self.node_config.clone();
+        let nm = self.node_manager.clone();
         let (tx, rx) = mpsc::channel();
         self.spendable_capacity_rx = Some((target, rx));
 
         std::thread::spawn(move || {
             let result = (|| -> Result<u64, String> {
-                let rpc = node_manager::connect(&node_config);
                 let from_address: ckb_sdk::Address = from_addr_str
                     .parse()
                     .map_err(|e| format!("Invalid sender address: {}", e))?;
 
-                node_manager::spendable_capacity(rpc.as_ref(), &from_address)
+                nm.spendable_capacity(&from_address)
                     .map_err(|e| format!("Failed to fetch spendable capacity: {}", e))
             })();
 
@@ -209,7 +205,7 @@ impl App {
             None
         };
 
-        let node_config = self.node_config.clone();
+        let nm = self.node_manager.clone();
         let network = self.node_config.network;
         let all_lock_args: Vec<String> = self.accounts.clone();
 
@@ -217,8 +213,6 @@ impl App {
         self.tx_history_rx = Some(rx);
 
         std::thread::spawn(move || {
-            let rpc = node_manager::connect(&node_config);
-
             // DAO type script code hash for classification.
             let dao_type_hash = format!("{:#x}", ckb_sdk::constants::DAO_TYPE_HASH);
 
@@ -263,13 +257,7 @@ impl App {
             for lock_args in &all_lock_args {
                 // With group_by_transaction=true, each result is one unique tx.
                 // Paginates through all results; merged and deduped across accounts.
-                let txs = match node_manager::fetch_recent_transactions(
-                    rpc.as_ref(),
-                    lock_args,
-                    network,
-                    after_block,
-                    None,
-                ) {
+                let txs = match nm.fetch_recent_transactions(lock_args, after_block, None) {
                     Ok(v) => v,
                     Err(e) => {
                         let _ = sender.send(Err(format!("Failed to fetch tx history: {}", e)));
@@ -341,7 +329,7 @@ impl App {
                     _ => continue,
                 };
 
-                let tx_status = match rpc.get_transaction(tx_hash_bytes) {
+                let tx_status = match nm.rpc.get_transaction(tx_hash_bytes) {
                     Ok(Some(s)) => s,
                     _ => continue,
                 };
@@ -358,7 +346,8 @@ impl App {
                     if let Some(&cached) = header_cache.get(bh) {
                         cached
                     } else {
-                        let ts = rpc
+                        let ts = nm
+                            .rpc
                             .get_header(bh.clone())
                             .ok()
                             .flatten()
@@ -515,7 +504,7 @@ impl App {
 
     /// Fetch balances for all accounts in a background thread.
     pub(crate) fn fetch_all_balances(&mut self) {
-        if self.rpc_client.is_none() || self.balance_receiver.is_some() {
+        if self.balance_receiver.is_some() {
             return;
         }
 
@@ -524,17 +513,15 @@ impl App {
             return;
         }
 
-        let node_config = self.node_config.clone();
-        let network = self.node_config.network;
+        let nm = self.node_manager.clone();
         let (tx, rx) = mpsc::channel();
         self.balance_receiver = Some(rx);
 
         std::thread::spawn(move || {
-            let rpc = node_manager::connect(&node_config);
             for lock_args in accounts {
-                let result =
-                    node_manager::fetch_quantum_lock_balance(rpc.as_ref(), &lock_args, network)
-                        .map_err(|e| e.to_string());
+                let result = nm
+                    .fetch_quantum_lock_balance(&lock_args)
+                    .map_err(|e| e.to_string());
                 // If the receiver is dropped (e.g. wallet locked), stop.
                 if tx.send((lock_args, result)).is_err() {
                     break;
