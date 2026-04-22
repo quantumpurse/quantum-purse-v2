@@ -265,8 +265,8 @@ impl App {
                         let btn_text = match &self.tx_status {
                             TransactionStatus::Building => "Building transaction...",
                             TransactionStatus::AwaitingSignature => "Waiting for Touch ID...",
-                            TransactionStatus::Sending => "Sending...",
-                            _ => "Send",
+                            TransactionStatus::Sending => "Broadcasting...",
+                            _ => "Confirm Send",
                         };
 
                         let send_btn =
@@ -327,24 +327,6 @@ impl App {
                             );
                         }
 
-                        ui.add_space(8.0);
-
-                        // ── Cancel / Clear (mirrors DAO Deposit) ──
-                        if ui
-                            .add_enabled(
-                                !is_busy,
-                                egui::Button::new(egui::RichText::new("Clear").size(13.0))
-                                    .fill(self.colors.surface2)
-                                    .min_size(egui::vec2(ui.available_width(), 36.0)),
-                            )
-                            .clicked()
-                        {
-                            self.transfer_recipient.clear();
-                            self.transfer_amount.clear();
-                            self.transfer_all = false;
-                            self.tx_status = TransactionStatus::Idle;
-                        }
-
                         // ── Address Book (unique external recipients from tx_history) ──
                         // Collect up to 5 most-recent unique external recipients.
                         // tx_history is already sorted newest-first by the poller.
@@ -387,17 +369,9 @@ impl App {
                             ];
                             for (i, addr) in entries.iter().enumerate() {
                                 let fill = avatar_palette[i % avatar_palette.len()];
-                                // Avatar letter: first non-prefix char, uppercased.
-                                let letter = addr
-                                    .chars()
-                                    .nth(5)
-                                    .map(|c| c.to_ascii_uppercase().to_string())
-                                    .unwrap_or_else(|| "?".to_string());
-                                // Short display: first 10 + … + last 6.
-                                let short = if addr.len() > 20 {
-                                    format!("{}…{}", &addr[..10], &addr[addr.len() - 6..])
-                                } else {
-                                    addr.clone()
+                                let letter = {
+                                    let sum: u32 = addr.bytes().map(u32::from).sum();
+                                    ((b'A' + (sum % 26) as u8) as char).to_string()
                                 };
 
                                 ui.horizontal(|ui| {
@@ -415,7 +389,7 @@ impl App {
                                         });
                                     ui.add_space(10.0);
                                     ui.label(
-                                        egui::RichText::new(short)
+                                        egui::RichText::new(addr)
                                             .size(11.0)
                                             .family(egui::FontFamily::Monospace)
                                             .color(self.colors.text_muted),

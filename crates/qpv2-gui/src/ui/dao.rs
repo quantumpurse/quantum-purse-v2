@@ -426,19 +426,18 @@ impl App {
                 let btn_text = match &self.tx_status {
                     TransactionStatus::Building => "Building transaction...",
                     TransactionStatus::AwaitingSignature => "Waiting for Touch ID...",
-                    TransactionStatus::Sending => "Sending...",
+                    TransactionStatus::Sending => "Broadcasting...",
                     _ => "Confirm Deposit",
                 };
 
-                let deposit_btn = egui::Button::new(
-                    egui::RichText::new(btn_text).size(15.0).strong(),
-                )
-                .fill(if can_deposit {
-                    self.colors.accent
-                } else {
-                    self.colors.surface2
-                })
-                .min_size(egui::vec2(ui.available_width(), 44.0));
+                let deposit_btn =
+                    egui::Button::new(egui::RichText::new(btn_text).size(15.0).strong())
+                        .fill(if can_deposit {
+                            self.colors.accent
+                        } else {
+                            self.colors.surface2
+                        })
+                        .min_size(egui::vec2(ui.available_width(), 44.0));
 
                 if ui.add_enabled(can_deposit, deposit_btn).clicked() {
                     self.dao_deposit_async();
@@ -450,7 +449,7 @@ impl App {
                         ui.add_space(8.0);
                         ui.horizontal(|ui| {
                             ui.label(
-                                egui::RichText::new("Deposit sent: ")
+                                egui::RichText::new("Deposit broadcast: ")
                                     .size(12.0)
                                     .color(self.colors.accent),
                             );
@@ -471,23 +470,6 @@ impl App {
                         );
                     }
                     _ => {}
-                }
-
-                ui.add_space(8.0);
-
-                if ui
-                    .add_enabled(
-                        !is_busy,
-                        egui::Button::new(
-                            egui::RichText::new("Cancel").size(13.0),
-                        )
-                        .fill(self.colors.surface2)
-                        .min_size(egui::vec2(ui.available_width(), 36.0)),
-                    )
-                    .clicked()
-                {
-                    self.dao_view = DaoView::Overview;
-                    self.tx_status = TransactionStatus::Idle;
                 }
             });
     }
