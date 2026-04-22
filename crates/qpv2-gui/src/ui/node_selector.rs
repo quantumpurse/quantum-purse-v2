@@ -167,9 +167,11 @@ impl App {
                         ui.add_space(10.0);
 
                         // Apply button
-                        let apply_btn = egui::Button::new("Apply")
-                            .fill(self.colors.accent)
-                            .min_size(egui::vec2(ui.available_width(), 28.0));
+                        let apply_btn = egui::Button::new(
+                            egui::RichText::new("Apply").color(self.colors.bg)
+                        )
+                        .fill(self.colors.accent)
+                        .min_size(egui::vec2(ui.available_width(), 28.0));
 
                         if ui.add(apply_btn).clicked() {
                             // Check if changes were made

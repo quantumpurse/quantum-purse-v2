@@ -161,7 +161,7 @@ impl App {
 
                     // Make it interactive
                     let (response, painter) =
-                        ui.allocate_painter(egui::vec2(208.0, 52.0), egui::Sense::click());
+                        ui.allocate_painter(egui::vec2(208.0, 42.0), egui::Sense::click());
 
                     let rect = response.rect;
                     let is_hovered = response.hovered();
@@ -185,7 +185,7 @@ impl App {
                     );
 
                     // Content layout
-                    let inner = rect.shrink2(egui::vec2(12.0, 9.0));
+                    let inner = rect.shrink2(egui::vec2(12.0, 5.0));
 
                     // "ACTIVE NODE" label
                     painter.text(
