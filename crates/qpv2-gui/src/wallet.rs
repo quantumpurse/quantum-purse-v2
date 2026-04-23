@@ -14,6 +14,26 @@ impl App {
         self.node_manager.is_mainnet()
     }
 
+    /// Tells the running light client to start indexing the given
+    /// account from the current tip onward. No-op when the backend isn't
+    /// LightClient or no local process is running — full nodes / public
+    /// RPC index everything by default, and a stopped light client has
+    /// nothing to register against.
+    ///
+    /// Import-existing-wallet (register every account with an earlier
+    /// start block) is deliberately not covered here; that flow isn't
+    /// implemented yet.
+    pub(crate) fn register_lock_script_with_light_client(&mut self, lock_args: &str) {
+        if self.node_manager.config().node_type != node_manager::NodeType::LightClient
+            || !self.node_manager.has_local_process()
+        {
+            return;
+        }
+        if let Err(e) = self.node_manager.register_lock_script(lock_args) {
+            self.status = Status::Error(format!("Failed to register script: {}", e));
+        }
+    }
+
     /// Highest committed block number in `tx_history`, or 0 when empty.
     /// Used as `after_block` for the next incremental sync. Derived from
     /// the in-memory vector — no cached state to keep in sync.
@@ -176,6 +196,11 @@ impl App {
         match KeyVault::get_all_sphincs_lock_args() {
             Ok(lock_args) => {
                 self.accounts = lock_args;
+                // First account of a brand-new wallet — if a light
+                // client is running, start indexing it from the tip.
+                if let Some(first) = self.accounts.first().cloned() {
+                    self.register_lock_script_with_light_client(&first);
+                }
                 self.screen = Screen::Unlocked;
                 self.status = Status::Info("Wallet created successfully!".to_string());
                 self.last_poll_time = std::time::Instant::now();
@@ -323,7 +348,11 @@ impl App {
                         .map_err(|e| e.to_string());
                     let _ = tx.send((args, result));
                 });
-                self.accounts.push(lock_args);
+                self.accounts.push(lock_args.clone());
+                // Register with the light client (no-op on other
+                // backends) so future funding of this account is
+                // picked up by the indexer.
+                self.register_lock_script_with_light_client(&lock_args);
                 self.status = Status::Info("New account created!".to_string());
             }
             Err(e) => {

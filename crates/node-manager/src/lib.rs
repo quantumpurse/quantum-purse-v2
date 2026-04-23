@@ -50,7 +50,15 @@ impl NodeManager {
     /// `spawn()` afterward to launch the local node when the config
     /// calls for one.
     pub fn new(config: NodeConfig) -> Self {
-        let rpc = rpc::connect(&config);
+        // Pick the concrete RPC implementation for the backend and erase
+        // it to `Arc<dyn CkbRpc>` for shared use. Callers that need
+        // backend-specific methods downcast via `CkbRpc::as_any`.
+        let rpc: Arc<dyn CkbRpc> = match config.node_type {
+            NodeType::PublicRpc | NodeType::FullNode => {
+                Arc::new(rpc::FullNodeRpc::new(&config.rpc_url))
+            }
+            NodeType::LightClient => Arc::new(rpc::LightClientRpc::new(&config.rpc_url)),
+        };
         Self {
             config,
             rpc,
@@ -160,27 +168,48 @@ impl NodeManager {
         QpDaoWithdrawBuilder::new(self.rpc.as_ref(), self.is_mainnet())
     }
 
-    /// Returns a fresh light-client RPC handle for operations outside the
-    /// unified `CkbRpc` trait (e.g. `set_scripts`). Errors if the active
-    /// backend is not a light client.
-    pub fn connect_light_client(&self) -> Result<LightClientRpc, NodeManagerError> {
-        rpc::connect_light_client(&self.config)
-    }
-
     /// Number of peers for local-node backends (`LightClient`, `FullNode`).
     /// Returns `Ok(None)` for `PublicRpc` — the remote endpoint's peer
     /// count isn't a meaningful wallet-side metric. `Err` when the local
     /// node is unreachable or returns a malformed response.
+    ///
+    /// Reuses the shared `self.rpc` instance via `Any` downcast so we
+    /// don't construct a second RPC client per call.
     pub fn peer_count(&self) -> Result<Option<usize>, NodeManagerError> {
-        match self.config.node_type {
-            NodeType::LightClient => rpc::connect_light_client(&self.config)?
-                .get_peer_count()
-                .map(Some),
-            NodeType::FullNode => rpc::FullNodeRpc::new(&self.config.rpc_url)
-                .get_peer_count()
-                .map(Some),
-            NodeType::PublicRpc => Ok(None),
+        if let Some(light) = self.rpc.as_any().downcast_ref::<rpc::LightClientRpc>() {
+            return light.get_peer_count().map(Some);
         }
+        if let Some(full) = self.rpc.as_any().downcast_ref::<rpc::FullNodeRpc>() {
+            // FullNode and PublicRpc share the same concrete type
+            // (`FullNodeRpc`); only the local FullNode case has a
+            // meaningful "peers connected to my node" answer.
+            return match self.config.node_type {
+                NodeType::FullNode => full.get_peer_count().map(Some),
+                _ => Ok(None),
+            };
+        }
+        Ok(None)
+    }
+
+    /// Registers a wallet lock script with the light client's indexer,
+    /// anchored at the current chain tip. Fresh accounts have no history
+    /// below tip, so using tip means the light client starts tracking
+    /// any future funding tx immediately without rescanning old blocks.
+    ///
+    /// No-op outside `LightClient` — full nodes and public RPC index
+    /// all scripts by default. Callers that need a specific start block
+    /// (e.g. importing an existing wallet with funded history) can call
+    /// `LightClientRpc::register_lock_script` directly on a downcasted
+    /// reference.
+    pub fn register_lock_script(&self, lock_args_hex: &str) -> Result<(), NodeManagerError> {
+        // Try to reuse the shared LightClientRpc instance inside
+        // `self.rpc`. Non-LightClient backends land in the `None` arm
+        // and the method is a no-op.
+        let Some(light) = self.rpc.as_any().downcast_ref::<rpc::LightClientRpc>() else {
+            return Ok(());
+        };
+        let tip = light.get_tip_header()?.inner.number.value();
+        light.register_lock_script(lock_args_hex, self.config.network, tip)
     }
 
     // ── Local process lifecycle ───────────────────────────────────────

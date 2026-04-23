@@ -1,11 +1,11 @@
-use crate::config::{NodeConfig, NodeType};
+use crate::config::NetworkType;
 use crate::error::NodeManagerError;
 use ckb_jsonrpc_types::JsonBytes;
-use ckb_sdk::rpc::ckb_indexer::{Cell, CellsCapacity, Order, Pagination, SearchKey, Tx};
+use ckb_sdk::rpc::ckb_indexer::{Cell, CellsCapacity, Order, Pagination, ScriptType, SearchKey, Tx};
 use ckb_sdk::rpc::ckb_light_client::{LightClientRpcClient, ScriptStatus, SetScriptsCommand};
 use ckb_sdk::rpc::{CkbRpcClient, ResponseFormatGetter};
 use ckb_types::H256;
-use std::sync::Arc;
+use std::any::Any;
 
 /// Unified RPC interface for wallet operations.
 ///
@@ -14,7 +14,16 @@ use std::sync::Arc;
 ///
 /// The `Send + Sync` supertraits allow a single client instance to be shared
 /// across background threads via `Arc<dyn CkbRpc>` inside `NodeManager`.
-pub trait CkbRpc: Send + Sync {
+///
+/// `Any` enables downcasting from `Arc<dyn CkbRpc>` back to the concrete
+/// type when callers need backend-specific methods (e.g.
+/// `LightClientRpc::register_lock_script`) — avoids constructing a second
+/// RPC client when one already exists.
+pub trait CkbRpc: Send + Sync + Any {
+    /// Concrete-type access for downcast. Each impl returns `self` so
+    /// callers can do `self.rpc.as_any().downcast_ref::<LightClientRpc>()`.
+    fn as_any(&self) -> &dyn Any;
+
     /// Returns the tip (latest) block header.
     fn get_tip_header(&self) -> Result<ckb_jsonrpc_types::HeaderView, NodeManagerError>;
 
@@ -106,6 +115,10 @@ impl FullNodeRpc {
 }
 
 impl CkbRpc for FullNodeRpc {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
     fn get_tip_header(&self) -> Result<ckb_jsonrpc_types::HeaderView, NodeManagerError> {
         self.client
             .get_tip_header()
@@ -235,9 +248,72 @@ impl LightClientRpc {
             .map(|peers| peers.len())
             .map_err(|e| NodeManagerError::RpcError(e.to_string()))
     }
+
+    /// Registers a QuantumPurse lock script with the light client so it
+    /// begins indexing matching cells from `start_block`. Builds the
+    /// `ScriptStatus` from network-specific code_hash/hash_type constants
+    /// and calls `set_scripts` with `Partial` so existing registrations
+    /// survive.
+    pub fn register_lock_script(
+        &self,
+        lock_args_hex: &str,
+        network: NetworkType,
+        start_block: u64,
+    ) -> Result<(), NodeManagerError> {
+        let (code_hash_hex, hash_type_str) = match network {
+            NetworkType::Mainnet => (
+                qpv2_core::constants::CKB_MAINNET_CODE_HASH,
+                qpv2_core::constants::CKB_MAINNET_HASH_TYPE,
+            ),
+            NetworkType::Testnet => (
+                qpv2_core::constants::CKB_TESTNET_CODE_HASH,
+                qpv2_core::constants::CKB_TESTNET_HASH_TYPE,
+            ),
+        };
+
+        let script_hash_type = match hash_type_str {
+            "type" => ckb_jsonrpc_types::ScriptHashType::Type,
+            "data1" => ckb_jsonrpc_types::ScriptHashType::Data1,
+            _ => ckb_jsonrpc_types::ScriptHashType::Data,
+        };
+
+        let code_hash_clean = code_hash_hex.strip_prefix("0x").unwrap_or(code_hash_hex);
+        let mut code_hash_bytes = [0u8; 32];
+        let decoded = hex::decode(code_hash_clean)
+            .map_err(|e| NodeManagerError::RpcError(format!("Invalid code hash hex: {}", e)))?;
+        if decoded.len() != 32 {
+            return Err(NodeManagerError::RpcError(format!(
+                "Code hash must be 32 bytes, got {}.",
+                decoded.len()
+            )));
+        }
+        code_hash_bytes.copy_from_slice(&decoded);
+
+        let lock_args_clean = lock_args_hex.strip_prefix("0x").unwrap_or(lock_args_hex);
+        let args_bytes = hex::decode(lock_args_clean)
+            .map_err(|e| NodeManagerError::RpcError(format!("Invalid lock args hex: {}", e)))?;
+
+        let script = ckb_jsonrpc_types::Script {
+            code_hash: H256(code_hash_bytes),
+            hash_type: script_hash_type,
+            args: JsonBytes::from_bytes(args_bytes.into()),
+        };
+
+        let status = ScriptStatus {
+            script,
+            script_type: ScriptType::Lock,
+            block_number: start_block.into(),
+        };
+
+        self.set_scripts(vec![status], Some(SetScriptsCommand::Partial))
+    }
 }
 
 impl CkbRpc for LightClientRpc {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
     fn get_tip_header(&self) -> Result<ckb_jsonrpc_types::HeaderView, NodeManagerError> {
         self.client
             .get_tip_header()
@@ -379,32 +455,4 @@ impl CkbRpc for LightClientRpc {
     fn get_rpc_url(&self) -> String {
         self.rpc_url.clone()
     }
-}
-
-/// Creates the appropriate RPC client based on the node configuration.
-///
-/// - `PublicRpc` and `FullNode` use `FullNodeRpc` (full CKB RPC interface).
-/// - `LightClient` uses `LightClientRpc`.
-///
-/// Returns an `Arc` so the client can be shared across threads via
-/// `NodeManager::clone()`. For light-client-specific operations (e.g.
-/// `set_scripts`), use `connect_light_client` instead.
-pub fn connect(config: &NodeConfig) -> Arc<dyn CkbRpc> {
-    match config.node_type {
-        NodeType::PublicRpc | NodeType::FullNode => Arc::new(FullNodeRpc::new(&config.rpc_url)),
-        NodeType::LightClient => Arc::new(LightClientRpc::new(&config.rpc_url)),
-    }
-}
-
-/// Creates a light-client-specific RPC connection for operations
-/// like `set_scripts` and `get_scripts` that are not part of the
-/// unified `CkbRpc` trait.
-pub fn connect_light_client(config: &NodeConfig) -> Result<LightClientRpc, NodeManagerError> {
-    if config.node_type != NodeType::LightClient {
-        return Err(NodeManagerError::UnsupportedOperation {
-            node_type: config.node_type.to_string(),
-            reason: "Light client RPC is only available when node_type is LightClient.".to_string(),
-        });
-    }
-    Ok(LightClientRpc::new(&config.rpc_url))
 }
