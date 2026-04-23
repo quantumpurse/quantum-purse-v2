@@ -1,7 +1,10 @@
-//! Node Manager tab — status card for the currently-active backend.
+//! Node Manager tab — one card per backend (Public RPC + Light Client).
+//! The currently-active backend renders live metrics from the cached
+//! `NodeStatus`; the other card shows its static config so the user knows
+//! the endpoint exists and can be switched to.
 
 use eframe::egui;
-use node_manager::NodeType;
+use node_manager::{NodeConfig, NodeType};
 
 use crate::App;
 
@@ -26,37 +29,51 @@ impl App {
 
                 ui.add_space(22.0);
 
-                self.draw_node_card(ui);
+                // Two cards stacked vertically. Side-by-side layout is left
+                // to a future design pass; vertical scales down nicely on
+                // narrow windows.
+                self.draw_backend_card(ui, NodeType::PublicRpc);
+                ui.add_space(14.0);
+                self.draw_backend_card(ui, NodeType::LightClient);
             });
         });
     }
 
-    fn draw_node_card(&self, ui: &mut egui::Ui) {
-        let (icon, title, subtitle) = match self.node_config.node_type {
+    fn draw_backend_card(&self, ui: &mut egui::Ui, backend: NodeType) {
+        let active = self.node_config.node_type == backend;
+
+        let (icon, title, subtitle) = match backend {
             NodeType::LightClient => (
                 "\u{1F4A1}",
                 "Light Node",
                 "Header-only sync · Fast & lightweight",
-            ),
-            NodeType::FullNode => (
-                "\u{1F5A5}",
-                "Full Node",
-                "Full chain verification · Local sovereignty",
             ),
             NodeType::PublicRpc => (
                 "\u{1F310}",
                 "Public RPC Node",
                 "Remote endpoint · No local storage",
             ),
+            NodeType::FullNode => (
+                "\u{1F5A5}",
+                "Full Node",
+                "Full chain verification · Local sovereignty",
+            ),
+        };
+
+        // Active card gets the accent stroke so the user can see at a
+        // glance which backend the wallet is currently pointed at.
+        let stroke = if active {
+            egui::Stroke::new(1.5, self.colors.accent)
+        } else {
+            egui::Stroke::new(1.0, self.colors.border)
         };
 
         egui::Frame::new()
             .fill(self.colors.surface)
             .corner_radius(18.0)
             .inner_margin(egui::Margin::symmetric(22, 22))
-            .stroke(egui::Stroke::new(1.0, self.colors.border))
+            .stroke(stroke)
             .show(ui, |ui| {
-                // Header row: icon/title on the left, status pill on the right.
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new(icon).size(28.0));
                     ui.add_space(8.0);
@@ -77,29 +94,91 @@ impl App {
                     ui.with_layout(
                         egui::Layout::right_to_left(egui::Align::Center),
                         |ui| {
-                            self.draw_status_pill(ui);
+                            self.draw_status_pill(ui, backend, active);
                         },
                     );
                 });
 
                 ui.add_space(18.0);
 
-                // Metric grid — four columns with evenly-sized tiles.
-                ui.columns(4, |cols| {
-                    self.draw_metric(&mut cols[0], "Block Height", self.block_height_text());
-                    self.draw_metric(&mut cols[1], "Peers", self.peers_text());
-                    self.draw_metric(&mut cols[2], "RPC Port", self.rpc_port_text());
-                    self.draw_metric(&mut cols[3], "DB Size", self.db_size_text());
+                // Metric row — live for active, static for inactive.
+                ui.columns(4, |cols| match (backend, active) {
+                    (NodeType::PublicRpc, true) => {
+                        self.draw_metric(
+                            &mut cols[0],
+                            "Block Height",
+                            block_height_text(self.node_status.tip_block),
+                        );
+                        self.draw_metric(
+                            &mut cols[1],
+                            "Endpoint",
+                            hostname_of(&self.node_config.rpc_url),
+                        );
+                        self.draw_metric(
+                            &mut cols[2],
+                            "Port",
+                            port_text(self.node_status.rpc_port),
+                        );
+                        self.draw_metric(&mut cols[3], "Peers", "—".into());
+                    }
+                    (NodeType::PublicRpc, false) => {
+                        let url =
+                            NodeConfig::default_rpc_url_for(backend, self.node_config.network);
+                        self.draw_metric(&mut cols[0], "Block Height", "—".into());
+                        self.draw_metric(&mut cols[1], "Endpoint", hostname_of(url));
+                        self.draw_metric(&mut cols[2], "Port", default_port(url));
+                        self.draw_metric(&mut cols[3], "Peers", "—".into());
+                    }
+                    (NodeType::LightClient, true) => {
+                        self.draw_metric(
+                            &mut cols[0],
+                            "Block Height",
+                            block_height_text(self.node_status.tip_block),
+                        );
+                        self.draw_metric(
+                            &mut cols[1],
+                            "Peers",
+                            peers_text(self.node_status.peer_count),
+                        );
+                        self.draw_metric(
+                            &mut cols[2],
+                            "RPC Port",
+                            port_text(self.node_status.rpc_port),
+                        );
+                        self.draw_metric(
+                            &mut cols[3],
+                            "DB Size",
+                            db_size_text(self.node_status.db_size_bytes),
+                        );
+                    }
+                    (NodeType::LightClient, false) => {
+                        let url =
+                            NodeConfig::default_rpc_url_for(backend, self.node_config.network);
+                        self.draw_metric(&mut cols[0], "Block Height", "—".into());
+                        self.draw_metric(&mut cols[1], "Peers", "—".into());
+                        self.draw_metric(&mut cols[2], "RPC Port", default_port(url));
+                        self.draw_metric(&mut cols[3], "DB Size", "—".into());
+                    }
+                    // FullNode path stays invisible until the backend is
+                    // implemented; skip the card entirely rather than
+                    // render something misleading.
+                    (NodeType::FullNode, _) => {}
                 });
             });
     }
 
-    fn draw_status_pill(&self, ui: &mut egui::Ui) {
-        let (text, bg, fg) = if self.node_status.online {
+    fn draw_status_pill(&self, ui: &mut egui::Ui, backend: NodeType, active: bool) {
+        // Only the active backend has live status. Inactive cards show a
+        // neutral "STANDBY" pill so they don't fake data.
+        let (text, bg, fg) = if !active {
+            (
+                "\u{25CB} STANDBY",
+                self.colors.surface2,
+                self.colors.text_muted,
+            )
+        } else if self.node_status.online {
             ("\u{25CF} ONLINE", self.colors.accent_tint, self.colors.accent)
-        } else if self.node_config.node_type != NodeType::PublicRpc
-            && self.node_process.is_some()
-        {
+        } else if backend != NodeType::PublicRpc && self.node_process.is_some() {
             ("\u{25CC} STARTING", self.colors.warn_tint, self.colors.warn)
         } else {
             (
@@ -140,40 +219,62 @@ impl App {
             );
         });
     }
+}
 
-    fn block_height_text(&self) -> String {
-        self.node_status
-            .tip_block
-            .map(|n| format!("#{}", format_int(n)))
-            .unwrap_or_else(|| "—".to_string())
-    }
+fn block_height_text(tip: Option<u64>) -> String {
+    tip.map(|n| format!("#{}", format_int(n)))
+        .unwrap_or_else(|| "—".to_string())
+}
 
-    fn peers_text(&self) -> String {
-        match self.node_status.peer_count {
-            Some(n) => format!("{} connected", n),
-            None if self.node_config.node_type == NodeType::PublicRpc => "—".to_string(),
-            None => "—".to_string(),
-        }
-    }
+fn peers_text(count: Option<usize>) -> String {
+    count
+        .map(|n| format!("{} connected", n))
+        .unwrap_or_else(|| "—".to_string())
+}
 
-    fn rpc_port_text(&self) -> String {
-        self.node_status
-            .rpc_port
-            .map(|p| p.to_string())
-            .unwrap_or_else(|| "—".to_string())
-    }
+fn port_text(port: Option<u16>) -> String {
+    port.map(|p| p.to_string()).unwrap_or_else(|| "—".to_string())
+}
 
-    fn db_size_text(&self) -> String {
-        match self.node_status.db_size_bytes {
-            Some(bytes) => format_bytes(bytes),
-            None if self.node_config.node_type == NodeType::PublicRpc => "—".to_string(),
-            None => "—".to_string(),
-        }
+fn db_size_text(bytes: Option<u64>) -> String {
+    bytes
+        .map(format_bytes)
+        .unwrap_or_else(|| "—".to_string())
+}
+
+/// Strips scheme + path to return just the hostname of an RPC URL.
+fn hostname_of(url: &str) -> String {
+    let stripped = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url);
+    stripped
+        .split('/')
+        .next()
+        .unwrap_or(stripped)
+        .split(':')
+        .next()
+        .unwrap_or(stripped)
+        .to_string()
+}
+
+/// Returns the port portion of an RPC URL, or a scheme-default fallback
+/// (`443` / `80`) when the URL has no explicit port.
+fn default_port(url: &str) -> String {
+    let scheme_stripped = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url);
+    let host_port = scheme_stripped.split('/').next().unwrap_or(scheme_stripped);
+    if let Some((_, port)) = host_port.rsplit_once(':') {
+        port.to_string()
+    } else if url.starts_with("https://") {
+        "443".to_string()
+    } else {
+        "80".to_string()
     }
 }
 
-/// Formats an integer with thousands separators, e.g. `14298441` →
-/// `"14,298,441"`.
 fn format_int(n: u64) -> String {
     let raw = n.to_string();
     let mut out = String::with_capacity(raw.len() + raw.len() / 3);
@@ -187,7 +288,6 @@ fn format_int(n: u64) -> String {
     out
 }
 
-/// Formats a byte count into KB/MB/GB with one decimal place.
 fn format_bytes(bytes: u64) -> String {
     const KB: f64 = 1024.0;
     const MB: f64 = KB * 1024.0;

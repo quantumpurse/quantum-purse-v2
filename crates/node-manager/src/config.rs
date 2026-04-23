@@ -101,8 +101,17 @@ impl Default for NodeConfig {
 impl NodeConfig {
     /// Returns the default RPC URL for the current node type and network.
     pub fn default_rpc_url(&self) -> &'static str {
-        match self.node_type {
-            NodeType::PublicRpc => match self.network {
+        Self::default_rpc_url_for(self.node_type, self.network)
+    }
+
+    /// Associated form of `default_rpc_url` — returns the canonical URL for
+    /// any `(NodeType, NetworkType)` pair without needing a `NodeConfig`
+    /// instance. Lets callers probe non-active backends (e.g. the Node
+    /// Manager page showing Public RPC status while Light Client is the
+    /// active backend).
+    pub fn default_rpc_url_for(node_type: NodeType, network: NetworkType) -> &'static str {
+        match node_type {
+            NodeType::PublicRpc => match network {
                 NetworkType::Mainnet => PUBLIC_RPC_MAINNET,
                 NetworkType::Testnet => PUBLIC_RPC_TESTNET,
             },
