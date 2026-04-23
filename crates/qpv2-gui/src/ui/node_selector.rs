@@ -199,37 +199,29 @@ impl App {
                                         .to_string();
                                 }
 
-                                // Stop any previously-running local node — a
-                                // light-client process indexed for the old
-                                // network must not outlive the switch.
-                                if let Some(mut proc) = self.node_process.take() {
-                                    let _ = proc.stop();
-                                }
+                                // Stop the previously-running local node
+                                // (if any) before rebuild — a light-client
+                                // indexed for the old network must not
+                                // outlive the switch.
+                                self.node_manager.stop();
 
-                                // Commit edits: save to disk + rebuild
-                                // `node_manager` with the new config. Must
-                                // happen before spawn so the spawn helper
-                                // reads the just-committed snapshot.
+                                // Commit edits: save to disk + replace
+                                // `node_manager` with one bound to the new
+                                // config. Must happen before `spawn()` so
+                                // the new manager is the one that owns the
+                                // new child handle.
                                 self.save_node_config();
 
-                                // If the new backend requires a local binary,
-                                // spawn it now. Failure surfaces as a status
-                                // error and leaves `node_process` as None —
-                                // user can retry via Apply.
-                                if self.node_manager.config().node_type
-                                    == NodeType::LightClient
-                                {
-                                    match crate::light_client::spawn(
-                                        self.node_manager.config(),
-                                    ) {
-                                        Ok(proc) => self.node_process = Some(proc),
-                                        Err(e) => {
-                                            self.status = Status::Error(format!(
-                                                "Failed to start light client: {}",
-                                                e
-                                            ));
-                                        }
-                                    }
+                                // Spawn the new local node (no-op for
+                                // PublicRpc, unsupported-op for FullNode).
+                                // Failure surfaces as a status error and
+                                // leaves the process slot empty — user can
+                                // retry via Apply.
+                                if let Err(e) = self.node_manager.spawn() {
+                                    self.status = Status::Error(format!(
+                                        "Failed to start local node: {}",
+                                        e
+                                    ));
                                 }
 
                                 // Swap the tx-history cache to the new

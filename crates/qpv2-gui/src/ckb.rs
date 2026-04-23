@@ -594,7 +594,7 @@ impl App {
         let rpc_port = parse_rpc_port(&cfg.rpc_url);
         let data_dir = cfg.node_data_dir();
         let is_local = cfg.requires_binary();
-        let has_process = self.node_process.is_some();
+        let has_process = self.node_manager.has_local_process();
 
         let (tx, rx) = mpsc::channel();
         self.node_status_rx = Some(rx);

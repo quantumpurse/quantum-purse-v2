@@ -178,7 +178,7 @@ impl App {
             )
         } else if self.node_status.online {
             ("\u{25CF} ONLINE", self.colors.accent_tint, self.colors.accent)
-        } else if backend != NodeType::PublicRpc && self.node_process.is_some() {
+        } else if backend != NodeType::PublicRpc && self.node_manager.has_local_process() {
             ("\u{25CC} STARTING", self.colors.warn_tint, self.colors.warn)
         } else {
             (

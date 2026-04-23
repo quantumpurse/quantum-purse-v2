@@ -359,9 +359,7 @@ impl App {
                                 // directory — otherwise a still-running child
                                 // would race against `clear_database()` and
                                 // leave scraps behind.
-                                if let Some(mut proc) = self.node_process.take() {
-                                    let _ = proc.stop();
-                                }
+                                self.node_manager.stop();
 
                                 match KeyVault::clear_database() {
                                     Ok(()) => {

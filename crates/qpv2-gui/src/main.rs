@@ -1,7 +1,6 @@
 //! GUI for SPHINCS+ key vault with Passkey PRF / Touch ID support.
 
 mod ckb;
-mod light_client;
 #[cfg(target_os = "macos")]
 mod passkey;
 mod poller;
@@ -14,7 +13,7 @@ mod wallet;
 mod window_handle;
 
 use eframe::egui;
-use node_manager::{NodeConfig, NodeManager, NodeProcess, NodeType};
+use node_manager::{NodeConfig, NodeManager, NodeType};
 use qpv2_core::types::SpxVariant;
 use qpv2_core::KeyVault;
 use std::collections::HashMap;
@@ -51,19 +50,11 @@ pub(crate) struct App {
     // Balance cache: lock_args -> balance in shannons (None = not yet fetched).
     pub(crate) balances: HashMap<String, Option<u64>>,
 
-    // The single RPC client shared across UI and background threads.
-    // Holds its own immutable config snapshot (`node_manager.config()`).
-    // Rebuilt whenever the user saves a new config in settings — mutation
-    // happens by replacing `node_manager` rather than by editing a side
-    // field, so every background clone always sees a consistent view.
+    // Single handle for everything node-related — config snapshot, RPC
+    // client, and the (optional) local process, all behind internal Arc
+    // so background threads can clone cheaply. Replaced (not mutated)
+    // whenever the user saves a new config.
     pub(crate) node_manager: NodeManager,
-
-    // Local CKB node process, if one is currently running. Holds either a
-    // `ckb-light-client` or a `ckb` full-node child. Populated when the
-    // user picks `NodeType::LightClient` (or, later, `FullNode`) in the
-    // node selector and clicks Apply; cleared on lock, node-type switch,
-    // and app quit (via `NodeProcess::Drop`).
-    pub(crate) node_process: Option<NodeProcess>,
 
     // Editable settings fields (buffered until saved).
     pub(crate) settings_rpc_url: String,
@@ -208,6 +199,24 @@ impl App {
 
         let node_config = NodeConfig::load_or_default().unwrap_or_default();
         let node_manager = NodeManager::new(node_config.clone());
+
+        // Auto-resume the last-known local node so closing the app with
+        // Light Client selected and reopening doesn't leave the user on a
+        // silently-OFFLINE backend.
+        let startup_status = match node_manager.spawn() {
+            Ok(()) => {
+                if node_manager.has_local_process() {
+                    Status::Info("Local node started.".to_string())
+                } else {
+                    // `spawn()` returns Ok(()) on PublicRpc even though
+                    // no process is started — it's a no-op backend. Emit
+                    // no banner so we don't misleadingly claim a spawn.
+                    Status::None
+                }
+            }
+            Err(e) => Status::Error(format!("Failed to auto-start node: {}", e)),
+        };
+
         let settings_rpc_url = node_config.rpc_url.clone();
         let settings_binary_path = node_config
             .binary_path
@@ -222,7 +231,7 @@ impl App {
 
         Self {
             screen,
-            status: Status::None,
+            status: startup_status,
             colors,
             selected_variant: SpxVariant::Sha2128S,
             active_tab: Tab::Dashboard,
@@ -230,7 +239,6 @@ impl App {
             confirm_remove: false,
             balances: HashMap::new(),
             node_manager,
-            node_process: None,
             settings_rpc_url,
             settings_binary_path,
             settings_data_dir,
