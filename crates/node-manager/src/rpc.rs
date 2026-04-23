@@ -95,6 +95,14 @@ impl FullNodeRpc {
             rpc_url: rpc_url.to_string(),
         }
     }
+
+    /// Number of peers the node is currently connected to.
+    pub fn get_peer_count(&self) -> Result<usize, NodeManagerError> {
+        self.client
+            .get_peers()
+            .map(|peers| peers.len())
+            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
+    }
 }
 
 impl CkbRpc for FullNodeRpc {
@@ -216,6 +224,15 @@ impl LightClientRpc {
     pub fn get_scripts(&self) -> Result<Vec<ScriptStatus>, NodeManagerError> {
         self.client
             .get_scripts()
+            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
+    }
+
+    /// Number of peers the light client is currently connected to. Used by
+    /// the Node Manager UI as a liveness / connectivity indicator.
+    pub fn get_peer_count(&self) -> Result<usize, NodeManagerError> {
+        self.client
+            .get_peers()
+            .map(|peers| peers.len())
             .map_err(|e| NodeManagerError::RpcError(e.to_string()))
     }
 }

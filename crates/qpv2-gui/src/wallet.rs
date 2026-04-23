@@ -169,6 +169,7 @@ impl App {
                 self.fetch_all_balances();
                 self.fetch_tx_history(true);
                 self.fetch_dao_cells();
+                self.fetch_node_status();
             }
             Err(e) => {
                 self.status = Status::Error(format!("Failed to read accounts: {}", e));
@@ -238,6 +239,7 @@ impl App {
                 self.fetch_all_balances();
                 self.fetch_tx_history(true);
                 self.fetch_dao_cells();
+                self.fetch_node_status();
             }
             Err(e) => {
                 self.status = Status::Error(format!("Failed to unlock: {}", e));

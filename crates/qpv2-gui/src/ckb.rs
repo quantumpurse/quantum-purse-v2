@@ -10,7 +10,8 @@ use qpv2_core::constants::{
 };
 
 use crate::types::{
-    DaoQueryEvent, SpendableCapacityTarget, TransactionStatus, TxHistoryEvent, TxKind, TxRecord,
+    DaoQueryEvent, NodeStatus, NodeStatusUpdate, SpendableCapacityTarget, TransactionStatus,
+    TxHistoryEvent, TxKind, TxRecord,
 };
 use crate::App;
 
@@ -580,4 +581,88 @@ impl App {
             }
         });
     }
+
+    /// Refresh the Node Manager card's cached status in a background
+    /// thread. One in-flight poll at a time (`node_status_rx` guards).
+    pub(crate) fn fetch_node_status(&mut self) {
+        if self.node_status_rx.is_some() {
+            return;
+        }
+
+        let nm = self.node_manager.clone();
+        let rpc_port = parse_rpc_port(&self.node_config.rpc_url);
+        let data_dir = self.node_config.node_data_dir();
+        let is_local = self.node_config.requires_binary();
+        let has_process = self.node_process.is_some();
+
+        let (tx, rx) = mpsc::channel();
+        self.node_status_rx = Some(rx);
+
+        std::thread::spawn(move || {
+            // Tip header — the primary online-ness signal.
+            let tip_block = match nm.rpc.get_tip_header() {
+                Ok(h) => Some(h.inner.number.value()),
+                Err(_) => None,
+            };
+            let online = tip_block.is_some();
+
+            // Peer count — None for PublicRpc by design.
+            let peer_count = nm.peer_count().ok().flatten();
+
+            // DB size — only meaningful for local backends. Treat walk
+            // failures as "not available" rather than propagating; the
+            // directory may not exist yet on a fresh spawn.
+            let db_size_bytes = if is_local && has_process {
+                directory_size(&data_dir).ok()
+            } else {
+                None
+            };
+
+            let status = NodeStatus {
+                tip_block,
+                peer_count,
+                db_size_bytes,
+                rpc_port,
+                online,
+            };
+            let _ = tx.send(Ok(status) as NodeStatusUpdate);
+        });
+    }
+}
+
+/// Parses the port out of an RPC URL (`http://host:port` or
+/// `https://host:port`). Returns `None` on malformed input.
+fn parse_rpc_port(url: &str) -> Option<u16> {
+    let stripped = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url);
+    let host_port = stripped.split('/').next().unwrap_or(stripped);
+    let (_, port) = host_port.rsplit_once(':')?;
+    port.parse().ok()
+}
+
+/// Recursively sums the size of every regular file under `path`.
+/// Symlinks are followed via `metadata()` just like `du` would; cycles
+/// aren't a concern for the node's own data directory.
+fn directory_size(path: &std::path::Path) -> std::io::Result<u64> {
+    let mut total = 0u64;
+    let mut stack = vec![path.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(_) if !dir.exists() => return Ok(0),
+            Err(e) => return Err(e),
+        };
+        for entry in entries {
+            let entry = entry?;
+            let meta = entry.metadata()?;
+            if meta.is_dir() {
+                stack.push(entry.path());
+            } else if meta.is_file() {
+                total = total.saturating_add(meta.len());
+            }
+        }
+    }
+    Ok(total)
 }

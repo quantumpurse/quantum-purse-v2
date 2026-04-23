@@ -149,4 +149,20 @@ impl NodeManager {
     pub fn connect_light_client(&self) -> Result<LightClientRpc, NodeManagerError> {
         rpc::connect_light_client(&self.config)
     }
+
+    /// Number of peers for local-node backends (`LightClient`, `FullNode`).
+    /// Returns `Ok(None)` for `PublicRpc` — the remote endpoint's peer
+    /// count isn't a meaningful wallet-side metric. `Err` when the local
+    /// node is unreachable or returns a malformed response.
+    pub fn peer_count(&self) -> Result<Option<usize>, NodeManagerError> {
+        match self.config.node_type {
+            NodeType::LightClient => rpc::connect_light_client(&self.config)?
+                .get_peer_count()
+                .map(Some),
+            NodeType::FullNode => rpc::FullNodeRpc::new(&self.config.rpc_url)
+                .get_peer_count()
+                .map(Some),
+            NodeType::PublicRpc => Ok(None),
+        }
+    }
 }

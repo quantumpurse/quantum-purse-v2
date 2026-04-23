@@ -301,6 +301,20 @@ impl App {
 
                 ui.add_space(10.0);
 
+                // Section: Network
+                ui.horizontal(|ui| {
+                    ui.add_space(20.0);
+                    ui.label(
+                        egui::RichText::new("NETWORK")
+                            .size(8.0)
+                            .color(self.colors.text_muted),
+                    );
+                });
+                ui.add_space(4.0);
+                self.draw_nav_item(ui, Tab::NodeManager, "\u{25c9}", "Node Manager");
+
+                ui.add_space(10.0);
+
                 // Section: Security
                 ui.horizontal(|ui| {
                     ui.add_space(20.0);
@@ -412,6 +426,7 @@ impl App {
                         Tab::Dashboard => self.show_dashboard_tab(ui, frame),
                         Tab::Transfer => self.show_transfer_tab(ui),
                         Tab::DaoOperations => self.show_dao_tab(ui),
+                        Tab::NodeManager => self.show_node_manager_tab(ui),
                         Tab::Accounts => self.show_accounts_tab(ui, frame),
                     }
                 });

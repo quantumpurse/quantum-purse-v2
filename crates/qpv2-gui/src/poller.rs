@@ -438,4 +438,28 @@ impl App {
             }
         }
     }
+
+    /// Drain the node-status channel into `self.node_status`. A status
+    /// refresh is scheduled every `POLL_INTERVAL` by `update()`.
+    pub(crate) fn poll_node_status(&mut self) {
+        let rx = match &self.node_status_rx {
+            Some(rx) => rx,
+            None => return,
+        };
+
+        match rx.try_recv() {
+            Ok(Ok(status)) => {
+                self.node_status = status;
+                self.node_status_rx = None;
+            }
+            Ok(Err(e)) => {
+                self.node_status_rx = None;
+                eprintln!("node status: {}", e);
+            }
+            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Disconnected) => {
+                self.node_status_rx = None;
+            }
+        }
+    }
 }

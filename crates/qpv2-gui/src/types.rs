@@ -101,8 +101,31 @@ pub(crate) enum Tab {
     Dashboard,
     Transfer,
     DaoOperations,
+    NodeManager,
     Accounts,
 }
+
+/// Snapshot of the currently-active backend's live status, cached on `App`
+/// and refreshed periodically by `fetch_node_status`. Fields are `Option`
+/// so the UI can show "—" for metrics that haven't landed yet or aren't
+/// applicable to the active backend (e.g. peer count for PublicRpc).
+#[derive(Debug, Clone, Default)]
+pub(crate) struct NodeStatus {
+    /// Tip block number from `get_tip_header`.
+    pub tip_block: Option<u64>,
+    /// Peer count; `None` for PublicRpc backends.
+    pub peer_count: Option<usize>,
+    /// Aggregate size (bytes) of the local node's data directory. `None`
+    /// for PublicRpc.
+    pub db_size_bytes: Option<u64>,
+    /// RPC port parsed from `config.rpc_url`.
+    pub rpc_port: Option<u16>,
+    /// True when the most recent poll reached the node successfully.
+    pub online: bool,
+}
+
+/// Result type for the node-status background poll.
+pub(crate) type NodeStatusUpdate = Result<NodeStatus, String>;
 
 /// Application state machine.
 #[derive(Debug, Clone, PartialEq)]

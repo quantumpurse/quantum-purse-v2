@@ -30,8 +30,9 @@ const STATUS_DURATION: Duration = Duration::from_secs(5);
 #[cfg(target_os = "macos")]
 use types::PasskeyOp;
 use types::{
-    AppColors, BalanceResult, DaoQueryResult, DaoView, Screen, SpendableCapacityTarget, Status,
-    Tab, TransactionSendResult, TransactionStatus, TxBuildResult, TxHistoryEvent, TxRecord,
+    AppColors, BalanceResult, DaoQueryResult, DaoView, NodeStatus, NodeStatusUpdate, Screen,
+    SpendableCapacityTarget, Status, Tab, TransactionSendResult, TransactionStatus, TxBuildResult,
+    TxHistoryEvent, TxRecord,
 };
 
 pub(crate) struct App {
@@ -115,6 +116,10 @@ pub(crate) struct App {
     // see `App::tx_history_watermark()`.
     pub(crate) tx_history: Vec<TxRecord>,
     pub(crate) tx_history_rx: Option<mpsc::Receiver<Result<TxHistoryEvent, String>>>,
+
+    // Node Manager tab — latest cached snapshot + in-flight refresh.
+    pub(crate) node_status: NodeStatus,
+    pub(crate) node_status_rx: Option<mpsc::Receiver<NodeStatusUpdate>>,
 
     // Periodic polling timer for balances, tx history, and DAO cells.
     pub(crate) last_poll_time: std::time::Instant,
@@ -257,6 +262,8 @@ impl App {
             dao_deposit_all: false,
             tx_history: Vec::new(),
             tx_history_rx: None,
+            node_status: NodeStatus::default(),
+            node_status_rx: None,
             last_poll_time: std::time::Instant::now(),
             status_seen: Status::None,
             status_set_at: None,
@@ -303,15 +310,17 @@ impl eframe::App for App {
             self.poll_transaction_send();
             self.poll_dao_cells();
             self.poll_tx_history();
+            self.poll_node_status();
         }
 
-        // Periodic refresh of balances, transaction history, and DAO cells.
-        // todo verify if other pollings needs this condition.
+        // Periodic refresh of balances, transaction history, DAO cells,
+        // and node status.
         if self.screen == Screen::Unlocked && self.last_poll_time.elapsed() >= POLL_INTERVAL {
             self.last_poll_time = std::time::Instant::now();
             self.fetch_all_balances();
             self.fetch_tx_history(true);
             self.fetch_dao_cells();
+            self.fetch_node_status();
         }
 
         // Show node selector popup if open
