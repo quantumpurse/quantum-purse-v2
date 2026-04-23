@@ -197,6 +197,29 @@ impl App {
                                     self.settings_rpc_url = default_url;
                                 }
 
+                                // Stop any previously-running local node — a
+                                // light-client process indexed for the old
+                                // network must not outlive the switch.
+                                if let Some(mut proc) = self.node_process.take() {
+                                    let _ = proc.stop();
+                                }
+
+                                // If the new backend requires a local binary,
+                                // spawn it now. Failure surfaces as a status
+                                // error and leaves `node_process` as None —
+                                // user can retry via Apply.
+                                if self.node_config.node_type == NodeType::LightClient {
+                                    match crate::light_client::spawn(&self.node_config) {
+                                        Ok(proc) => self.node_process = Some(proc),
+                                        Err(e) => {
+                                            self.status = Status::Error(format!(
+                                                "Failed to start light client: {}",
+                                                e
+                                            ));
+                                        }
+                                    }
+                                }
+
                                 // Save and reconnect
                                 self.save_node_config();
 
@@ -210,7 +233,10 @@ impl App {
                                     self.load_tx_history_from_disk();
                                 }
 
-                                self.status = Status::Info("Connecting...".to_string());
+                                if !matches!(self.status, Status::Error(_)) {
+                                    self.status =
+                                        Status::Info("Connecting...".to_string());
+                                }
                             }
 
                             self.node_selector_open = false;

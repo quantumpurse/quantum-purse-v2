@@ -55,13 +55,28 @@ APP_BUNDLE="$TARGET_DIR/$APP_NAME.app"
 echo "==> Building $BINARY_NAME ($BUILD_TYPE)..."
 cargo build -p qpv2-gui $CARGO_FLAGS
 
+# Build the bundled ckb-light-client from the vendored submodule. It lives
+# in a separate Cargo workspace so we invoke it via --manifest-path.
+LIGHT_CLIENT_NAME="ckb-light-client"
+LIGHT_CLIENT_SRC="$PROJECT_ROOT/vendor/ckb-light-client"
+LIGHT_CLIENT_BIN="$LIGHT_CLIENT_SRC/target/$BUILD_TYPE/$LIGHT_CLIENT_NAME"
+echo "==> Building $LIGHT_CLIENT_NAME ($BUILD_TYPE)..."
+cargo build -p $LIGHT_CLIENT_NAME $CARGO_FLAGS \
+    --manifest-path "$LIGHT_CLIENT_SRC/Cargo.toml"
+
+if [ ! -f "$LIGHT_CLIENT_BIN" ]; then
+    echo "ERROR: $LIGHT_CLIENT_NAME binary not found at $LIGHT_CLIENT_BIN"
+    exit 1
+fi
+
 echo "==> Creating app bundle at $APP_BUNDLE..."
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
-# Copy binary.
+# Copy binaries.
 cp "$TARGET_DIR/$BINARY_NAME" "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME"
+cp "$LIGHT_CLIENT_BIN" "$APP_BUNDLE/Contents/MacOS/$LIGHT_CLIENT_NAME"
 
 # Create Info.plist.
 cat > "$APP_BUNDLE/Contents/Info.plist" << PLIST
@@ -110,7 +125,12 @@ else
 fi
 
 echo "==> Signing with identity: $SIGNING_IDENTITY"
-# Sign the binary first, then the bundle (Apple recommends against --deep).
+# Sign inner binaries first, then the bundle (Apple recommends against
+# --deep). The light client is a standalone TCP/HTTP daemon with no keychain
+# or passkey access, so it gets hardened-runtime but no entitlements.
+codesign --force --sign "$SIGNING_IDENTITY" \
+	--options runtime \
+	"$APP_BUNDLE/Contents/MacOS/$LIGHT_CLIENT_NAME"
 codesign --force --sign "$SIGNING_IDENTITY" \
 	--entitlements "$ENTITLEMENTS" \
 	--options runtime \

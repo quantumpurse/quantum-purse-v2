@@ -1,7 +1,8 @@
 use crate::config::{NodeConfig, NodeType};
 use crate::error::NodeManagerError;
+use std::fs::File;
 use std::net::TcpStream;
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -58,10 +59,28 @@ impl NodeProcess {
             std::fs::create_dir_all(&node_data_dir)?;
         }
 
+        // Redirect the child's stdout/stderr to a log file so the signed
+        // `.app` bundle case (where inherited stderr vanishes) still leaves
+        // a paper trail. Truncated on each start — if the user needs older
+        // logs they rotate them themselves.
+        let log_path = node_data_dir.join("node.log");
+        let log_file = File::create(&log_path).map_err(|e| {
+            NodeManagerError::ProcessError(format!(
+                "Failed to create node log at '{}': {}",
+                log_path.display(),
+                e
+            ))
+        })?;
+        let log_file_err = log_file.try_clone().map_err(|e| {
+            NodeManagerError::ProcessError(format!("Failed to clone log handle: {}", e))
+        })?;
+
         let child = Command::new(binary_path)
             .arg("run")
             .arg("--config-file")
             .arg(node_data_dir.join("config.toml"))
+            .stdout(Stdio::from(log_file))
+            .stderr(Stdio::from(log_file_err))
             .spawn()
             .map_err(|e| {
                 NodeManagerError::ProcessError(format!(

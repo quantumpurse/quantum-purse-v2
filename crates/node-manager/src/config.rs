@@ -41,6 +41,19 @@ pub enum NetworkType {
     Testnet,
 }
 
+impl NetworkType {
+    /// Lowercase short identifier, suitable for file names and directory
+    /// segments (e.g. `tx_history_mainnet.json`, `light-client/testnet/`).
+    /// Distinct from `Display` which produces the capitalized form used in
+    /// user-facing UI.
+    pub fn tag(&self) -> &'static str {
+        match self {
+            NetworkType::Mainnet => "mainnet",
+            NetworkType::Testnet => "testnet",
+        }
+    }
+}
+
 impl fmt::Display for NetworkType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -103,12 +116,18 @@ impl NodeConfig {
         matches!(self.node_type, NodeType::LightClient | NodeType::FullNode)
     }
 
-    /// Returns the data subdirectory for the active node type.
+    /// Returns the data subdirectory for the active node type + network.
+    ///
+    /// Mainnet and testnet are independent ledgers — sharing a store between
+    /// them would corrupt node state, so local backends get a
+    /// `<type>/<network>/` layout (e.g. `light-client/testnet/`). `PublicRpc`
+    /// has no local state and uses the bare data dir.
     pub fn node_data_dir(&self) -> PathBuf {
+        let net = self.network.tag();
         match self.node_type {
             NodeType::PublicRpc => self.data_dir.clone(),
-            NodeType::LightClient => self.data_dir.join("light-client"),
-            NodeType::FullNode => self.data_dir.join("full-node"),
+            NodeType::LightClient => self.data_dir.join("light-client").join(net),
+            NodeType::FullNode => self.data_dir.join("full-node").join(net),
         }
     }
 

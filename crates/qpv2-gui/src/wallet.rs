@@ -14,15 +14,6 @@ impl App {
         self.node_config.network == node_manager::NetworkType::Mainnet
     }
 
-    /// Short tag identifying the active network. Used to namespace
-    /// per-network caches like `tx_history_{tag}.json`.
-    pub(crate) fn network_tag(&self) -> &'static str {
-        match self.node_config.network {
-            node_manager::NetworkType::Mainnet => "mainnet",
-            node_manager::NetworkType::Testnet => "testnet",
-        }
-    }
-
     /// Highest committed block number in `tx_history`, or 0 when empty.
     /// Used as `after_block` for the next incremental sync. Derived from
     /// the in-memory vector — no cached state to keep in sync.
@@ -193,7 +184,7 @@ impl App {
     /// or first time on this network) or read failure (corrupted file →
     /// surfaces as a status warning; next sync rebuilds from scratch).
     pub(crate) fn load_tx_history_from_disk(&mut self) {
-        match TxHistoryStore::load(self.network_tag()) {
+        match TxHistoryStore::load(self.node_config.network.tag()) {
             Ok(Some(store)) => {
                 self.tx_history = store.records;
             }

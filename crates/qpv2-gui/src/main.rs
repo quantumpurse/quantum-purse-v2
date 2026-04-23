@@ -1,6 +1,7 @@
 //! GUI for SPHINCS+ key vault with Passkey PRF / Touch ID support.
 
 mod ckb;
+mod light_client;
 #[cfg(target_os = "macos")]
 mod passkey;
 mod poller;
@@ -13,7 +14,7 @@ mod wallet;
 mod window_handle;
 
 use eframe::egui;
-use node_manager::{NodeConfig, NodeManager, NodeType};
+use node_manager::{NodeConfig, NodeManager, NodeProcess, NodeType};
 use qpv2_core::types::SpxVariant;
 use qpv2_core::KeyVault;
 use std::collections::HashMap;
@@ -54,6 +55,13 @@ pub(crate) struct App {
     // the user saves a new config in settings.
     pub(crate) node_config: NodeConfig,
     pub(crate) node_manager: NodeManager,
+
+    // Local CKB node process, if one is currently running. Holds either a
+    // `ckb-light-client` or a `ckb` full-node child. Populated when the
+    // user picks `NodeType::LightClient` (or, later, `FullNode`) in the
+    // node selector and clicks Apply; cleared on lock, node-type switch,
+    // and app quit (via `NodeProcess::Drop`).
+    pub(crate) node_process: Option<NodeProcess>,
 
     // Editable settings fields (buffered until saved).
     pub(crate) settings_rpc_url: String,
@@ -217,6 +225,7 @@ impl App {
             balances: HashMap::new(),
             node_config,
             node_manager,
+            node_process: None,
             settings_rpc_url,
             settings_binary_path,
             settings_data_dir,
