@@ -244,7 +244,7 @@ impl App {
         };
 
         let nm = self.node_manager.clone();
-        let network = self.node_config.network;
+        let network = nm.network();
         let all_lock_args: Vec<String> = self.accounts.clone();
 
         let (sender, rx) = mpsc::channel();
@@ -590,9 +590,10 @@ impl App {
         }
 
         let nm = self.node_manager.clone();
-        let rpc_port = parse_rpc_port(&self.node_config.rpc_url);
-        let data_dir = self.node_config.node_data_dir();
-        let is_local = self.node_config.requires_binary();
+        let cfg = nm.config();
+        let rpc_port = parse_rpc_port(&cfg.rpc_url);
+        let data_dir = cfg.node_data_dir();
+        let is_local = cfg.requires_binary();
         let has_process = self.node_process.is_some();
 
         let (tx, rx) = mpsc::channel();

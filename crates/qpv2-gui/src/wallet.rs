@@ -11,7 +11,7 @@ use crate::App;
 impl App {
     /// Whether the app is configured for CKB mainnet (derived from node config).
     pub(crate) fn is_mainnet(&self) -> bool {
-        self.node_config.network == node_manager::NetworkType::Mainnet
+        self.node_manager.is_mainnet()
     }
 
     /// Highest committed block number in `tx_history`, or 0 when empty.
@@ -57,34 +57,48 @@ impl App {
         self.tx_status = TransactionStatus::Idle;
     }
 
-    /// Called when the node type dropdown changes in settings.
+    /// Called when the node type or network changes in the UI. Refreshes
+    /// `settings_rpc_url` to the default URL for the pending
+    /// `(temp_node_type, temp_network)` pair so the form preview matches
+    /// what the user is about to commit.
     pub(crate) fn on_node_type_changed(&mut self) {
-        let default_url = self.node_config.default_rpc_url().to_string();
-        self.node_config.rpc_url = default_url.clone();
-        self.settings_rpc_url = default_url;
+        self.settings_rpc_url = node_manager::NodeConfig::default_rpc_url_for(
+            self.temp_node_type,
+            self.temp_network,
+        )
+        .to_string();
     }
 
-    /// Apply settings edits, save config to disk, and reconnect the RPC client.
+    /// Apply settings edits, persist to disk, and rebuild `NodeManager`.
+    ///
+    /// Builds the new config from the settings-buffer fields
+    /// (`settings_*`, `temp_*`) on top of the current
+    /// `node_manager.config()` snapshot — there is no separate mutable
+    /// `node_config` on `App`, so this is the only place where an edit
+    /// becomes committed state.
     pub(crate) fn save_node_config(&mut self) {
-        self.node_config.rpc_url = self.settings_rpc_url.clone();
+        let mut new_cfg = self.node_manager.config().clone();
+        new_cfg.node_type = self.temp_node_type;
+        new_cfg.network = self.temp_network;
+        new_cfg.rpc_url = self.settings_rpc_url.clone();
 
-        if self.node_config.requires_binary() && !self.settings_binary_path.is_empty() {
-            self.node_config.binary_path = Some(self.settings_binary_path.clone().into());
-        } else if !self.node_config.requires_binary() {
-            self.node_config.binary_path = None;
+        if new_cfg.requires_binary() && !self.settings_binary_path.is_empty() {
+            new_cfg.binary_path = Some(self.settings_binary_path.clone().into());
+        } else if !new_cfg.requires_binary() {
+            new_cfg.binary_path = None;
         }
 
         if !self.settings_data_dir.is_empty() {
-            self.node_config.data_dir = self.settings_data_dir.clone().into();
+            new_cfg.data_dir = self.settings_data_dir.clone().into();
         }
 
-        if let Err(e) = self.node_config.save() {
+        if let Err(e) = new_cfg.save() {
             self.status = Status::Error(format!("Failed to save config: {}", e));
             return;
         }
 
-        // Rebuild the node manager with the new config.
-        self.node_manager = node_manager::NodeManager::new(self.node_config.clone());
+        // Replace the manager with one bound to the newly-saved config.
+        self.node_manager = node_manager::NodeManager::new(new_cfg);
         self.status = Status::Info("Configuration saved. RPC reconnected.".to_string());
 
         // Refresh balances with new connection.
@@ -185,7 +199,7 @@ impl App {
     /// or first time on this network) or read failure (corrupted file →
     /// surfaces as a status warning; next sync rebuilds from scratch).
     pub(crate) fn load_tx_history_from_disk(&mut self) {
-        match TxHistoryStore::load(self.node_config.network.tag()) {
+        match TxHistoryStore::load(self.node_manager.network().tag()) {
             Ok(Some(store)) => {
                 self.tx_history = store.records;
             }

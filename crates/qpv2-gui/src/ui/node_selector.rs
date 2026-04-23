@@ -174,27 +174,29 @@ impl App {
                         .min_size(egui::vec2(ui.available_width(), 28.0));
 
                         if ui.add(apply_btn).clicked() {
-                            // Check if changes were made
-                            let network_changed = self.temp_network != self.node_config.network;
+                            // Compare the popup's draft (`temp_*`) against
+                            // the currently-committed config. No draft on
+                            // `App` — the committed state lives inside
+                            // `node_manager`.
+                            let current = self.node_manager.config();
+                            let network_changed = self.temp_network != current.network;
                             let node_type_changed =
-                                self.temp_node_type != self.node_config.node_type;
+                                self.temp_node_type != current.node_type;
 
                             if network_changed || node_type_changed {
-                                // Update configuration
-                                self.node_config.network = self.temp_network;
-                                self.node_config.node_type = self.temp_node_type;
-
-                                // Update RPC URL for new configuration
+                                // Refresh the form's RPC URL preview to
+                                // match the new backend before commit.
                                 if node_type_changed {
                                     self.on_node_type_changed();
                                 } else if network_changed
-                                    && self.node_config.node_type == NodeType::PublicRpc
+                                    && self.temp_node_type == NodeType::PublicRpc
                                 {
-                                    // For Public RPC, update URL when network changes
-                                    let default_url =
-                                        self.node_config.default_rpc_url().to_string();
-                                    self.node_config.rpc_url = default_url.clone();
-                                    self.settings_rpc_url = default_url;
+                                    self.settings_rpc_url =
+                                        node_manager::NodeConfig::default_rpc_url_for(
+                                            self.temp_node_type,
+                                            self.temp_network,
+                                        )
+                                        .to_string();
                                 }
 
                                 // Stop any previously-running local node — a
@@ -204,12 +206,22 @@ impl App {
                                     let _ = proc.stop();
                                 }
 
+                                // Commit edits: save to disk + rebuild
+                                // `node_manager` with the new config. Must
+                                // happen before spawn so the spawn helper
+                                // reads the just-committed snapshot.
+                                self.save_node_config();
+
                                 // If the new backend requires a local binary,
                                 // spawn it now. Failure surfaces as a status
                                 // error and leaves `node_process` as None —
                                 // user can retry via Apply.
-                                if self.node_config.node_type == NodeType::LightClient {
-                                    match crate::light_client::spawn(&self.node_config) {
+                                if self.node_manager.config().node_type
+                                    == NodeType::LightClient
+                                {
+                                    match crate::light_client::spawn(
+                                        self.node_manager.config(),
+                                    ) {
                                         Ok(proc) => self.node_process = Some(proc),
                                         Err(e) => {
                                             self.status = Status::Error(format!(
@@ -219,9 +231,6 @@ impl App {
                                         }
                                     }
                                 }
-
-                                // Save and reconnect
-                                self.save_node_config();
 
                                 // Swap the tx-history cache to the new
                                 // network's file. Drop the in-flight sync

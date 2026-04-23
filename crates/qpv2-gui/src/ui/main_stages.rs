@@ -210,7 +210,7 @@ impl App {
                     );
 
                     // Node type
-                    let node_name = match self.node_config.node_type {
+                    let node_name = match self.node_manager.config().node_type {
                         NodeType::PublicRpc => "Public RPC",
                         NodeType::LightClient => "Light Client",
                         NodeType::FullNode => "Full Node",
@@ -235,16 +235,15 @@ impl App {
                     );
 
                     // Network badge
-                    let network = match self.node_config.network {
+                    let network = match self.node_manager.network() {
                         node_manager::NetworkType::Mainnet => "MAIN",
                         node_manager::NetworkType::Testnet => "TEST",
                     };
-                    let network_color =
-                        if self.node_config.network == node_manager::NetworkType::Mainnet {
-                            self.colors.accent
-                        } else {
-                            self.colors.warn
-                        };
+                    let network_color = if self.node_manager.is_mainnet() {
+                        self.colors.accent
+                    } else {
+                        self.colors.warn
+                    };
                     painter.text(
                         egui::pos2(inner.right() - 5.0, row_y),
                         egui::Align2::RIGHT_TOP,
@@ -256,10 +255,13 @@ impl App {
                     // Handle click
                     if response.clicked() {
                         self.node_selector_open = !self.node_selector_open;
-                        // Update temp values when opening
+                        // Seed the popup draft from the committed config
+                        // each time it opens so stale selections from a
+                        // previous (un-applied) session don't leak through.
                         if self.node_selector_open {
-                            self.temp_network = self.node_config.network;
-                            self.temp_node_type = self.node_config.node_type;
+                            let cfg = self.node_manager.config();
+                            self.temp_network = cfg.network;
+                            self.temp_node_type = cfg.node_type;
                         }
                     }
 

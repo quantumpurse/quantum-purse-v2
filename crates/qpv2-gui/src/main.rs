@@ -51,10 +51,11 @@ pub(crate) struct App {
     // Balance cache: lock_args -> balance in shannons (None = not yet fetched).
     pub(crate) balances: HashMap<String, Option<u64>>,
 
-    // Node configuration and the single RPC client shared across UI and
-    // background threads. Built once in `App::new()` and rebuilt only when
-    // the user saves a new config in settings.
-    pub(crate) node_config: NodeConfig,
+    // The single RPC client shared across UI and background threads.
+    // Holds its own immutable config snapshot (`node_manager.config()`).
+    // Rebuilt whenever the user saves a new config in settings — mutation
+    // happens by replacing `node_manager` rather than by editing a side
+    // field, so every background clone always sees a consistent view.
     pub(crate) node_manager: NodeManager,
 
     // Local CKB node process, if one is currently running. Holds either a
@@ -228,7 +229,6 @@ impl App {
             accounts: Vec::new(),
             confirm_remove: false,
             balances: HashMap::new(),
-            node_config,
             node_manager,
             node_process: None,
             settings_rpc_url,

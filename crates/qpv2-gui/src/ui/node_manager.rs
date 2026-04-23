@@ -40,7 +40,7 @@ impl App {
     }
 
     fn draw_backend_card(&self, ui: &mut egui::Ui, backend: NodeType) {
-        let active = self.node_config.node_type == backend;
+        let active = self.node_manager.config().node_type == backend;
 
         let (icon, title, subtitle) = match backend {
             NodeType::LightClient => (
@@ -112,7 +112,7 @@ impl App {
                         self.draw_metric(
                             &mut cols[1],
                             "Endpoint",
-                            hostname_of(&self.node_config.rpc_url),
+                            hostname_of(&self.node_manager.config().rpc_url),
                         );
                         self.draw_metric(
                             &mut cols[2],
@@ -123,7 +123,7 @@ impl App {
                     }
                     (NodeType::PublicRpc, false) => {
                         let url =
-                            NodeConfig::default_rpc_url_for(backend, self.node_config.network);
+                            NodeConfig::default_rpc_url_for(backend, self.node_manager.network());
                         self.draw_metric(&mut cols[0], "Block Height", "—".into());
                         self.draw_metric(&mut cols[1], "Endpoint", hostname_of(url));
                         self.draw_metric(&mut cols[2], "Port", default_port(url));
@@ -153,7 +153,7 @@ impl App {
                     }
                     (NodeType::LightClient, false) => {
                         let url =
-                            NodeConfig::default_rpc_url_for(backend, self.node_config.network);
+                            NodeConfig::default_rpc_url_for(backend, self.node_manager.network());
                         self.draw_metric(&mut cols[0], "Block Height", "—".into());
                         self.draw_metric(&mut cols[1], "Peers", "—".into());
                         self.draw_metric(&mut cols[2], "RPC Port", default_port(url));
