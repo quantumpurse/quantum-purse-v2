@@ -44,8 +44,7 @@ pub struct PreparedCell {
 
 /// Queries all DAO cells for an address and partitions them into deposited and
 /// prepared cells.
-// TODO: rename to `categorize_dao_cells` (current name is a typo).
-pub fn categozire_dao_cells(
+pub fn categorize_dao_cells(
     rpc: &dyn CkbRpc,
     address: &Address,
 ) -> Result<(Vec<DepositedCell>, Vec<PreparedCell>), NodeManagerError> {

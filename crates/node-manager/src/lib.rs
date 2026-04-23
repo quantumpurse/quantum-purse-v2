@@ -72,7 +72,7 @@ impl NodeManager {
         &self,
         address: &ckb_sdk::Address,
     ) -> Result<(Vec<DepositedCell>, Vec<PreparedCell>), NodeManagerError> {
-        queries::categozire_dao_cells(self.rpc.as_ref(), address)
+        queries::categorize_dao_cells(self.rpc.as_ref(), address)
     }
 
     /// Total balance (in shannons) for the QuantumPurse lock with the given
