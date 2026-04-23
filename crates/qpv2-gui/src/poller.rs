@@ -409,11 +409,20 @@ impl App {
                     self.tx_history.push(record);
                 }
                 Ok(Ok(TxHistoryEvent::Done)) => {
-                    // Sort by block number descending and deduplicate by tx hash.
-                    self.tx_history
-                        .sort_by(|a, b| b.block_number.cmp(&a.block_number));
-                    self.tx_history.dedup_by(|a, b| a.tx_hash == b.tx_hash);
                     self.tx_history_rx = None;
+                    
+                    // Persist the new snapshot so a restart can render
+                    // instantly and the next sync only pulls blocks above
+                    // the derived watermark. Scoped to the active network
+                    // so mainnet and testnet caches can't cross-contaminate.
+                    // A write failure here is non-fatal — the next tick
+                    // will save the same state again.
+                    let store = crate::tx_history_store::TxHistoryStore {
+                        records: self.tx_history.clone(),
+                    };
+                    if let Err(e) = store.save(self.network_tag()) {
+                        eprintln!("tx_history: failed to persist: {}", e);
+                    }
                     break;
                 }
                 Ok(Err(e)) => {

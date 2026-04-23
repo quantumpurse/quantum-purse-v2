@@ -199,6 +199,17 @@ impl App {
 
                                 // Save and reconnect
                                 self.save_node_config();
+
+                                // Swap the tx-history cache to the new
+                                // network's file. Drop the in-flight sync
+                                // receiver first so the pending thread (still
+                                // querying the previous network) can't land
+                                // its results under the new file on `Done`.
+                                if network_changed {
+                                    self.tx_history_rx = None;
+                                    self.load_tx_history_from_disk();
+                                }
+
                                 self.status = Status::Info("Connecting...".to_string());
                             }
 

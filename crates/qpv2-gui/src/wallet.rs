@@ -4,6 +4,7 @@ use qpv2_core::types::{AuthKey, AuthMethod, SpxVariant};
 use qpv2_core::KeyVault;
 
 use crate::passkey::{PRF_SALT, RP_ID};
+use crate::tx_history_store::TxHistoryStore;
 use crate::types::{PasskeyOp, Screen, Status, Tab, TransactionStatus};
 use crate::App;
 
@@ -11,6 +12,27 @@ impl App {
     /// Whether the app is configured for CKB mainnet (derived from node config).
     pub(crate) fn is_mainnet(&self) -> bool {
         self.node_config.network == node_manager::NetworkType::Mainnet
+    }
+
+    /// Short tag identifying the active network. Used to namespace
+    /// per-network caches like `tx_history_{tag}.json`.
+    pub(crate) fn network_tag(&self) -> &'static str {
+        match self.node_config.network {
+            node_manager::NetworkType::Mainnet => "mainnet",
+            node_manager::NetworkType::Testnet => "testnet",
+        }
+    }
+
+    /// Highest committed block number in `tx_history`, or 0 when empty.
+    /// Used as `after_block` for the next incremental sync. Derived from
+    /// the in-memory vector — no cached state to keep in sync.
+    pub(crate) fn tx_history_watermark(&self) -> u64 {
+        self.tx_history
+            .iter()
+            .filter(|r| !r.is_pending)
+            .map(|r| r.block_number)
+            .max()
+            .unwrap_or(0)
     }
 
     /// Lock the wallet: clear sensitive state and return to the Locked screen.
@@ -21,6 +43,17 @@ impl App {
         self.active_tab = Tab::Dashboard;
         self.screen = Screen::Locked;
         self.status = Status::None;
+
+        // Drop the receiver *before* clearing in-memory state. If we don't,
+        // an in-flight sync thread's late `Done` event would repopulate
+        // `tx_history` and — worse — write it back to disk, undoing both
+        // lock and a subsequent `clear_database()`. Dropping the receiver
+        // also short-circuits `poll_tx_history()`. The background thread
+        // exits on its next `send(...)` (channel disconnected).
+        self.tx_history_rx = None;
+        // Drop the in-memory tx history; the on-disk file is kept so the
+        // next unlock can reload it instantly.
+        self.tx_history.clear();
 
         // Clear form state so stale values don't persist across sessions.
         self.transfer_recipient.clear();
@@ -141,6 +174,7 @@ impl App {
                 self.screen = Screen::Unlocked;
                 self.status = Status::Info("Wallet created successfully!".to_string());
                 self.last_poll_time = std::time::Instant::now();
+                self.load_tx_history_from_disk();
                 self.fetch_all_balances();
                 self.fetch_tx_history(true);
                 self.fetch_dao_cells();
@@ -148,6 +182,28 @@ impl App {
             Err(e) => {
                 self.status = Status::Error(format!("Failed to read accounts: {}", e));
                 self.screen = Screen::Locked;
+            }
+        }
+    }
+
+    /// Seeds `tx_history` from the active network's on-disk cache so the
+    /// dashboard renders instantly on unlock instead of waiting for the
+    /// first sync tick. The incremental-sync floor (`tx_history_watermark`)
+    /// is derived from the loaded records. Silent on absence (fresh wallet
+    /// or first time on this network) or read failure (corrupted file →
+    /// surfaces as a status warning; next sync rebuilds from scratch).
+    pub(crate) fn load_tx_history_from_disk(&mut self) {
+        match TxHistoryStore::load(self.network_tag()) {
+            Ok(Some(store)) => {
+                self.tx_history = store.records;
+            }
+            Ok(None) => {
+                self.tx_history.clear();
+            }
+            Err(e) => {
+                self.tx_history.clear();
+                self.status =
+                    Status::Error(format!("Failed to read cached tx history: {}", e));
             }
         }
     }
@@ -187,6 +243,7 @@ impl App {
                 self.screen = Screen::Unlocked;
                 self.status = Status::None;
                 self.last_poll_time = std::time::Instant::now();
+                self.load_tx_history_from_disk();
                 self.fetch_all_balances();
                 self.fetch_tx_history(true);
                 self.fetch_dao_cells();

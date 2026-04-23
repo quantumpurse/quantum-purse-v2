@@ -41,6 +41,17 @@ fn get_wallet_info_path() -> Result<PathBuf, KeyVaultDBError> {
     Ok(get_data_dir()?.join("wallet_info.json"))
 }
 
+/// Gets the path to the persisted transaction history file for a given
+/// network. The cache is namespaced per network (e.g. `tx_history_mainnet.json`,
+/// `tx_history_testnet.json`) so switching networks can't leak records — or
+/// a stale watermark — from one chain onto another.
+///
+/// Public so the GUI can read/write its own schema without going through
+/// `KeyVault`. The core crate does not parse this file.
+pub fn get_tx_history_path(network_tag: &str) -> Result<PathBuf, KeyVaultDBError> {
+    Ok(get_data_dir()?.join(format!("tx_history_{}.json", network_tag)))
+}
+
 /// Stores the encrypted master seed in the file system.
 ///
 /// **Parameters**:
@@ -204,6 +215,25 @@ pub fn clear_wallet_info() -> Result<(), KeyVaultDBError> {
     let path = get_wallet_info_path()?;
     if path.exists() {
         fs::remove_file(path)?;
+    }
+    Ok(())
+}
+
+/// Clears every per-network transaction history file under the data
+/// directory.
+///
+/// Called by `KeyVault::clear_database()` so removing the wallet also wipes
+/// cached tx history for all networks — we can't know which ones the user
+/// interacted with.
+pub fn clear_tx_history() -> Result<(), KeyVaultDBError> {
+    let dir = get_data_dir()?;
+    for entry in fs::read_dir(&dir)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(name_str) = name.to_str() else { continue };
+        if name_str.starts_with("tx_history_") && name_str.ends_with(".json") {
+            fs::remove_file(entry.path())?;
+        }
     }
     Ok(())
 }

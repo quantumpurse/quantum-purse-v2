@@ -2,6 +2,7 @@
 
 use eframe::egui;
 use qpv2_core::types::SpxVariant;
+use serde::{Deserialize, Serialize};
 
 /// Computes the SPHINCS+ witness lock size for a given variant.
 ///
@@ -56,7 +57,7 @@ pub(crate) enum DaoQueryEvent {
 }
 
 /// Classification of a transaction from the wallet's perspective.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub(crate) enum TxKind {
     Incoming,
     Outgoing,
@@ -66,7 +67,7 @@ pub(crate) enum TxKind {
 }
 
 /// A resolved transaction record for display on the dashboard.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct TxRecord {
     pub tx_hash: String,
     pub tx_kind: TxKind,
@@ -88,6 +89,9 @@ pub(crate) struct TxRecord {
 /// Streaming event from the transaction history background thread.
 pub(crate) enum TxHistoryEvent {
     Record(TxRecord),
+    /// Emitted when the sync thread has no more records to stream. The
+    /// watermark is derived from the merged `tx_history` vector, so no
+    /// payload is needed here.
     Done,
 }
 

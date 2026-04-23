@@ -4240,6 +4240,8 @@ dependencies = [
  "passkey-prf",
  "qpv2-core",
  "raw-window-handle",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

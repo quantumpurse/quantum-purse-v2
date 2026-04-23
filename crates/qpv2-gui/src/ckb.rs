@@ -1,7 +1,9 @@
 //! Background data fetchers (balances, DAO cells, spendable capacity, tx history).
 
 use std::collections::{HashMap, HashSet};
+use std::fmt::Display;
 use std::sync::mpsc;
+use std::time::Duration;
 
 use qpv2_core::constants::{
     CKB_MAINNET_CODE_HASH, CKB_MAINNET_HASH_TYPE, CKB_TESTNET_CODE_HASH, CKB_TESTNET_HASH_TYPE,
@@ -11,6 +13,43 @@ use crate::types::{
     DaoQueryEvent, SpendableCapacityTarget, TransactionStatus, TxHistoryEvent, TxKind, TxRecord,
 };
 use crate::App;
+
+/// Initial backoff between retry attempts on a transient RPC failure.
+const RETRY_BASE_DELAY: Duration = Duration::from_millis(500);
+/// Cap on the exponential backoff.
+const RETRY_MAX_DELAY: Duration = Duration::from_secs(30);
+
+/// Retries `f` forever with exponential backoff (capped at
+/// `RETRY_MAX_DELAY`) until it returns `Ok(Some(v))`. Both `Err(_)` and
+/// `Ok(None)` are treated as "try again" and logged distinctly.
+///
+/// Callers that can never produce a legitimate `None` (e.g. the indexer
+/// returning `Vec<Tx>`) adapt with `.map(Some)`. Callers that do
+/// (`get_transaction`, `get_header`) pass their `Result<Option<T>, _>`
+/// through unchanged.
+///
+/// Used by the tx-history sync thread so a transient public-RPC failure
+/// never drops a tx silently. See `BACKLOG.md` ("Reorg handling") for the
+/// cancellation story once reorg-aware sync lands.
+fn retry_until_ready<T, E: Display>(
+    tag: &str,
+    mut f: impl FnMut() -> Result<Option<T>, E>,
+) -> T {
+    let mut delay = RETRY_BASE_DELAY;
+    loop {
+        match f() {
+            Ok(Some(v)) => return v,
+            Ok(None) => {
+                eprintln!("tx history: {} returned None, retrying in {:?}", tag, delay);
+            }
+            Err(e) => {
+                eprintln!("tx history: {} failed ({}), retrying in {:?}", tag, e, delay);
+            }
+        }
+        std::thread::sleep(delay);
+        delay = (delay * 2).min(RETRY_MAX_DELAY);
+    }
+}
 
 /// Converts a hex-encoded wallet lock_args to a bech32m CKB address (post-2021 format).
 ///
@@ -193,13 +232,11 @@ impl App {
             return;
         }
 
-        // In incremental mode, only fetch transactions after the latest known block.
+        // Incremental mode uses the current watermark (derived from
+        // `tx_history`). A cold fetch clears memory so everything is
+        // re-materialized from block 0.
         let after_block = if incremental {
-            self.tx_history
-                .iter()
-                .filter(|r| !r.is_pending)
-                .map(|r| r.block_number)
-                .max()
+            Some(self.tx_history_watermark())
         } else {
             self.tx_history.clear();
             None
@@ -257,13 +294,13 @@ impl App {
             for lock_args in &all_lock_args {
                 // With group_by_transaction=true, each result is one unique tx.
                 // Paginates through all results; merged and deduped across accounts.
-                let txs = match nm.fetch_recent_transactions(lock_args, after_block, None) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        let _ = sender.send(Err(format!("Failed to fetch tx history: {}", e)));
-                        continue;
-                    }
-                };
+                // Retries transient indexer failures — we must never skip an
+                // account silently because a dropped page becomes a permanently
+                // missing tx once the watermark advances.
+                let txs = retry_until_ready(
+                    &format!("fetch_recent_transactions | lock_args=0x{} | after_block={}", lock_args, after_block.map_or("none".to_string(), |b| b.to_string())),
+                    || nm.fetch_recent_transactions(lock_args, after_block, None).map(Some),
+                );
 
                 for tx_entry in txs {
                     let tx_hash = format!("{:#x}", tx_entry.tx_hash());
@@ -329,33 +366,47 @@ impl App {
                     _ => continue,
                 };
 
-                let tx_status = match nm.rpc.get_transaction(tx_hash_bytes) {
-                    Ok(Some(s)) => s,
-                    _ => continue,
-                };
+                // Retry until we get a concrete tx_status. The indexer
+                // just handed us this hash; `Ok(None)` means the node hasn't
+                // caught up to its own indexer or is briefly unhappy — retry.
+                let tx_hash_key = tx_hash_bytes.clone();
+                let tx_status = retry_until_ready(
+                    &format!("get_transaction tx_hash={:#x}", tx_hash_key),
+                    || nm.rpc.get_transaction(tx_hash_bytes.clone()),
+                );
 
                 let is_pending = tx_status.status != "Committed" && tx_status.status != "committed";
 
+                // A committed tx must have a transaction view. If it's missing
+                // we want to retry rather than drop — so re-poll until it lands.
+                // (For pending txs this is valid too: they should at least be
+                // returned by the node.)
                 let tx_view = match tx_status.transaction {
                     Some(tv) => tv,
-                    None => continue,
+                    None => retry_until_ready(
+                        &format!("get_transaction.tx_view tx_hash={:#x}", tx_hash_key),
+                        || {
+                            nm.rpc
+                                .get_transaction(tx_hash_bytes.clone())
+                                .map(|opt| opt.and_then(|s| s.transaction))
+                        },
+                    ),
                 };
 
-                // Determine timestamp from block header.
+                // Determine timestamp from block header. Retry until the
+                // header resolves — we need a stable timestamp to avoid
+                // rewriting the stored record on the next tick.
                 let timestamp = if let Some(ref bh) = tx_status.block_hash {
                     if let Some(&cached) = header_cache.get(bh) {
                         cached
                     } else {
-                        let ts = nm
-                            .rpc
-                            .get_header(bh.clone())
-                            .ok()
-                            .flatten()
-                            .map(|h| {
-                                // CKB header timestamp is in milliseconds.
-                                h.inner.timestamp.value() / 1000
-                            })
-                            .unwrap_or(0);
+                        let bh_clone = bh.clone();
+                        let header = retry_until_ready(
+                            &format!("get_header block_hash={:#x}", bh_clone),
+                            || nm.rpc.get_header(bh_clone.clone()),
+                        );
+                        // CKB header timestamp is in milliseconds.
+                        let ts = header.inner.timestamp.value() / 1000;
                         header_cache.insert(bh.clone(), ts);
                         ts
                     }

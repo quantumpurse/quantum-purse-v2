@@ -120,6 +120,7 @@ impl KeyVault {
         db::clear_master_seed().map_err(|e| e.to_string())?;
         db::clear_accounts().map_err(|e| e.to_string())?;
         db::clear_wallet_info().map_err(|e| e.to_string())?;
+        db::clear_tx_history().map_err(|e| e.to_string())?;
         Ok(())
     }
 

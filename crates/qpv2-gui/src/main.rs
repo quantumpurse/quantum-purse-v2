@@ -5,6 +5,7 @@ mod ckb;
 mod passkey;
 mod poller;
 mod transactor;
+mod tx_history_store;
 mod types;
 mod ui;
 mod wallet;
@@ -102,6 +103,8 @@ pub(crate) struct App {
     pub(crate) dao_deposit_all: bool,
 
     // Recent transaction history for the dashboard.
+    // The incremental-sync floor is derived from this vector on demand —
+    // see `App::tx_history_watermark()`.
     pub(crate) tx_history: Vec<TxRecord>,
     pub(crate) tx_history_rx: Option<mpsc::Receiver<Result<TxHistoryEvent, String>>>,
 
@@ -279,26 +282,19 @@ impl App {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        // Auto-clear any stale status banner.
-        self.tick_status(ctx);
-
         // Poll passkey operations each frame.
         #[cfg(target_os = "macos")]
         self.poll_passkey_ops();
 
-        // Drain balance results from the background thread.
-        self.poll_all_balances();
-        self.poll_spendable_capacity();
-
-        // Poll shared transaction build/send channels.
-        self.poll_transaction_build(frame);
-        self.poll_transaction_send();
-
-        // Poll DAO-specific channels.
-        self.poll_dao_cells();
-
-        // Poll transaction history.
-        self.poll_tx_history();
+        if self.screen == Screen::Unlocked {
+            self.tick_status(ctx);
+            self.poll_all_balances();
+            self.poll_spendable_capacity();
+            self.poll_transaction_build(frame);
+            self.poll_transaction_send();
+            self.poll_dao_cells();
+            self.poll_tx_history();
+        }
 
         // Periodic refresh of balances, transaction history, and DAO cells.
         // todo verify if other pollings needs this condition.
