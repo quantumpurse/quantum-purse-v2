@@ -34,13 +34,30 @@ impl App {
 
         // ── Balance hero card (full width) ──
         egui::Frame::new()
-            .fill(egui::Color32::from_rgba_unmultiplied(0, 255, 180, 8))
+            .fill(egui::Color32::from_rgb(10, 24, 24))
             .corner_radius(20.0)
             .outer_margin(egui::Margin::symmetric(30, 0))
             .inner_margin(egui::Margin::symmetric(34, 30))
             .stroke(egui::Stroke::new(1.0, self.colors.border2))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
+
+                // Inner accent glow — four concentric low-alpha discs
+                // anchored near the top-left corner of the card.
+                // Painted before content so the balance numbers land on
+                // top, and clipped naturally by egui to the card's
+                // rounded bounds.
+                let card_rect = ui.clip_rect();
+                let glow_center = egui::pos2(card_rect.left() + 80.0, card_rect.top() + 40.0);
+                let glow_base = card_rect.width().min(card_rect.height()) * 0.55;
+                let painter = ui.painter();
+                for (scale, alpha) in [(1.00, 3), (0.70, 4), (0.45, 5), (0.22, 7)] {
+                    painter.circle_filled(
+                        glow_center,
+                        glow_base * scale,
+                        egui::Color32::from_rgba_unmultiplied(0, 255, 180, alpha),
+                    );
+                }
 
                 ui.label(
                     egui::RichText::new("TOTAL BALANCE")

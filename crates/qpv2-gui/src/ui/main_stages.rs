@@ -37,16 +37,24 @@ impl App {
                 .show(ui, |ui| {
                     ui.set_max_width(400.0);
 
-                    ui.label(egui::RichText::new("Create New Wallet").size(20.0).strong());
+                    ui.vertical_centered(|ui| {
+                        ui.label(
+                            egui::RichText::new("Create New Wallet")
+                                .size(20.0)
+                                .strong(),
+                        );
+                    });
 
                     ui.add_space(24.0);
 
                     ui.label("Select SPHINCS+ variant:");
                     ui.add_space(8.0);
 
+                    let field_width = ui.available_width();
+
                     egui::ComboBox::from_id_salt("variant")
                         .selected_text(format!("{}", self.selected_variant))
-                        .width(350.0)
+                        .width(field_width)
                         .show_ui(ui, |ui| {
                             for variant in &[
                                 SpxVariant::Sha2128S,
@@ -83,10 +91,11 @@ impl App {
                         } else {
                             "Create with Touch ID"
                         })
-                        .size(16.0),
+                        .size(16.0)
+                        .color(self.colors.bg),
                     )
                     .fill(self.colors.accent)
-                    .min_size(egui::vec2(350.0, 48.0));
+                    .min_size(egui::vec2(field_width, 48.0));
 
                     if ui.add_enabled(!is_busy, button).clicked() {
                         self.create_wallet_start(frame);
@@ -94,7 +103,8 @@ impl App {
                 });
 
             ui.add_space(24.0);
-            self.show_status(ui);
+            // Center the status row to match the rest of the page.
+            ui.vertical_centered(|ui| self.show_status(ui));
         });
     }
 
@@ -468,7 +478,8 @@ impl App {
                 } else {
                     "Unlock with Touch ID"
                 })
-                .size(16.0),
+                .size(16.0)
+                .color(self.colors.bg),
             )
             .fill(self.colors.accent2)
             .min_size(egui::vec2(280.0, 48.0));
@@ -478,7 +489,9 @@ impl App {
             }
 
             ui.add_space(24.0);
-            self.show_status(ui);
+            // Nest in a centered layout so the status row lines up with
+            // the rest of the page instead of flushing left.
+            ui.vertical_centered(|ui| self.show_status(ui));
         });
     }
 }
