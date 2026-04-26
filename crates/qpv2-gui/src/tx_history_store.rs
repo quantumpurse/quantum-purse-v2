@@ -1,6 +1,6 @@
 //! Persistent transaction-history store.
 //!
-//! Serialized to `~/Desktop/quantum-purse/tx_history.json` via
+//! Serialized to `<data_dir>/tx_history_<network>.json` via
 //! `qpv2_core::db::get_tx_history_path()`. Survives app restarts so the
 //! dashboard can render instantly on unlock and the periodic sync only
 //! pulls new blocks.

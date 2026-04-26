@@ -7,18 +7,24 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
-/// Gets the data directory path for the key vault
+/// Gets the data directory path for the key vault.
+///
+/// Resolves to the platform-standard application data directory, sharing a
+/// root with `node-manager`'s node data (`<root>/node/...`) so all
+/// QuantumPurse persistent state lives in one OS-managed location:
+/// - macOS: `~/Library/Application Support/quantum-purse/`
+/// - Linux: `~/.local/share/quantum-purse/`
+/// - Windows: `%APPDATA%\quantum-purse\`
 ///
 /// **Returns**:
 /// - `Result<PathBuf, KeyVaultDBError>` - The data directory path on success, or an error if it cannot be determined.
 pub fn get_data_dir() -> Result<PathBuf, KeyVaultDBError> {
-    let home_dir = dirs::home_dir().ok_or_else(|| {
-        KeyVaultDBError::DatabaseError("Cannot determine home directory".to_string())
+    let base = dirs::data_dir().ok_or_else(|| {
+        KeyVaultDBError::DatabaseError("Cannot determine platform data directory".to_string())
     })?;
 
-    let data_dir = home_dir.join("Desktop/quantum-purse");
+    let data_dir = base.join("quantum-purse");
 
-    // Create directory if it doesn't exist
     if !data_dir.exists() {
         fs::create_dir_all(&data_dir)?;
     }
