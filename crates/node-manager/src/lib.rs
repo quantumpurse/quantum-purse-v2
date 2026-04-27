@@ -242,19 +242,32 @@ impl NodeManager {
     }
 
     /// Registers one or more wallet lock scripts with the light client's
-    /// indexer, all anchored at the current chain tip. Fresh accounts
-    /// have no history below tip, so using tip means the LC starts
-    /// tracking any future funding tx immediately without rescanning
-    /// old blocks.
+    /// indexer in a single `set_scripts` call. Empty input is a no-op.
+    /// Errors when called against a non-LightClient backend — that's a
+    /// caller bug, not a runtime condition (full nodes / public RPC
+    /// index every cell and don't need this call). Callers that need
+    /// per-account start blocks (e.g. importing an existing wallet with
+    /// funded history) can call `LightClientRpc::register_lock_scripts`
+    /// directly on a downcasted reference.
     ///
-    /// All entries share a single `set_scripts` call. Empty input is a
-    /// no-op. Errors when called against a non-LightClient backend —
-    /// that's a caller bug, not a runtime condition (full nodes /
-    /// public RPC index every cell and don't need this call). Callers
-    /// that need different start blocks per script (e.g. importing an
-    /// existing wallet with funded history) can call
-    /// `LightClientRpc::register_lock_scripts` directly on a downcasted
-    /// reference.
+    /// Start-block policy
+    /// ------------------
+    /// - **First time on this LC** (`get_scripts` returns empty): anchor
+    ///   every entry at `0`. Triggers a full rescan from genesis —
+    ///   slow but correct. Handles the "user used PublicRpc, funded an
+    ///   account, then switched to LC" case: pre-switch deposits live
+    ///   below current tip and would be missed if we anchored at tip.
+    /// - **LC already has entries** (returning to a network the LC has
+    ///   seen before, or adding a new account to a running LC): anchor
+    ///   new entries at `tip`. Already-tracked accounts are filtered
+    ///   out by `LightClientRpc::register_lock_scripts` so their
+    ///   existing sync cursors stay put.
+    ///
+    /// Note: `get_tip_header` against a freshly-spawned LC returns the
+    /// genesis header (block 0) until peer headers arrive, so anchoring
+    /// at "tip" right after spawn would also yield 0 by accident. The
+    /// explicit branch below makes the behavior deterministic instead
+    /// of relying on that timing.
     pub fn register_lock_scripts(
         &self,
         lock_args_list: &[String],
@@ -268,10 +281,16 @@ impl NodeManager {
         if lock_args_list.is_empty() {
             return Ok(());
         }
-        let tip = light.get_tip_header()?.inner.number.value();
+
+        let start_block = if light.get_scripts()?.is_empty() {
+            0
+        } else {
+            light.get_tip_header()?.inner.number.value()
+        };
+
         let scripts: Vec<(&str, u64)> = lock_args_list
             .iter()
-            .map(|a| (a.as_str(), tip))
+            .map(|a| (a.as_str(), start_block))
             .collect();
         light.register_lock_scripts(&scripts, self.config.network)
     }
