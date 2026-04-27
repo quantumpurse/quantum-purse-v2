@@ -235,6 +235,13 @@ impl App {
                                             e
                                         ));
                                     }
+                                    // Re-register every account on the
+                                    // freshly-spawned LC. Anchored at tip
+                                    // — historical txs below tip aren't
+                                    // recovered (Phase A's per-account
+                                    // start-block work covers that).
+                                    let accounts = self.accounts.clone();
+                                    self.register_lock_scripts_with_light_client(&accounts);
                                 }
 
                                 // Swap the tx-history cache to the new
