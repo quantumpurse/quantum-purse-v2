@@ -120,6 +120,9 @@ pub(crate) struct NodeStatus {
     pub db_size_bytes: Option<u64>,
     /// RPC port parsed from `config.rpc_url`.
     pub rpc_port: Option<u16>,
+    /// Min synced block across all registered scripts (light client only).
+    /// `None` for PublicRpc/FullNode and when no scripts are registered.
+    pub synced_block: Option<u64>,
     /// True when the most recent poll reached the node successfully.
     pub online: bool,
 }

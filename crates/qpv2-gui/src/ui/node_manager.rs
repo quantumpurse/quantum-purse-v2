@@ -102,7 +102,10 @@ impl App {
                 ui.add_space(18.0);
 
                 // Metric row — live for active, static for inactive.
-                ui.columns(4, |cols| match (backend, active) {
+                // LightClient gets a 5th column ("Synced") so the user
+                // can see how far the indexer has caught up.
+                let cols_count = if backend == NodeType::LightClient { 5 } else { 4 };
+                ui.columns(cols_count, |cols| match (backend, active) {
                     (NodeType::PublicRpc, true) => {
                         self.draw_metric(
                             &mut cols[0],
@@ -137,16 +140,21 @@ impl App {
                         );
                         self.draw_metric(
                             &mut cols[1],
+                            "Synced",
+                            block_height_text(self.node_status.synced_block),
+                        );
+                        self.draw_metric(
+                            &mut cols[2],
                             "Peers",
                             peers_text(self.node_status.peer_count),
                         );
                         self.draw_metric(
-                            &mut cols[2],
+                            &mut cols[3],
                             "RPC Port",
                             port_text(self.node_status.rpc_port),
                         );
                         self.draw_metric(
-                            &mut cols[3],
+                            &mut cols[4],
                             "DB Size",
                             db_size_text(self.node_status.db_size_bytes),
                         );
@@ -155,9 +163,10 @@ impl App {
                         let url =
                             NodeConfig::default_rpc_url_for(backend, self.node_manager.network());
                         self.draw_metric(&mut cols[0], "Block Height", "—".into());
-                        self.draw_metric(&mut cols[1], "Peers", "—".into());
-                        self.draw_metric(&mut cols[2], "RPC Port", default_port(url));
-                        self.draw_metric(&mut cols[3], "DB Size", "—".into());
+                        self.draw_metric(&mut cols[1], "Synced", "—".into());
+                        self.draw_metric(&mut cols[2], "Peers", "—".into());
+                        self.draw_metric(&mut cols[3], "RPC Port", default_port(url));
+                        self.draw_metric(&mut cols[4], "DB Size", "—".into());
                     }
                     // FullNode path stays invisible until the backend is
                     // implemented; skip the card entirely rather than

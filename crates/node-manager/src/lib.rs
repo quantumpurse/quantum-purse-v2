@@ -190,6 +190,26 @@ impl NodeManager {
         Ok(None)
     }
 
+    /// Minimum synced block across every script registered with the
+    /// light client. `Ok(None)` outside `LightClient` (PublicRpc / FullNode
+    /// index everything; the concept doesn't apply) and when no scripts
+    /// are registered yet.
+    ///
+    /// Per the upstream LC behavior, every script's stored block_number
+    /// advances to the current sync front once sync passes its anchor;
+    /// scripts whose start_block is still ahead of sync show their own
+    /// anchor. Taking the **min** is therefore the most honest "how far
+    /// has the light client got" — it equals the sync front in steady
+    /// state and reveals "we still haven't reached every script's start"
+    /// in the transient.
+    pub fn synced_block(&self) -> Result<Option<u64>, NodeManagerError> {
+        let Some(light) = self.rpc.as_any().downcast_ref::<rpc::LightClientRpc>() else {
+            return Ok(None);
+        };
+        let scripts = light.get_scripts()?;
+        Ok(scripts.iter().map(|s| s.block_number.value()).min())
+    }
+
     /// Registers a wallet lock script with the light client's indexer,
     /// anchored at the current chain tip. Fresh accounts have no history
     /// below tip, so using tip means the light client starts tracking

@@ -610,6 +610,10 @@ impl App {
             // Peer count — None for PublicRpc by design.
             let peer_count = nm.peer_count().ok().flatten();
 
+            // Synced block — None for PublicRpc/FullNode and when no
+            // scripts are registered yet (fresh light client).
+            let synced_block = nm.synced_block().ok().flatten();
+
             // DB size — only meaningful for local backends. Treat walk
             // failures as "not available" rather than propagating; the
             // directory may not exist yet on a fresh spawn.
@@ -624,6 +628,7 @@ impl App {
                 peer_count,
                 db_size_bytes,
                 rpc_port,
+                synced_block,
                 online,
             };
             let _ = tx.send(Ok(status) as NodeStatusUpdate);
