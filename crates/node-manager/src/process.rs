@@ -1,7 +1,8 @@
-use crate::config::{NodeConfig, NodeType};
+use crate::config::{NetworkType, NodeConfig, NodeType};
 use crate::error::NodeManagerError;
 use std::fs::File;
 use std::net::TcpStream;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -15,210 +16,170 @@ const POLL_INTERVAL: Duration = Duration::from_millis(500);
 /// How long to wait for the node to exit gracefully before sending SIGKILL.
 const SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(5);
 
-/// Manages the lifecycle of a local CKB node process.
-///
-/// Only applicable for `NodeType::LightClient` and `NodeType::FullNode`.
-/// For `NodeType::PublicRpc`, no process management is needed.
-pub struct NodeProcess {
-    child: Child,
-    node_type: NodeType,
+/// Upstream light-client configs embedded at compile time. On first run
+/// (or when the user deletes the file) one of these is written to
+/// `<data_dir>/config.toml` with the relative `[store]` / `[network]`
+/// paths rewritten to absolute paths inside the per-network directory.
+const TESTNET_TEMPLATE: &str =
+    include_str!("../../../vendor/ckb-light-client/config/testnet.toml");
+const MAINNET_TEMPLATE: &str =
+    include_str!("../../../vendor/ckb-light-client/config/mainnet.toml");
+
+// ── Trait ────────────────────────────────────────────────────────────────
+
+/// Lifecycle of a local CKB node process. Shared shape across the
+/// supported backends. Construction is per-impl via `start(&NodeConfig)`;
+/// the post-construction surface is what `dyn NodeProcess` exposes.
+pub trait NodeProcess: Send {
+    /// Spawn the binary, materialize any required on-disk config, and
+    /// wait until the RPC port is reachable. Each impl picks its own
+    /// binary discovery + config-prep strategy.
+    ///
+    /// `where Self: Sized` keeps the trait object-safe — `start` is part
+    /// of the contract every impl must satisfy, but cannot be dispatched
+    /// through `dyn NodeProcess`.
+    fn start(config: &NodeConfig) -> Result<Self, NodeManagerError>
+    where
+        Self: Sized;
+
+    /// Graceful stop (SIGTERM + grace + SIGKILL on Unix; immediate kill
+    /// elsewhere). Called best-effort by `Drop`.
+    fn stop(&mut self) -> Result<(), NodeManagerError>;
+
+    /// `true` if the child hasn't exited yet. Not a strict liveness
+    /// check — the RPC is the authoritative signal.
+    fn is_running(&mut self) -> bool;
+
+    /// `NodeType` this process was started for.
+    fn node_type(&self) -> NodeType;
 }
 
-impl NodeProcess {
-    /// Spawns the node binary as a child process and waits for its RPC endpoint to become reachable.
-    ///
-    /// Returns an error if `config.node_type` is `PublicRpc`, if `binary_path` is `None`,
-    /// or if the binary does not exist at the configured path.
-    pub fn start(config: &NodeConfig) -> Result<Self, NodeManagerError> {
-        if !config.requires_binary() {
+// ── LightClientProcess ───────────────────────────────────────────────────
+
+/// Local `ckb-light-client` child process. Owns the binary discovery and
+/// `config.toml` materialization that previously lived in a separate
+/// `light_client_spawn` module.
+pub struct LightClientProcess {
+    child: Child,
+}
+
+impl NodeProcess for LightClientProcess {
+    fn start(config: &NodeConfig) -> Result<Self, NodeManagerError> {
+        if config.node_type != NodeType::LightClient {
             return Err(NodeManagerError::UnsupportedOperation {
                 node_type: config.node_type.to_string(),
-                reason: "PublicRpc does not require a local process.".to_string(),
+                reason: "LightClientProcess::start called with non-LightClient config."
+                    .to_string(),
             });
         }
 
-        let binary_path =
-            config
-                .binary_path
-                .as_ref()
-                .ok_or_else(|| NodeManagerError::BinaryNotFound {
-                    path: "<not configured>".to_string(),
-                    reason: "No binary path configured.".to_string(),
-                })?;
+        let data_dir = config.node_data_dir();
+        std::fs::create_dir_all(&data_dir)?;
 
-        if !binary_path.exists() {
-            return Err(NodeManagerError::BinaryNotFound {
-                path: binary_path.display().to_string(),
-                reason: "File does not exist.".to_string(),
-            });
-        }
+        ensure_light_client_config_file(config, &data_dir)?;
 
-        // Ensure the node data directory exists.
-        let node_data_dir = config.node_data_dir();
-        if !node_data_dir.exists() {
-            std::fs::create_dir_all(&node_data_dir)?;
-        }
+        let binary = locate_light_client_binary(config)?;
+        let config_path = data_dir.join("config.toml");
+        let log_path = data_dir.join("node.log");
 
-        // Redirect the child's stdout/stderr to a log file so the signed
-        // `.app` bundle case (where inherited stderr vanishes) still leaves
-        // a paper trail. Truncated on each start — if the user needs older
-        // logs they rotate them themselves.
-        let log_path = node_data_dir.join("node.log");
-        let log_file = File::create(&log_path).map_err(|e| {
-            NodeManagerError::ProcessError(format!(
-                "Failed to create node log at '{}': {}",
-                log_path.display(),
-                e
-            ))
-        })?;
-        let log_file_err = log_file.try_clone().map_err(|e| {
-            NodeManagerError::ProcessError(format!("Failed to clone log handle: {}", e))
-        })?;
+        let mut child = spawn_node_binary(&binary, &config_path, &log_path)?;
+        wait_for_rpc(&mut child, &config.rpc_url)?;
 
-        let child = Command::new(binary_path)
-            .arg("run")
-            .arg("--config-file")
-            .arg(node_data_dir.join("config.toml"))
-            .stdout(Stdio::from(log_file))
-            .stderr(Stdio::from(log_file_err))
-            .spawn()
-            .map_err(|e| {
-                NodeManagerError::ProcessError(format!(
-                    "Failed to spawn node binary '{}': {}",
-                    binary_path.display(),
-                    e
-                ))
-            })?;
-
-        let mut process = Self {
-            child,
-            node_type: config.node_type,
-        };
-
-        // Wait for the RPC endpoint to become reachable.
-        process.wait_for_rpc(&config.rpc_url)?;
-
-        Ok(process)
+        Ok(Self { child })
     }
 
-    /// Stops the running node process.
-    ///
-    /// On Unix, sends SIGTERM for graceful shutdown, then SIGKILL if the process
-    /// does not exit within the grace period. On other platforms, kills immediately.
-    pub fn stop(&mut self) -> Result<(), NodeManagerError> {
-        // Send SIGTERM on Unix for graceful shutdown.
-        send_terminate_signal(&self.child);
-
-        // Wait for graceful exit within the grace period.
-        let deadline = Instant::now() + SHUTDOWN_GRACE_PERIOD;
-        loop {
-            match self.child.try_wait() {
-                Ok(Some(_)) => return Ok(()),
-                Ok(None) => {
-                    if Instant::now() >= deadline {
-                        break;
-                    }
-                    thread::sleep(Duration::from_millis(100));
-                }
-                Err(e) => {
-                    return Err(NodeManagerError::ProcessError(format!(
-                        "Error waiting for node to exit: {e}"
-                    )));
-                }
-            }
-        }
-
-        // Force kill if still running after grace period.
-        self.child.kill().map_err(|e| {
-            NodeManagerError::ProcessError(format!("Failed to kill node process: {e}"))
-        })?;
-        self.child.wait().map_err(|e| {
-            NodeManagerError::ProcessError(format!(
-                "Error waiting for node process after kill: {e}"
-            ))
-        })?;
-
-        Ok(())
+    fn stop(&mut self) -> Result<(), NodeManagerError> {
+        stop_child(&mut self.child)
     }
 
-    /// Checks whether the node process is still running.
-    pub fn is_running(&mut self) -> bool {
+    fn is_running(&mut self) -> bool {
         matches!(self.child.try_wait(), Ok(None))
     }
 
-    /// Returns the `NodeType` this process was started with.
-    pub fn node_type(&self) -> NodeType {
-        self.node_type
-    }
-
-    /// Switches from the currently running node to a different node type.
-    ///
-    /// Stops the current process, updates the config, and starts the new node.
-    /// If `new_type` is `PublicRpc`, the current process is stopped and no new
-    /// process is started — returns `Ok(None)`.
-    pub fn switch_node_type(
-        mut self,
-        new_type: NodeType,
-        config: &mut NodeConfig,
-    ) -> Result<Option<Self>, NodeManagerError> {
-        self.stop()?;
-
-        config.node_type = new_type;
-        config.rpc_url = config.default_rpc_url().to_string();
-        config.save()?;
-
-        if new_type == NodeType::PublicRpc {
-            // Prevent Drop from trying to stop again.
-            std::mem::forget(self);
-            return Ok(None);
-        }
-
-        // Prevent Drop from trying to stop the already-stopped child.
-        std::mem::forget(self);
-
-        Ok(Some(Self::start(config)?))
-    }
-
-    /// Polls the RPC endpoint until it responds or the timeout is reached.
-    fn wait_for_rpc(&mut self, rpc_url: &str) -> Result<(), NodeManagerError> {
-        let addr = parse_host_port(rpc_url)?;
-        let deadline = Instant::now() + STARTUP_TIMEOUT;
-
-        while Instant::now() < deadline {
-            // Check if the process died during startup.
-            if let Ok(Some(status)) = self.child.try_wait() {
-                return Err(NodeManagerError::ProcessError(format!(
-                    "Node process exited during startup with status: {status}"
-                )));
-            }
-
-            // Try a TCP connect to check if the RPC port is open.
-            if TcpStream::connect_timeout(&addr, Duration::from_secs(1)).is_ok() {
-                return Ok(());
-            }
-
-            thread::sleep(POLL_INTERVAL);
-        }
-
-        // Timed out — kill the process and report failure.
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-        Err(NodeManagerError::ProcessError(format!(
-            "Node RPC at {rpc_url} did not become reachable within {} seconds.",
-            STARTUP_TIMEOUT.as_secs()
-        )))
+    fn node_type(&self) -> NodeType {
+        NodeType::LightClient
     }
 }
 
-impl Drop for NodeProcess {
+impl Drop for LightClientProcess {
     fn drop(&mut self) {
-        // Best-effort cleanup: stop the node if the handle is dropped.
         let _ = self.stop();
     }
 }
 
-/// Sends a termination signal to the child process.
-/// On Unix, sends SIGTERM. On other platforms, falls back to kill().
+// ── Shared lifecycle helpers ─────────────────────────────────────────────
+
+/// Builds and spawns the `<binary> run --config-file <config>` invocation,
+/// redirecting stdout+stderr to a log file at `log_path` so signed `.app`
+/// bundle runs (where inherited stderr vanishes) still leave a paper
+/// trail. Truncates the log on each start.
+fn spawn_node_binary(
+    binary: &Path,
+    config_file: &Path,
+    log_path: &Path,
+) -> Result<Child, NodeManagerError> {
+    let log_file = File::create(log_path).map_err(|e| {
+        NodeManagerError::ProcessError(format!(
+            "Failed to create node log at '{}': {}",
+            log_path.display(),
+            e
+        ))
+    })?;
+    let log_file_err = log_file.try_clone().map_err(|e| {
+        NodeManagerError::ProcessError(format!("Failed to clone log handle: {}", e))
+    })?;
+
+    Command::new(binary)
+        .arg("run")
+        .arg("--config-file")
+        .arg(config_file)
+        .stdout(Stdio::from(log_file))
+        .stderr(Stdio::from(log_file_err))
+        .spawn()
+        .map_err(|e| {
+            NodeManagerError::ProcessError(format!(
+                "Failed to spawn node binary '{}': {}",
+                binary.display(),
+                e
+            ))
+        })
+}
+
+/// SIGTERM + grace period + SIGKILL on Unix; immediate kill elsewhere.
+/// Idempotent: stopping an already-exited child returns Ok immediately.
+fn stop_child(child: &mut Child) -> Result<(), NodeManagerError> {
+    send_terminate_signal(child);
+
+    let deadline = Instant::now() + SHUTDOWN_GRACE_PERIOD;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return Ok(()),
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(100));
+            }
+            Err(e) => {
+                return Err(NodeManagerError::ProcessError(format!(
+                    "Error waiting for node to exit: {e}"
+                )));
+            }
+        }
+    }
+
+    child.kill().map_err(|e| {
+        NodeManagerError::ProcessError(format!("Failed to kill node process: {e}"))
+    })?;
+    child.wait().map_err(|e| {
+        NodeManagerError::ProcessError(format!("Error waiting for node process after kill: {e}"))
+    })?;
+
+    Ok(())
+}
+
+/// Sends SIGTERM on Unix; on other platforms is a no-op (caller falls
+/// back to `kill()` after the grace period).
 fn send_terminate_signal(child: &Child) {
     #[cfg(unix)]
     {
@@ -230,24 +191,45 @@ fn send_terminate_signal(child: &Child) {
     }
     #[cfg(not(unix))]
     {
-        // On non-Unix, there's no SIGTERM equivalent.
-        // The caller will follow up with kill() after the grace period.
         let _ = child;
     }
 }
 
-/// Extracts a `SocketAddr` from an RPC URL for TCP health checks.
+/// Polls a TCP connect against the RPC's host:port until it opens or
+/// `STARTUP_TIMEOUT` elapses. Aborts (kills the child) and returns an
+/// error on timeout.
+fn wait_for_rpc(child: &mut Child, rpc_url: &str) -> Result<(), NodeManagerError> {
+    let addr = parse_host_port(rpc_url)?;
+    let deadline = Instant::now() + STARTUP_TIMEOUT;
+
+    while Instant::now() < deadline {
+        if let Ok(Some(status)) = child.try_wait() {
+            return Err(NodeManagerError::ProcessError(format!(
+                "Node process exited during startup with status: {status}"
+            )));
+        }
+        if TcpStream::connect_timeout(&addr, Duration::from_secs(1)).is_ok() {
+            return Ok(());
+        }
+        thread::sleep(POLL_INTERVAL);
+    }
+
+    let _ = child.kill();
+    let _ = child.wait();
+    Err(NodeManagerError::ProcessError(format!(
+        "Node RPC at {rpc_url} did not become reachable within {} seconds.",
+        STARTUP_TIMEOUT.as_secs()
+    )))
+}
+
 fn parse_host_port(rpc_url: &str) -> Result<std::net::SocketAddr, NodeManagerError> {
-    // Strip the scheme prefix.
     let without_scheme = rpc_url
         .strip_prefix("https://")
         .or_else(|| rpc_url.strip_prefix("http://"))
         .unwrap_or(rpc_url);
 
-    // Strip any trailing path.
     let host_port = without_scheme.split('/').next().unwrap_or(without_scheme);
 
-    // If no port is specified, default based on scheme.
     let addr_str = if host_port.contains(':') {
         host_port.to_string()
     } else if rpc_url.starts_with("https://") {
@@ -261,4 +243,124 @@ fn parse_host_port(rpc_url: &str) -> Result<std::net::SocketAddr, NodeManagerErr
             "Cannot parse RPC URL '{rpc_url}' as socket address: {e}"
         ))
     })
+}
+
+// ── Light-client config helpers ──────────────────────────────────────────
+
+/// Resolves the path to the `ckb-light-client` executable.
+///
+/// Order of precedence:
+/// 1. `config.binary_path` — explicit user override via Settings.
+/// 2. Bundled sibling to the currently-running executable (macOS
+///    `qpv2.app/Contents/MacOS/ckb-light-client`).
+/// 3. Dev fallback — walk up from the current exe to find
+///    `vendor/ckb-light-client/target/{release,debug}/ckb-light-client`.
+fn locate_light_client_binary(config: &NodeConfig) -> Result<PathBuf, NodeManagerError> {
+    if let Some(path) = &config.binary_path {
+        if path.exists() {
+            return Ok(path.clone());
+        }
+        return Err(NodeManagerError::BinaryNotFound {
+            path: path.display().to_string(),
+            reason: "File does not exist.".to_string(),
+        });
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            let candidate = parent.join("ckb-light-client");
+            if candidate.exists() {
+                return Ok(candidate);
+            }
+        }
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        for ancestor in exe.ancestors() {
+            for profile in ["release", "debug"] {
+                let candidate = ancestor
+                    .join("vendor")
+                    .join("ckb-light-client")
+                    .join("target")
+                    .join(profile)
+                    .join("ckb-light-client");
+                if candidate.exists() {
+                    return Ok(candidate);
+                }
+            }
+        }
+    }
+
+    Err(NodeManagerError::BinaryNotFound {
+        path: "<auto-discovery>".to_string(),
+        reason: "ckb-light-client binary not found. Build the submodule \
+                 first: `(cd vendor/ckb-light-client && cargo build --release)`, \
+                 or set the binary path under Settings."
+            .to_string(),
+    })
+}
+
+/// Ensures `<data_dir>/config.toml` exists, writing the embedded template
+/// (with rewritten absolute store/network paths) if it's missing.
+/// Idempotent — leaves an existing file untouched so users can hand-edit.
+fn ensure_light_client_config_file(
+    config: &NodeConfig,
+    data_dir: &Path,
+) -> Result<(), NodeManagerError> {
+    let config_path = data_dir.join("config.toml");
+    if config_path.exists() {
+        return Ok(());
+    }
+
+    let template = match config.network {
+        NetworkType::Mainnet => MAINNET_TEMPLATE,
+        NetworkType::Testnet => TESTNET_TEMPLATE,
+    };
+    let rewritten = rewrite_light_client_template_paths(template, data_dir);
+
+    std::fs::write(&config_path, rewritten)?;
+    Ok(())
+}
+
+/// Rewrites the two relative paths in the upstream template
+/// (`[store] path = "data/store"` and `[network] path = "data/network"`)
+/// to absolute paths inside `data_dir`. Keeps the rest of the TOML
+/// verbatim so the extensive bootnode list and comments aren't disturbed
+/// — avoids pulling in a full TOML writer just for two lines.
+fn rewrite_light_client_template_paths(template: &str, data_dir: &Path) -> String {
+    let store_abs = data_dir.join("data").join("store");
+    let network_abs = data_dir.join("data").join("network");
+
+    let mut out = String::with_capacity(template.len() + 256);
+    let mut section: Option<&str> = None;
+    for line in template.lines() {
+        let trimmed = line.trim_start();
+        if let Some(header) = trimmed.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+            section = Some(header.trim());
+            out.push_str(line);
+            out.push('\n');
+            continue;
+        }
+
+        if trimmed.starts_with("path") && trimmed.contains('=') {
+            match section {
+                Some("store") => {
+                    out.push_str(&format!("path = {:?}\n", store_abs.display().to_string()));
+                    continue;
+                }
+                Some("network") => {
+                    out.push_str(&format!(
+                        "path = {:?}\n",
+                        network_abs.display().to_string()
+                    ));
+                    continue;
+                }
+                _ => {}
+            }
+        }
+
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
 }

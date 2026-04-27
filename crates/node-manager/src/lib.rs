@@ -1,6 +1,5 @@
 pub mod config;
 pub mod error;
-pub mod light_client_spawn;
 pub mod process;
 pub mod queries;
 pub mod rpc;
@@ -13,7 +12,7 @@ use ckb_types::H256;
 pub use ckb_sdk::rpc::ckb_indexer::{CellType, Tx, TxWithCell, TxWithCells};
 pub use config::{NetworkType, NodeConfig, NodeType};
 pub use error::NodeManagerError;
-pub use process::NodeProcess;
+pub use process::{LightClientProcess, NodeProcess};
 pub use queries::{DepositedCell, PreparedCell};
 pub use rpc::{CkbRpc, LightClientRpc, TransactionStatus};
 pub use tx_builder::{
@@ -42,7 +41,7 @@ pub struct NodeManager {
     /// `NodeManager` stays cheap to clone; only `spawn` / `stop` /
     /// `is_process_running` actually acquire the lock, and only from the
     /// UI thread.
-    process: Arc<Mutex<Option<NodeProcess>>>,
+    process: Arc<Mutex<Option<Box<dyn NodeProcess>>>>,
 }
 
 impl NodeManager {
@@ -227,8 +226,8 @@ impl NodeManager {
         if guard.is_some() {
             return Ok(());
         }
-        let process = match self.config.node_type {
-            NodeType::LightClient => light_client_spawn::spawn(&self.config)?,
+        let process: Box<dyn NodeProcess> = match self.config.node_type {
+            NodeType::LightClient => Box::new(LightClientProcess::start(&self.config)?),
             NodeType::FullNode => {
                 // TODO: full-node spawn path — build `ckb`'s config.toml
                 // from `config/default/*` (the upstream `ckb init` output),
