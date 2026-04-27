@@ -410,7 +410,16 @@ impl App {
                 }
                 Ok(Ok(TxHistoryEvent::Done)) => {
                     self.tx_history_rx = None;
-                    
+
+                    // Sort newest-first and de-duplicate by tx hash.
+                    // Each fetch batch arrives sorted, but incremental
+                    // syncs append to the existing vector — without this
+                    // pass, [old-newest, ..., old-oldest, new-newest,
+                    // ..., new-oldest] would render in the wrong order.
+                    self.tx_history
+                        .sort_by(|a, b| b.block_number.cmp(&a.block_number));
+                    self.tx_history.dedup_by(|a, b| a.tx_hash == b.tx_hash);
+
                     // Persist the new snapshot so a restart can render
                     // instantly and the next sync only pulls blocks above
                     // the derived watermark. Scoped to the active network
