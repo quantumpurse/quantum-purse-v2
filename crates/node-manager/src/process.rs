@@ -110,6 +110,64 @@ impl Drop for LightClientProcess {
     }
 }
 
+// ── FullNodeProcess ──────────────────────────────────────────────────────
+
+/// Local `ckb` (full-node) child process. Owns binary discovery and
+/// the chain-dir bootstrap (`ckb init`) needed before the first run on
+/// each network.
+pub struct FullNodeProcess {
+    child: Child,
+}
+
+impl NodeProcess for FullNodeProcess {
+    fn start(config: &NodeConfig) -> Result<Self, NodeManagerError> {
+        if config.node_type != NodeType::FullNode {
+            return Err(NodeManagerError::UnsupportedOperation {
+                node_type: config.node_type.to_string(),
+                reason: "FullNodeProcess::start called with non-FullNode config.".to_string(),
+            });
+        }
+
+        let data_dir = config.node_data_dir();
+        std::fs::create_dir_all(&data_dir)?;
+
+        let binary = locate_full_node_binary(config)?;
+
+        // Bootstrap the chain dir on first spawn for this network.
+        // `ckb init` creates `ckb.toml`, `ckb-miner.toml`, `specs/`, etc.
+        // Idempotent: skip if `ckb.toml` is already there.
+        ensure_full_node_chain_dir(&binary, config.network, &data_dir)?;
+
+        let log_path = data_dir.join("node.log");
+
+        let mut command = Command::new(&binary);
+        command.arg("run").arg("-C").arg(&data_dir);
+
+        let mut child = execute(command, &log_path)?;
+        wait_for_rpc(&mut child, &config.rpc_url)?;
+
+        Ok(Self { child })
+    }
+
+    fn stop(&mut self) -> Result<(), NodeManagerError> {
+        stop_child(&mut self.child)
+    }
+
+    fn is_running(&mut self) -> bool {
+        matches!(self.child.try_wait(), Ok(None))
+    }
+
+    fn node_type(&self) -> NodeType {
+        NodeType::FullNode
+    }
+}
+
+impl Drop for FullNodeProcess {
+    fn drop(&mut self) {
+        let _ = self.stop();
+    }
+}
+
 // ── Shared lifecycle helpers ─────────────────────────────────────────────
 
 /// Spawns a pre-built `Command`, redirecting stdout+stderr to a log file
@@ -354,4 +412,99 @@ fn rewrite_light_client_template_paths(template: &str, data_dir: &Path) -> Strin
         out.push('\n');
     }
     out
+}
+
+// ── Full-node helpers ────────────────────────────────────────────────────
+
+/// Resolves the path to the `ckb` executable.
+///
+/// Order of precedence (mirrors `locate_light_client_binary`):
+/// 1. `config.binary_path` — explicit user override via Settings.
+/// 2. Bundled sibling to the currently-running executable (macOS
+///    `qpv2.app/Contents/MacOS/ckb`).
+/// 3. Dev fallback — walk up from the current exe to find
+///    `vendor/ckb/target/{release,debug}/ckb`.
+fn locate_full_node_binary(config: &NodeConfig) -> Result<PathBuf, NodeManagerError> {
+    if let Some(path) = &config.binary_path {
+        if path.exists() {
+            return Ok(path.clone());
+        }
+        return Err(NodeManagerError::BinaryNotFound {
+            path: path.display().to_string(),
+            reason: "File does not exist.".to_string(),
+        });
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            let candidate = parent.join("ckb");
+            if candidate.exists() {
+                return Ok(candidate);
+            }
+        }
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        for ancestor in exe.ancestors() {
+            for profile in ["release", "debug"] {
+                let candidate = ancestor
+                    .join("vendor")
+                    .join("ckb")
+                    .join("target")
+                    .join(profile)
+                    .join("ckb");
+                if candidate.exists() {
+                    return Ok(candidate);
+                }
+            }
+        }
+    }
+
+    Err(NodeManagerError::BinaryNotFound {
+        path: "<auto-discovery>".to_string(),
+        reason: "ckb binary not found. Build the submodule first: \
+                 `(cd vendor/ckb && cargo build -p ckb-bin --release)`, \
+                 or set the binary path under Settings."
+            .to_string(),
+    })
+}
+
+/// Ensures the full-node chain dir at `data_dir` is initialized. Runs
+/// `ckb init --chain <network> -C <data_dir>` when `<data_dir>/ckb.toml`
+/// is missing; idempotent otherwise. `ckb init` writes `ckb.toml`,
+/// `ckb-miner.toml`, and `specs/` for the chosen chain.
+fn ensure_full_node_chain_dir(
+    binary: &Path,
+    network: NetworkType,
+    data_dir: &Path,
+) -> Result<(), NodeManagerError> {
+    if data_dir.join("ckb.toml").exists() {
+        return Ok(());
+    }
+
+    let status = Command::new(binary)
+        .arg("init")
+        .arg("--chain")
+        .arg(network.tag())
+        .arg("-C")
+        .arg(data_dir)
+        .status()
+        .map_err(|e| {
+            NodeManagerError::ProcessError(format!(
+                "Failed to run `ckb init --chain {} -C {}`: {}",
+                network.tag(),
+                data_dir.display(),
+                e
+            ))
+        })?;
+
+    if !status.success() {
+        return Err(NodeManagerError::ProcessError(format!(
+            "`ckb init --chain {} -C {}` exited with status {}.",
+            network.tag(),
+            data_dir.display(),
+            status
+        )));
+    }
+    Ok(())
 }

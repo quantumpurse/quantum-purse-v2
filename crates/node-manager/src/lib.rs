@@ -12,7 +12,7 @@ use ckb_types::H256;
 pub use ckb_sdk::rpc::ckb_indexer::{CellType, Tx, TxWithCell, TxWithCells};
 pub use config::{NetworkType, NodeConfig, NodeType};
 pub use error::NodeManagerError;
-pub use process::{LightClientProcess, NodeProcess};
+pub use process::{FullNodeProcess, LightClientProcess, NodeProcess};
 pub use queries::{DepositedCell, PreparedCell};
 pub use rpc::{CkbRpc, LightClientRpc, TransactionStatus};
 pub use tx_builder::{
@@ -339,16 +339,7 @@ impl NodeManager {
         }
         let process: Box<dyn NodeProcess> = match self.config.node_type {
             NodeType::LightClient => Box::new(LightClientProcess::start(&self.config)?),
-            NodeType::FullNode => {
-                // TODO: full-node spawn path — build `ckb`'s config.toml
-                // from `config/default/*` (the upstream `ckb init` output),
-                // run `ckb run --config <path>`, wait for 8114 to accept
-                // TCP like the light client does. Binary name: `ckb`.
-                return Err(NodeManagerError::UnsupportedOperation {
-                    node_type: self.config.node_type.to_string(),
-                    reason: "FullNode spawn path not implemented yet.".to_string(),
-                });
-            }
+            NodeType::FullNode => Box::new(FullNodeProcess::start(&self.config)?),
             NodeType::PublicRpc => return Ok(()),
         };
         *guard = Some(process);
