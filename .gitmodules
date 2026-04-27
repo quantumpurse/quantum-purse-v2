@@ -1,3 +1,6 @@
 [submodule "vendor/ckb-light-client"]
 	path = vendor/ckb-light-client
 	url = https://github.com/nervosnetwork/ckb-light-client.git
+[submodule "vendor/ckb"]
+	path = vendor/ckb
+	url = https://github.com/nervosnetwork/ckb.git
