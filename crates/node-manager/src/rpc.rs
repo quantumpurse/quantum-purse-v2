@@ -343,14 +343,27 @@ impl LightClientRpc {
     /// client so it indexes matching cells. Each entry is a
     /// `(lock_args_hex, start_block)` pair — the LC begins indexing that
     /// script from `start_block`. Builds `ScriptStatus`es from
-    /// network-specific code_hash/hash_type constants and calls
-    /// `set_scripts` once with all of them, using `Partial` so unrelated
-    /// existing registrations survive.
+    /// network-specific code_hash/hash_type constants and submits them
+    /// in one `set_scripts(Partial)` call.
     ///
-    /// Note: for any script already registered, `Partial` **overwrites**
-    /// its stored block_number with the new value (per the upstream LC
-    /// merge behavior). Don't pass an existing script at a higher block
-    /// than its current sync cursor — you'd skip unindexed blocks.
+    /// Why we filter against `get_scripts` first
+    /// -----------------------------------------
+    /// `set_scripts(Partial)` **overwrites** the stored block_number for
+    /// any script that's already registered (per upstream LC's
+    /// `update_filter_scripts` — it always `put`s the new value, never
+    /// merges). LC data dirs are per-network and persistent, so when the
+    /// user switches mainnet ↔ testnet the target network's RocksDB may
+    /// already contain our scripts with valid sync cursors from a prior
+    /// session. Naively re-registering at `tip` would yank those cursors
+    /// forward and silently skip any blocks indexed since the last
+    /// visit. To avoid that, read `get_scripts` and drop any candidate
+    /// that's already tracked — its cursor stays put.
+    ///
+    /// Net effect:
+    ///   - First time on this network's LC → register all at `tip`.
+    ///   - Returning to a network the LC has seen before → no-op for
+    ///     accounts already known; new accounts (if any) get added at
+    ///     `tip` like usual.
     pub fn register_lock_scripts(
         &self,
         scripts: &[(&str, u64)],
@@ -389,12 +402,30 @@ impl LightClientRpc {
         }
         code_hash_bytes.copy_from_slice(&decoded);
 
+        // Set of lock_args bytes the LC already tracks. Only this wallet
+        // talks to this LC, so every entry came from us — comparing by
+        // lock_args alone is enough. One RPC call (`get_scripts`); the
+        // rest is local.
+        let existing: std::collections::HashSet<Vec<u8>> = self
+            .client
+            .get_scripts()
+            .map_err(|e| NodeManagerError::RpcError(e.to_string()))?
+            .into_iter()
+            .map(|ss| ss.script.args.as_bytes().to_vec())
+            .collect();
+
         let mut statuses: Vec<ScriptStatus> = Vec::with_capacity(scripts.len());
         for (lock_args_hex, start_block) in scripts {
             let lock_args_clean = lock_args_hex.strip_prefix("0x").unwrap_or(lock_args_hex);
             let args_bytes = hex::decode(lock_args_clean).map_err(|e| {
                 NodeManagerError::RpcError(format!("Invalid lock args hex: {}", e))
             })?;
+
+            // Already tracked → its existing cursor must stay put
+            // (see the doc comment above).
+            if existing.contains(&args_bytes) {
+                continue;
+            }
 
             let script = ckb_jsonrpc_types::Script {
                 code_hash: H256(code_hash_bytes),
@@ -407,6 +438,10 @@ impl LightClientRpc {
                 script_type: ScriptType::Lock,
                 block_number: (*start_block).into(),
             });
+        }
+
+        if statuses.is_empty() {
+            return Ok(());
         }
 
         self.set_scripts(statuses, Some(SetScriptsCommand::Partial))
