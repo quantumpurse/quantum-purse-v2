@@ -89,6 +89,8 @@ impl App {
         {
             self.status = Status::Error(format!("Failed to set scan block: {}", e));
         } else {
+            // Reflect the new value in the Synced cell immediately.
+            self.node_status.synced_block = Some(start_block);
             self.status = Status::Info(format!(
                 "Rescan from block {} requested.",
                 start_block
