@@ -222,6 +222,19 @@ impl App {
                                         "Failed to start local node: {}",
                                         e
                                     ));
+                                } else if self.node_manager.has_local_process()
+                                    && self.temp_node_type == NodeType::LightClient
+                                {
+                                    // Warmup the QR-lock-script cell dep so
+                                    // the first transfer doesn't race-fail.
+                                    // Only the RPC error path is actionable;
+                                    // a not-yet-Fetched response is expected.
+                                    if let Err(e) = self.node_manager.fetch_qr_lock_dep() {
+                                        self.status = Status::Error(format!(
+                                            "Failed to request lock-script cell dep fetch: {}",
+                                            e
+                                        ));
+                                    }
                                 }
 
                                 // Swap the tx-history cache to the new

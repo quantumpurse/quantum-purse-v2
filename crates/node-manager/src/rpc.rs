@@ -4,7 +4,9 @@ use ckb_jsonrpc_types::{JsonBytes, Uint64};
 use ckb_sdk::rpc::ckb_indexer::{
     Cell, CellsCapacity, Order, Pagination, ScriptType, SearchKey, SearchKeyFilter, Tx,
 };
-use ckb_sdk::rpc::ckb_light_client::{LightClientRpcClient, ScriptStatus, SetScriptsCommand};
+use ckb_sdk::rpc::ckb_light_client::{
+    FetchStatus, LightClientRpcClient, ScriptStatus, SetScriptsCommand,
+};
 use ckb_sdk::rpc::{CkbRpcClient, ResponseFormatGetter};
 use ckb_sdk::traits::{
     CellCollector, CellQueryOptions, DefaultCellCollector, DefaultHeaderDepResolver,
@@ -319,6 +321,22 @@ impl LightClientRpc {
             .get_peers()
             .map(|peers| peers.len())
             .map_err(|e| NodeManagerError::RpcError(e.to_string()))
+    }
+
+    /// Asks the light client to pull `tx_hash` (and its committing block
+    /// header) into its local store. Returns `true` only when the tx is
+    /// already in the store (`FetchStatus::Fetched`); any other status
+    /// (`Added`, `Fetching`, `NotFound`) returns `false` — the caller
+    /// shouldn't proceed with operations that depend on the tx.
+    ///
+    /// Idempotent: cached lookups return immediately without a network
+    /// hit (verified in `vendor/ckb-light-client/.../rpc.rs:868`).
+    pub fn fetch_transaction(&self, tx_hash: H256) -> Result<bool, NodeManagerError> {
+        match self.client.fetch_transaction(tx_hash) {
+            Ok(FetchStatus::Fetched { .. }) => Ok(true),
+            Ok(_) => Ok(false),
+            Err(e) => Err(NodeManagerError::RpcError(e.to_string())),
+        }
     }
 
     /// Registers a QuantumPurse lock script with the light client so it

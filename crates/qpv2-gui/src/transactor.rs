@@ -2,8 +2,32 @@
 
 use crate::types::{spx_witness_lock_size, TransactionKind, TransactionStatus, CKB_DECIMAL_PLACES};
 use crate::App;
+use node_manager::{NodeManager, NodeType};
 use qpv2_core::KeyVault;
 use std::sync::mpsc;
+
+/// Pre-flight check before building any tx that uses the QR-lock-script
+/// cell dep. The light client only stores cells whose lock matches a
+/// registered filter script, so the dep cell isn't auto-indexed —
+/// `NodeManager::fetch_qr_lock_dep` is what pulls it. This wrapper
+/// gates the build path on whether the dep has finished fetching.
+///
+/// `Ok(())` for non-LightClient backends (full nodes / public RPC have
+/// every cell); `Ok(())` for LightClient when the dep is already in the
+/// store. Otherwise returns a user-facing message ready for `App.status`.
+fn check_qr_lock_dep_ready(nm: &NodeManager) -> Result<(), String> {
+    if nm.config().node_type != NodeType::LightClient {
+        return Ok(());
+    }
+    match nm.fetch_qr_lock_dep() {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(
+            "Light client hasn't fetched the lock-script cell dep yet. Try again in a moment."
+                .to_string(),
+        ),
+        Err(e) => Err(format!("Failed to check lock-script cell dep: {}", e)),
+    }
+}
 
 impl App {
     /// Kick off a transfer: validate inputs, then build the unsigned tx in a background thread.
@@ -75,6 +99,8 @@ impl App {
 
         std::thread::spawn(move || {
             let result = (|| -> Result<_, String> {
+                check_qr_lock_dep_ready(&nm)?;
+
                 // Parse addresses
                 let from_address: ckb_sdk::Address = from_addr_str
                     .parse()
@@ -182,6 +208,8 @@ impl App {
 
         std::thread::spawn(move || {
             let result = (|| -> Result<_, String> {
+                check_qr_lock_dep_ready(&nm)?;
+
                 let from_address: ckb_sdk::Address = from_addr_str
                     .parse()
                     .map_err(|e| format!("Invalid sender address: {}", e))?;
@@ -247,6 +275,8 @@ impl App {
 
         std::thread::spawn(move || {
             let result = (|| -> Result<_, String> {
+                check_qr_lock_dep_ready(&nm)?;
+
                 let from_address: ckb_sdk::Address = from_addr_str
                     .parse()
                     .map_err(|e| format!("Invalid sender address: {}", e))?;
@@ -307,6 +337,8 @@ impl App {
 
         std::thread::spawn(move || {
             let result = (|| -> Result<_, String> {
+                check_qr_lock_dep_ready(&nm)?;
+
                 let from_address: ckb_sdk::Address = from_addr_str
                     .parse()
                     .map_err(|e| format!("Invalid sender address: {}", e))?;

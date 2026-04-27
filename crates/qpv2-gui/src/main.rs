@@ -206,7 +206,19 @@ impl App {
         let startup_status = match node_manager.spawn() {
             Ok(()) => {
                 if node_manager.has_local_process() {
-                    Status::Info("Local node started.".to_string())
+                    // Warmup: ask the LC to fetch the QR-lock-script
+                    // cell dep so the first transfer doesn't race-fail
+                    // with an OutPoint Unknown error. Only the RPC error
+                    // is surfaced — `Ok(false)` (fetch in progress) is
+                    // expected at warmup and not actionable.
+                    if let Err(e) = node_manager.fetch_qr_lock_dep() {
+                        Status::Error(format!(
+                            "Failed to request lock-script cell dep fetch: {}",
+                            e
+                        ))
+                    } else {
+                        Status::Info("Local node started.".to_string())
+                    }
                 } else {
                     // `spawn()` returns Ok(()) on PublicRpc even though
                     // no process is started — it's a no-op backend. Emit

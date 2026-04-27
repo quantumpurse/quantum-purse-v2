@@ -210,22 +210,54 @@ impl NodeManager {
         Ok(scripts.iter().map(|s| s.block_number.value()).min())
     }
 
+    /// Asks the light client to pull the QR-lock-script deployment
+    /// transaction into its local store. Required because the LC only
+    /// indexes cells whose lock matches a registered filter script — the
+    /// dep cell's lock isn't ours, so without an explicit fetch the LC
+    /// will reject any transfer that uses it as a `cell_dep`.
+    ///
+    /// Returns `true` when the dep is in the LC's store; `false` when a
+    /// fetch was enqueued / is in progress / peers couldn't find it.
+    /// Errors when called against a non-LightClient backend — that's a
+    /// caller bug, not a runtime condition (full nodes / public RPC
+    /// index every cell and don't need this call).
+    pub fn fetch_qr_lock_dep(&self) -> Result<bool, NodeManagerError> {
+        let Some(light) = self.rpc.as_any().downcast_ref::<rpc::LightClientRpc>() else {
+            return Err(NodeManagerError::UnsupportedOperation {
+                node_type: self.config.node_type.to_string(),
+                reason: "fetch_qr_lock_dep is light-client-only.".to_string(),
+            });
+        };
+        let dep_tx_hash_hex = match self.config.network {
+            NetworkType::Mainnet => qpv2_core::constants::CKB_MAINNET_CELL_DEP_TX_HASH,
+            NetworkType::Testnet => qpv2_core::constants::CKB_TESTNET_CELL_DEP_TX_HASH,
+        };
+        let tx_hash: H256 = dep_tx_hash_hex
+            .trim_start_matches("0x")
+            .parse()
+            .map_err(|e| {
+                NodeManagerError::RpcError(format!("Invalid QR lock dep tx hash: {}", e))
+            })?;
+        light.fetch_transaction(tx_hash)
+    }
+
     /// Registers a wallet lock script with the light client's indexer,
     /// anchored at the current chain tip. Fresh accounts have no history
     /// below tip, so using tip means the light client starts tracking
     /// any future funding tx immediately without rescanning old blocks.
     ///
-    /// No-op outside `LightClient` — full nodes and public RPC index
-    /// all scripts by default. Callers that need a specific start block
-    /// (e.g. importing an existing wallet with funded history) can call
-    /// `LightClientRpc::register_lock_script` directly on a downcasted
-    /// reference.
+    /// Errors when called against a non-LightClient backend — that's a
+    /// caller bug, not a runtime condition (full nodes / public RPC
+    /// index every cell and don't need this call). Callers that need a
+    /// specific start block (e.g. importing an existing wallet with
+    /// funded history) can call `LightClientRpc::register_lock_script`
+    /// directly on a downcasted reference.
     pub fn register_lock_script(&self, lock_args_hex: &str) -> Result<(), NodeManagerError> {
-        // Try to reuse the shared LightClientRpc instance inside
-        // `self.rpc`. Non-LightClient backends land in the `None` arm
-        // and the method is a no-op.
         let Some(light) = self.rpc.as_any().downcast_ref::<rpc::LightClientRpc>() else {
-            return Ok(());
+            return Err(NodeManagerError::UnsupportedOperation {
+                node_type: self.config.node_type.to_string(),
+                reason: "register_lock_script is light-client-only.".to_string(),
+            });
         };
         let tip = light.get_tip_header()?.inner.number.value();
         light.register_lock_script(lock_args_hex, self.config.network, tip)
