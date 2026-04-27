@@ -197,12 +197,14 @@ impl App {
             Screen::Setup
         };
 
+        // Restore the last-known node configuration (network + backend +
+        // RPC URL) so reopening the app preserves the user's previous
+        // choice. For local backends (Light Client today, Full Node
+        // planned), the spawn below also restarts the child process so
+        // the wallet doesn't come up silently OFFLINE.
         let node_config = NodeConfig::load_or_default().unwrap_or_default();
         let node_manager = NodeManager::new(node_config.clone());
 
-        // Auto-resume the last-known local node so closing the app with
-        // Light Client selected and reopening doesn't leave the user on a
-        // silently-OFFLINE backend.
         let startup_status = match node_manager.spawn() {
             Ok(()) => {
                 if node_manager.has_local_process() {

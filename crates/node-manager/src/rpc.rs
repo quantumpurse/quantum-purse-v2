@@ -339,17 +339,27 @@ impl LightClientRpc {
         }
     }
 
-    /// Registers a QuantumPurse lock script with the light client so it
-    /// begins indexing matching cells from `start_block`. Builds the
-    /// `ScriptStatus` from network-specific code_hash/hash_type constants
-    /// and calls `set_scripts` with `Partial` so existing registrations
-    /// survive.
-    pub fn register_lock_script(
+    /// Registers one or more QuantumPurse lock scripts with the light
+    /// client so it indexes matching cells. Each entry is a
+    /// `(lock_args_hex, start_block)` pair — the LC begins indexing that
+    /// script from `start_block`. Builds `ScriptStatus`es from
+    /// network-specific code_hash/hash_type constants and calls
+    /// `set_scripts` once with all of them, using `Partial` so unrelated
+    /// existing registrations survive.
+    ///
+    /// Note: for any script already registered, `Partial` **overwrites**
+    /// its stored block_number with the new value (per the upstream LC
+    /// merge behavior). Don't pass an existing script at a higher block
+    /// than its current sync cursor — you'd skip unindexed blocks.
+    pub fn register_lock_scripts(
         &self,
-        lock_args_hex: &str,
+        scripts: &[(&str, u64)],
         network: NetworkType,
-        start_block: u64,
     ) -> Result<(), NodeManagerError> {
+        if scripts.is_empty() {
+            return Ok(());
+        }
+
         let (code_hash_hex, hash_type_str) = match network {
             NetworkType::Mainnet => (
                 qpv2_core::constants::CKB_MAINNET_CODE_HASH,
@@ -379,23 +389,27 @@ impl LightClientRpc {
         }
         code_hash_bytes.copy_from_slice(&decoded);
 
-        let lock_args_clean = lock_args_hex.strip_prefix("0x").unwrap_or(lock_args_hex);
-        let args_bytes = hex::decode(lock_args_clean)
-            .map_err(|e| NodeManagerError::RpcError(format!("Invalid lock args hex: {}", e)))?;
+        let mut statuses: Vec<ScriptStatus> = Vec::with_capacity(scripts.len());
+        for (lock_args_hex, start_block) in scripts {
+            let lock_args_clean = lock_args_hex.strip_prefix("0x").unwrap_or(lock_args_hex);
+            let args_bytes = hex::decode(lock_args_clean).map_err(|e| {
+                NodeManagerError::RpcError(format!("Invalid lock args hex: {}", e))
+            })?;
 
-        let script = ckb_jsonrpc_types::Script {
-            code_hash: H256(code_hash_bytes),
-            hash_type: script_hash_type,
-            args: JsonBytes::from_bytes(args_bytes.into()),
-        };
+            let script = ckb_jsonrpc_types::Script {
+                code_hash: H256(code_hash_bytes),
+                hash_type: script_hash_type,
+                args: JsonBytes::from_bytes(args_bytes.into()),
+            };
 
-        let status = ScriptStatus {
-            script,
-            script_type: ScriptType::Lock,
-            block_number: start_block.into(),
-        };
+            statuses.push(ScriptStatus {
+                script,
+                script_type: ScriptType::Lock,
+                block_number: (*start_block).into(),
+            });
+        }
 
-        self.set_scripts(vec![status], Some(SetScriptsCommand::Partial))
+        self.set_scripts(statuses, Some(SetScriptsCommand::Partial))
     }
 }
 

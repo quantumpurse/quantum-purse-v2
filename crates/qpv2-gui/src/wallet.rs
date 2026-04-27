@@ -15,22 +15,27 @@ impl App {
     }
 
     /// Tells the running light client to start indexing the given
-    /// account from the current tip onward. No-op when the backend isn't
-    /// LightClient or no local process is running — full nodes / public
+    /// accounts from the current tip onward, in a single `set_scripts`
+    /// RPC call. No-op when the backend isn't LightClient, no local
+    /// process is running, or the input is empty — full nodes / public
     /// RPC index everything by default, and a stopped light client has
     /// nothing to register against.
     ///
     /// Import-existing-wallet (register every account with an earlier
-    /// start block) is deliberately not covered here; that flow isn't
-    /// implemented yet.
-    pub(crate) fn register_lock_script_with_light_client(&mut self, lock_args: &str) {
+    /// start block per account) is deliberately not covered here; that
+    /// flow isn't implemented yet.
+    pub(crate) fn register_lock_scripts_with_light_client(
+        &mut self,
+        lock_args_list: &[String],
+    ) {
         if self.node_manager.config().node_type != node_manager::NodeType::LightClient
             || !self.node_manager.has_local_process()
+            || lock_args_list.is_empty()
         {
             return;
         }
-        if let Err(e) = self.node_manager.register_lock_script(lock_args) {
-            self.status = Status::Error(format!("Failed to register script: {}", e));
+        if let Err(e) = self.node_manager.register_lock_scripts(lock_args_list) {
+            self.status = Status::Error(format!("Failed to register scripts: {}", e));
         }
     }
 
@@ -198,9 +203,7 @@ impl App {
                 self.accounts = lock_args;
                 // First account of a brand-new wallet — if a light
                 // client is running, start indexing it from the tip.
-                if let Some(first) = self.accounts.first().cloned() {
-                    self.register_lock_script_with_light_client(&first);
-                }
+                self.register_lock_scripts_with_light_client(&self.accounts.clone());
                 self.screen = Screen::Unlocked;
                 self.status = Status::Info("Wallet created successfully!".to_string());
                 self.last_poll_time = std::time::Instant::now();
@@ -349,10 +352,11 @@ impl App {
                     let _ = tx.send((args, result));
                 });
                 self.accounts.push(lock_args.clone());
-                // Register with the light client (no-op on other
-                // backends) so future funding of this account is
-                // picked up by the indexer.
-                self.register_lock_script_with_light_client(&lock_args);
+                // Register only the new account with the light client
+                // (no-op on other backends). Don't pass all accounts
+                // here — `set_scripts(Partial)` would overwrite the
+                // sync cursors of the existing ones.
+                self.register_lock_scripts_with_light_client(std::slice::from_ref(&lock_args));
                 self.status = Status::Info("New account created!".to_string());
             }
             Err(e) => {

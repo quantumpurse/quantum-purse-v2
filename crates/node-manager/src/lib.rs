@@ -241,26 +241,39 @@ impl NodeManager {
         light.fetch_transaction(tx_hash)
     }
 
-    /// Registers a wallet lock script with the light client's indexer,
-    /// anchored at the current chain tip. Fresh accounts have no history
-    /// below tip, so using tip means the light client starts tracking
-    /// any future funding tx immediately without rescanning old blocks.
+    /// Registers one or more wallet lock scripts with the light client's
+    /// indexer, all anchored at the current chain tip. Fresh accounts
+    /// have no history below tip, so using tip means the LC starts
+    /// tracking any future funding tx immediately without rescanning
+    /// old blocks.
     ///
-    /// Errors when called against a non-LightClient backend — that's a
-    /// caller bug, not a runtime condition (full nodes / public RPC
-    /// index every cell and don't need this call). Callers that need a
-    /// specific start block (e.g. importing an existing wallet with
-    /// funded history) can call `LightClientRpc::register_lock_script`
-    /// directly on a downcasted reference.
-    pub fn register_lock_script(&self, lock_args_hex: &str) -> Result<(), NodeManagerError> {
+    /// All entries share a single `set_scripts` call. Empty input is a
+    /// no-op. Errors when called against a non-LightClient backend —
+    /// that's a caller bug, not a runtime condition (full nodes /
+    /// public RPC index every cell and don't need this call). Callers
+    /// that need different start blocks per script (e.g. importing an
+    /// existing wallet with funded history) can call
+    /// `LightClientRpc::register_lock_scripts` directly on a downcasted
+    /// reference.
+    pub fn register_lock_scripts(
+        &self,
+        lock_args_list: &[String],
+    ) -> Result<(), NodeManagerError> {
         let Some(light) = self.rpc.as_any().downcast_ref::<rpc::LightClientRpc>() else {
             return Err(NodeManagerError::UnsupportedOperation {
                 node_type: self.config.node_type.to_string(),
-                reason: "register_lock_script is light-client-only.".to_string(),
+                reason: "register_lock_scripts is light-client-only.".to_string(),
             });
         };
+        if lock_args_list.is_empty() {
+            return Ok(());
+        }
         let tip = light.get_tip_header()?.inner.number.value();
-        light.register_lock_script(lock_args_hex, self.config.network, tip)
+        let scripts: Vec<(&str, u64)> = lock_args_list
+            .iter()
+            .map(|a| (a.as_str(), tip))
+            .collect();
+        light.register_lock_scripts(&scripts, self.config.network)
     }
 
     // ── Local process lifecycle ───────────────────────────────────────
