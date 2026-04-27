@@ -108,7 +108,7 @@ impl<'a> QpTransferBuilder<'a> {
         // Create collectors and resolvers
         let mut cell_collector = DefaultCellCollector::new(&rpc_url);
         let cell_dep_resolver =
-            super::utils::cell_dep_resolver_from_rpc(&rpc_url, self.is_mainnet)?;
+            super::utils::cell_dep_resolver_from_rpc(self.rpc, self.is_mainnet)?;
         let header_dep_resolver = DefaultHeaderDepResolver::new(&rpc_url);
         let tx_dep_provider = DefaultTransactionDependencyProvider::new(&rpc_url, 10);
 
@@ -140,7 +140,6 @@ impl<'a> QpTransferBuilder<'a> {
         fee_rate: u64,
         data: Option<Vec<u8>>,
     ) -> Result<(TransactionView, u64), NodeManagerError> {
-        let rpc_url = self.rpc.get_rpc_url();
         let from_lock_script = Script::from(from_address.payload());
         let to_lock_script = Script::from(to_address.payload());
         let output_data = Bytes::from(data.unwrap_or_default());
@@ -157,7 +156,7 @@ impl<'a> QpTransferBuilder<'a> {
             .sum();
 
         let cell_dep_resolver =
-            super::utils::cell_dep_resolver_from_rpc(&rpc_url, self.is_mainnet)?;
+            super::utils::cell_dep_resolver_from_rpc(self.rpc, self.is_mainnet)?;
         let sender_lock_dep = cell_dep_resolver
             .resolve(&from_lock_script)
             .ok_or_else(|| {

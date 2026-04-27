@@ -34,6 +34,12 @@ pub trait CkbRpc: Send + Sync + Any {
     /// Returns the tip (latest) block header.
     fn get_tip_header(&self) -> Result<ckb_jsonrpc_types::HeaderView, NodeManagerError>;
 
+    /// Returns the genesis block. Full nodes serve this via
+    /// `get_block_by_number(0)`; the light client has a dedicated
+    /// `get_genesis_block` RPC. Used to bootstrap the system-script
+    /// `CellDepResolver` for transaction building.
+    fn get_genesis_block(&self) -> Result<ckb_jsonrpc_types::BlockView, NodeManagerError>;
+
     /// Queries live cells matching the given search key.
     fn get_cells(
         &self,
@@ -142,6 +148,13 @@ impl CkbRpc for FullNodeRpc {
         self.client
             .get_tip_header()
             .map_err(|e| NodeManagerError::RpcError(e.to_string()))
+    }
+
+    fn get_genesis_block(&self) -> Result<ckb_jsonrpc_types::BlockView, NodeManagerError> {
+        self.client
+            .get_block_by_number(0u64.into())
+            .map_err(|e| NodeManagerError::RpcError(format!("Failed to fetch genesis block: {}", e)))?
+            .ok_or_else(|| NodeManagerError::RpcError("Genesis block not found.".to_string()))
     }
 
     fn get_cells(
@@ -348,6 +361,12 @@ impl CkbRpc for LightClientRpc {
         self.client
             .get_tip_header()
             .map_err(|e| NodeManagerError::RpcError(e.to_string()))
+    }
+
+    fn get_genesis_block(&self) -> Result<ckb_jsonrpc_types::BlockView, NodeManagerError> {
+        self.client
+            .get_genesis_block()
+            .map_err(|e| NodeManagerError::RpcError(format!("Failed to fetch genesis block: {}", e)))
     }
 
     fn get_cells(

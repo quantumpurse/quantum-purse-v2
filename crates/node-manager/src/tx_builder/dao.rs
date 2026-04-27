@@ -36,7 +36,7 @@ fn build_balanced_dao_tx(
     builder: &dyn TxBuilder,
     lock_script: &Script,
     fee_rate: u64,
-    rpc_url: &str,
+    rpc: &dyn CkbRpc,
     is_mainnet: bool,
     placeholder_lock_size: usize,
 ) -> Result<TransactionView, NodeManagerError> {
@@ -54,10 +54,11 @@ fn build_balanced_dao_tx(
         force_small_change_as_fee: None,
     };
 
-    let mut cell_collector = DefaultCellCollector::new(rpc_url);
-    let cell_dep_resolver = super::utils::cell_dep_resolver_from_rpc(rpc_url, is_mainnet)?;
-    let header_dep_resolver = DefaultHeaderDepResolver::new(rpc_url);
-    let tx_dep_provider = DefaultTransactionDependencyProvider::new(rpc_url, 10);
+    let rpc_url = rpc.get_rpc_url();
+    let mut cell_collector = DefaultCellCollector::new(&rpc_url);
+    let cell_dep_resolver = super::utils::cell_dep_resolver_from_rpc(rpc, is_mainnet)?;
+    let header_dep_resolver = DefaultHeaderDepResolver::new(&rpc_url);
+    let tx_dep_provider = DefaultTransactionDependencyProvider::new(&rpc_url, 10);
 
     let tx = builder
         .build_balanced(
@@ -115,7 +116,6 @@ impl<'a> QpDaoDepositBuilder<'a> {
         capacity_sh: u64,
         fee_rate: u64,
     ) -> Result<TransactionView, NodeManagerError> {
-        let rpc_url = self.rpc.get_rpc_url();
         let lock_script = Script::from(from_address.payload());
 
         // Create DAO deposit receiver
@@ -126,7 +126,7 @@ impl<'a> QpDaoDepositBuilder<'a> {
             &deposit_builder,
             &lock_script,
             fee_rate,
-            &rpc_url,
+            self.rpc,
             self.is_mainnet,
             self.placeholder_lock_size,
         )
@@ -141,7 +141,6 @@ impl<'a> QpDaoDepositBuilder<'a> {
         from_address: &Address,
         fee_rate: u64,
     ) -> Result<(TransactionView, u64), NodeManagerError> {
-        let rpc_url = self.rpc.get_rpc_url();
         let lock_script = Script::from(from_address.payload());
 
         let spendable_cells =
@@ -156,7 +155,7 @@ impl<'a> QpDaoDepositBuilder<'a> {
             .sum();
 
         let cell_dep_resolver =
-            super::utils::cell_dep_resolver_from_rpc(&rpc_url, self.is_mainnet)?;
+            super::utils::cell_dep_resolver_from_rpc(self.rpc, self.is_mainnet)?;
         let sender_lock_dep = cell_dep_resolver.resolve(&lock_script).ok_or_else(|| {
             NodeManagerError::RpcError("Failed to resolve sender lock cell dep.".to_string())
         })?;
@@ -322,7 +321,7 @@ impl<'a> QpDaoPrepareBuilder<'a> {
         // calculation includes the full witness size.
         let mut cell_collector = DefaultCellCollector::new(&rpc_url);
         let cell_dep_resolver =
-            super::utils::cell_dep_resolver_from_rpc(&rpc_url, self.is_mainnet)?;
+            super::utils::cell_dep_resolver_from_rpc(self.rpc, self.is_mainnet)?;
         let header_dep_resolver = DefaultHeaderDepResolver::new(&rpc_url);
         let tx_dep_provider = DefaultTransactionDependencyProvider::new(&rpc_url, 10);
 
@@ -430,7 +429,6 @@ impl<'a> QpDaoWithdrawBuilder<'a> {
             ));
         }
 
-        let rpc_url = self.rpc.get_rpc_url();
         let lock_script = Script::from(from_address.payload());
 
         // Create withdraw items from prepared outpoints
@@ -458,7 +456,7 @@ impl<'a> QpDaoWithdrawBuilder<'a> {
             &withdraw_builder,
             &lock_script,
             fee_rate,
-            &rpc_url,
+            self.rpc,
             self.is_mainnet,
             self.placeholder_lock_size,
         )
