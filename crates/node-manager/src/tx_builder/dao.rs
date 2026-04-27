@@ -145,7 +145,7 @@ impl<'a> QpDaoDepositBuilder<'a> {
         let lock_script = Script::from(from_address.payload());
 
         let spendable_cells =
-            crate::queries::spendable::collect_spendable_cells(&rpc_url, &lock_script)?;
+            crate::queries::spendable::collect_spendable_cells(self.rpc, &lock_script)?;
 
         let total_input_capacity: u64 = spendable_cells
             .iter()

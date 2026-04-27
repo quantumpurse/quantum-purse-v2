@@ -6,7 +6,7 @@ use crate::rpc::CkbRpc;
 use byteorder::{ByteOrder, LittleEndian};
 use ckb_sdk::{
     constants::DAO_TYPE_HASH,
-    traits::{CellCollector, CellQueryOptions, DefaultCellCollector, LiveCell, ValueRangeOption},
+    traits::{CellQueryOptions, LiveCell, ValueRangeOption},
     Address,
 };
 use ckb_types::{
@@ -48,8 +48,7 @@ pub fn categorize_dao_cells(
     rpc: &dyn CkbRpc,
     address: &Address,
 ) -> Result<(Vec<DepositedCell>, Vec<PreparedCell>), NodeManagerError> {
-    let rpc_url = rpc.get_rpc_url();
-    let cells = collect_dao_cells(&rpc_url, address)?;
+    let cells = collect_dao_cells(rpc, address)?;
 
     let mut deposited = Vec::new();
     let mut prepared = Vec::new();
@@ -89,11 +88,10 @@ pub fn categorize_dao_cells(
 /// Returns the raw `LiveCell` list so callers can partition into
 /// deposited vs prepared.
 fn collect_dao_cells(
-    rpc_url: &str,
+    rpc: &dyn CkbRpc,
     address: &Address,
 ) -> Result<Vec<LiveCell>, NodeManagerError> {
     let lock_script = Script::from(address.payload());
-    let mut cell_collector = DefaultCellCollector::new(rpc_url);
 
     let dao_type_script = Script::new_builder()
         .code_hash(DAO_TYPE_HASH.pack())
@@ -105,11 +103,7 @@ fn collect_dao_cells(
     query.data_len_range = Some(ValueRangeOption::new_exact(8));
     query.min_total_capacity = u64::MAX;
 
-    let (cells, _) = cell_collector
-        .collect_live_cells(&query, false)
-        .map_err(|e| NodeManagerError::RpcError(e.to_string()))?;
-
-    Ok(cells)
+    rpc.collect_cells(&query)
 }
 
 /// Calculates the maximum withdrawable capacity for a prepared DAO cell.

@@ -1,9 +1,16 @@
 use crate::config::NetworkType;
 use crate::error::NodeManagerError;
-use ckb_jsonrpc_types::JsonBytes;
-use ckb_sdk::rpc::ckb_indexer::{Cell, CellsCapacity, Order, Pagination, ScriptType, SearchKey, Tx};
+use ckb_jsonrpc_types::{JsonBytes, Uint64};
+use ckb_sdk::rpc::ckb_indexer::{
+    Cell, CellsCapacity, Order, Pagination, ScriptType, SearchKey, SearchKeyFilter, Tx,
+};
 use ckb_sdk::rpc::ckb_light_client::{LightClientRpcClient, ScriptStatus, SetScriptsCommand};
 use ckb_sdk::rpc::{CkbRpcClient, ResponseFormatGetter};
+use ckb_sdk::traits::{
+    CellCollector, CellQueryOptions, DefaultCellCollector, LiveCell, PrimaryScriptType,
+    ValueRangeOption,
+};
+use ckb_types::prelude::*;
 use ckb_types::H256;
 use std::any::Any;
 
@@ -71,6 +78,18 @@ pub trait CkbRpc: Send + Sync + Any {
         limit: u32,
         after: Option<JsonBytes>,
     ) -> Result<Pagination<Tx>, NodeManagerError>;
+
+    /// Collects live cells matching `query`. Each backend picks its best
+    /// strategy: full node delegates to ckb-sdk's `DefaultCellCollector`;
+    /// light client paginates its indexer (`get_cells`) directly.
+    ///
+    /// Closes the cell-collection escape hatch — call sites used to
+    /// construct `DefaultCellCollector::new(rpc_url)` directly, which only
+    /// speaks full-node RPC and fails on a light client.
+    fn collect_cells(
+        &self,
+        query: &CellQueryOptions,
+    ) -> Result<Vec<LiveCell>, NodeManagerError>;
 
     /// Gets the RPC URL (temporary method for SDK components).
     /// TODO: Remove when we implement custom collectors using the trait.
@@ -196,6 +215,17 @@ impl CkbRpc for FullNodeRpc {
         self.client
             .get_transactions(search_key, order, limit.into(), after)
             .map_err(|e| NodeManagerError::RpcError(e.to_string()))
+    }
+
+    fn collect_cells(
+        &self,
+        query: &CellQueryOptions,
+    ) -> Result<Vec<LiveCell>, NodeManagerError> {
+        let mut collector = DefaultCellCollector::new(&self.rpc_url);
+        let (cells, _) = collector
+            .collect_live_cells(query, false)
+            .map_err(|e| NodeManagerError::RpcError(e.to_string()))?;
+        Ok(cells)
     }
 
     fn get_rpc_url(&self) -> String {
@@ -450,6 +480,95 @@ impl CkbRpc for LightClientRpc {
                 e
             ))
         })
+    }
+
+    fn collect_cells(
+        &self,
+        query: &CellQueryOptions,
+    ) -> Result<Vec<LiveCell>, NodeManagerError> {
+        // Translate ckb-sdk's `CellQueryOptions` into a light-client indexer
+        // `SearchKey`. Then page through `get_cells` until either the total
+        // capacity reaches `query.min_total_capacity` or the indexer runs out.
+        //
+        // `CellQueryOptions::maturity` and `query.limit` are not honored —
+        // neither current call site (spendable, dao_cells) sets them, and
+        // light-client indexer responses don't carry the cellbase metadata
+        // needed for proper maturity filtering.
+        let primary_type = match query.primary_type {
+            PrimaryScriptType::Lock => ScriptType::Lock,
+            PrimaryScriptType::Type => ScriptType::Type,
+        };
+
+        let to_range = |opt: Option<ValueRangeOption>| -> Option<[Uint64; 2]> {
+            opt.map(|r| [Uint64::from(r.start), Uint64::from(r.end)])
+        };
+
+        let filter = SearchKeyFilter {
+            script: query.secondary_script.clone().map(|s| s.into()),
+            script_len_range: to_range(query.secondary_script_len_range),
+            output_data: None,
+            output_data_filter_mode: None,
+            output_data_len_range: to_range(query.data_len_range),
+            output_capacity_range: to_range(query.capacity_range),
+            block_range: to_range(query.block_range),
+        };
+
+        let search_key = SearchKey {
+            script: query.primary_script.clone().into(),
+            script_type: primary_type,
+            script_search_mode: None,
+            filter: Some(filter),
+            with_data: Some(true),
+            group_by_transaction: None,
+        };
+
+        let page_size: u32 = 100;
+        let mut after: Option<JsonBytes> = None;
+        let mut collected: Vec<LiveCell> = Vec::new();
+        let mut total_capacity: u64 = 0;
+
+        loop {
+            let page = self
+                .client
+                .get_cells(search_key.clone(), Order::Asc, page_size.into(), after.clone())
+                .map_err(|e| NodeManagerError::RpcError(e.to_string()))?;
+
+            if page.objects.is_empty() {
+                break;
+            }
+
+            for cell in page.objects {
+                let output: ckb_types::packed::CellOutput = cell.output.into();
+                let output_data = cell
+                    .output_data
+                    .map(|b| b.into_bytes())
+                    .unwrap_or_default();
+                let out_point: ckb_types::packed::OutPoint = cell.out_point.into();
+                let block_number: u64 = cell.block_number.value();
+                let tx_index: u32 = cell.tx_index.value();
+                let capacity: u64 = output.capacity().unpack();
+
+                collected.push(LiveCell {
+                    output,
+                    output_data,
+                    out_point,
+                    block_number,
+                    tx_index,
+                });
+                total_capacity = total_capacity.saturating_add(capacity);
+
+                if query.min_total_capacity > 0 && total_capacity >= query.min_total_capacity {
+                    return Ok(collected);
+                }
+            }
+
+            if page.last_cursor.is_empty() {
+                break;
+            }
+            after = Some(page.last_cursor);
+        }
+
+        Ok(collected)
     }
 
     fn get_rpc_url(&self) -> String {
