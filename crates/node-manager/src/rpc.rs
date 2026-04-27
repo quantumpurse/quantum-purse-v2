@@ -156,6 +156,102 @@ impl FullNodeRpc {
             .map(|peers| peers.len())
             .map_err(|e| NodeManagerError::RpcError(e.to_string()))
     }
+
+    /// Light-client utility: best-effort discovery of the earliest
+    /// funding block across a set of QuantumPurse accounts.
+    ///
+    /// Although this method lives on `FullNodeRpc`, its sole purpose is
+    /// to support the **light-client backend's** manual "Auto-detect
+    /// rescan block" flow. The light client only indexes scripts it has
+    /// been told to track — it cannot itself answer "when was account X
+    /// first funded?" The wallet therefore constructs an ad-hoc
+    /// `FullNodeRpc` against a richly-indexed public endpoint, calls
+    /// this method, and uses the result to pre-fill the user's
+    /// `set_scripts(start_block)` input on the LC.
+    ///
+    /// For each account, asks the indexer for the earliest tx
+    /// (`Order::Asc`, limit 1) involving that lock script and returns
+    /// the minimum block number across all accounts. `Ok(None)` when
+    /// no account has any indexer history.
+    ///
+    /// Returns the **raw** earliest block as the indexer reports it.
+    /// Callers wiring this into the LC's `set_scripts` MUST account
+    /// for the upstream LC's "already-filtered up to and including N"
+    /// semantics (subtract 1 — sync resumes at `block_number + 1`, so
+    /// passing the raw earliest would skip the very tx we just
+    /// discovered).
+    pub fn find_earliest_funding_block(
+        &self,
+        lock_args_list: &[String],
+        network: NetworkType,
+    ) -> Result<Option<u64>, NodeManagerError> {
+        if lock_args_list.is_empty() {
+            return Ok(None);
+        }
+
+        let (code_hash_hex, hash_type_str) = match network {
+            NetworkType::Mainnet => (
+                qpv2_core::constants::CKB_MAINNET_CODE_HASH,
+                qpv2_core::constants::CKB_MAINNET_HASH_TYPE,
+            ),
+            NetworkType::Testnet => (
+                qpv2_core::constants::CKB_TESTNET_CODE_HASH,
+                qpv2_core::constants::CKB_TESTNET_HASH_TYPE,
+            ),
+        };
+        let script_hash_type = match hash_type_str {
+            "type" => ckb_jsonrpc_types::ScriptHashType::Type,
+            "data1" => ckb_jsonrpc_types::ScriptHashType::Data1,
+            _ => ckb_jsonrpc_types::ScriptHashType::Data,
+        };
+        let code_hash_clean = code_hash_hex.strip_prefix("0x").unwrap_or(code_hash_hex);
+        let mut code_hash_bytes = [0u8; 32];
+        let decoded = hex::decode(code_hash_clean)
+            .map_err(|e| NodeManagerError::RpcError(format!("Invalid code hash hex: {}", e)))?;
+        if decoded.len() != 32 {
+            return Err(NodeManagerError::RpcError(format!(
+                "Code hash must be 32 bytes, got {}.",
+                decoded.len()
+            )));
+        }
+        code_hash_bytes.copy_from_slice(&decoded);
+
+        let mut earliest: Option<u64> = None;
+        for lock_args_hex in lock_args_list {
+            let lock_args_clean = lock_args_hex.strip_prefix("0x").unwrap_or(lock_args_hex);
+            let args_bytes = hex::decode(lock_args_clean).map_err(|e| {
+                NodeManagerError::RpcError(format!("Invalid lock args hex: {}", e))
+            })?;
+
+            let script = ckb_jsonrpc_types::Script {
+                code_hash: H256(code_hash_bytes),
+                hash_type: script_hash_type,
+                args: JsonBytes::from_bytes(args_bytes.into()),
+            };
+            let search_key = SearchKey {
+                script,
+                script_type: ScriptType::Lock,
+                script_search_mode: None,
+                filter: None,
+                with_data: None,
+                group_by_transaction: None,
+            };
+
+            let page = self
+                .client
+                .get_transactions(search_key, Order::Asc, 1u32.into(), None)
+                .map_err(|e| NodeManagerError::RpcError(e.to_string()))?;
+
+            if let Some(first) = page.objects.first() {
+                let block_num = match first {
+                    Tx::Ungrouped(t) => t.block_number.value(),
+                    Tx::Grouped(t) => t.block_number.value(),
+                };
+                earliest = Some(earliest.map_or(block_num, |e| e.min(block_num)));
+            }
+        }
+        Ok(earliest)
+    }
 }
 
 impl CkbRpc for FullNodeRpc {

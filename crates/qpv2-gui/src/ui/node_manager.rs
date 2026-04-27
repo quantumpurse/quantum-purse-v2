@@ -276,6 +276,20 @@ impl App {
                         .add_enabled(valid, egui::Button::new("Set"))
                         .clicked();
                     let cancel_clicked = ui.button("Cancel").clicked();
+                    // Auto-detect via a one-shot FullNodeRpc against the
+                    // network's public endpoint. Disabled while a
+                    // detection is in flight or there are no accounts
+                    // to look up.
+                    let auto_enabled = self.earliest_funding_block_rx.is_none()
+                        && !self.accounts.is_empty();
+                    let auto_label = if self.earliest_funding_block_rx.is_some() {
+                        "Auto…"
+                    } else {
+                        "Auto"
+                    };
+                    let auto_clicked = ui
+                        .add_enabled(auto_enabled, egui::Button::new(auto_label))
+                        .clicked();
                     let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
 
                     if set_clicked {
@@ -287,6 +301,8 @@ impl App {
                     } else if cancel_clicked || escape {
                         self.set_block_editing = false;
                         self.set_block_input.clear();
+                    } else if auto_clicked {
+                        self.detect_earliest_funding_block_async();
                     }
                 });
             }

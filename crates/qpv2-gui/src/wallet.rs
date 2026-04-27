@@ -39,6 +39,38 @@ impl App {
         }
     }
 
+    /// Kicks off a background detection of the earliest funding block
+    /// across all accounts via an ad-hoc `FullNodeRpc` against the
+    /// public RPC endpoint for the active network. Result lands in
+    /// `earliest_funding_block_rx`; the poller writes it into
+    /// `set_block_input`. No-op when accounts is empty or another
+    /// detection is already in flight.
+    pub(crate) fn detect_earliest_funding_block_async(&mut self) {
+        if self.earliest_funding_block_rx.is_some() || self.accounts.is_empty() {
+            return;
+        }
+
+        let network = self.node_manager.network();
+        // Always use the network's public RPC — even if the active
+        // backend is already PublicRpc, building a fresh client keeps
+        // this a self-contained one-shot.
+        let public_rpc_url =
+            node_manager::NodeConfig::default_rpc_url_for(node_manager::NodeType::PublicRpc, network)
+                .to_string();
+        let accounts = self.accounts.clone();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.earliest_funding_block_rx = Some(rx);
+
+        std::thread::spawn(move || {
+            let pub_rpc = node_manager::rpc::FullNodeRpc::new(&public_rpc_url);
+            let result = pub_rpc
+                .find_earliest_funding_block(&accounts, network)
+                .map_err(|e| e.to_string());
+            let _ = tx.send(result);
+        });
+    }
+
     /// Manual override: force the running light client to start scanning
     /// every account from `start_block`. Bypasses the cursor-preservation
     /// filter — use only from a UI control where the user explicitly

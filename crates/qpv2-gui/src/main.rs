@@ -117,6 +117,12 @@ pub(crate) struct App {
     // Transient UI state; not persisted across sessions.
     pub(crate) set_block_input: String,
     pub(crate) set_block_editing: bool,
+    // In-flight async lookup for the "Auto" button — uses a one-shot
+    // FullNodeRpc against a public endpoint to discover the earliest
+    // funding block across all accounts. Some(_) means a detection is
+    // running; the poller swaps the result into `set_block_input`.
+    pub(crate) earliest_funding_block_rx:
+        Option<mpsc::Receiver<Result<Option<u64>, String>>>,
 
     // Periodic polling timer for balances, tx history, and DAO cells.
     pub(crate) last_poll_time: std::time::Instant,
@@ -293,6 +299,7 @@ impl App {
             node_status_rx: None,
             set_block_input: String::new(),
             set_block_editing: false,
+            earliest_funding_block_rx: None,
             last_poll_time: std::time::Instant::now(),
             status_seen: Status::None,
             status_set_at: None,
@@ -340,6 +347,7 @@ impl eframe::App for App {
             self.poll_dao_cells();
             self.poll_tx_history();
             self.poll_node_status();
+            self.poll_earliest_funding_block();
         }
 
         // Periodic refresh of balances, transaction history, DAO cells,

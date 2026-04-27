@@ -471,4 +471,44 @@ impl App {
             }
         }
     }
+
+    /// Pick up the result of a `detect_earliest_funding_block_async`
+    /// call. On success, write the discovered block (minus 1 — see
+    /// `FullNodeRpc::find_earliest_funding_block` doc) into
+    /// `set_block_input` so the user can review and click Set. We do
+    /// **not** auto-submit (option B from the design discussion).
+    pub(crate) fn poll_earliest_funding_block(&mut self) {
+        let rx = match &self.earliest_funding_block_rx {
+            Some(rx) => rx,
+            None => return,
+        };
+
+        match rx.try_recv() {
+            Ok(Ok(Some(earliest))) => {
+                // off-by-one: LC's stored block_number means "filtered up
+                // to AND INCLUDING N", sync resumes at N+1. To capture
+                // the tx at `earliest`, register at `earliest - 1`.
+                let target = earliest.saturating_sub(1);
+                self.set_block_input = target.to_string();
+                self.set_block_editing = true;
+                self.status = Status::Info(format!(
+                    "Earliest funding at block {}. Pre-filled {} (off-by-one). Review and click Set.",
+                    earliest, target
+                ));
+                self.earliest_funding_block_rx = None;
+            }
+            Ok(Ok(None)) => {
+                self.status = Status::Info("No funding history found.".to_string());
+                self.earliest_funding_block_rx = None;
+            }
+            Ok(Err(e)) => {
+                self.status = Status::Error(format!("Auto-detect failed: {}", e));
+                self.earliest_funding_block_rx = None;
+            }
+            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Disconnected) => {
+                self.earliest_funding_block_rx = None;
+            }
+        }
+    }
 }
