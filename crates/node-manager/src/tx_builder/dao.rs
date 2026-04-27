@@ -4,10 +4,7 @@ use crate::error::NodeManagerError;
 use crate::rpc::CkbRpc;
 use ckb_sdk::{
     constants::DAO_TYPE_HASH,
-    traits::{
-        CellDepResolver, DefaultCellCollector, DefaultHeaderDepResolver,
-        DefaultTransactionDependencyProvider,
-    },
+    traits::CellDepResolver,
     tx_builder::{
         balance_tx_capacity,
         dao::{
@@ -54,18 +51,17 @@ fn build_balanced_dao_tx(
         force_small_change_as_fee: None,
     };
 
-    let rpc_url = rpc.get_rpc_url();
-    let mut cell_collector = DefaultCellCollector::new(&rpc_url);
+    let mut cell_collector = rpc.cell_collector();
     let cell_dep_resolver = super::utils::cell_dep_resolver_from_rpc(rpc, is_mainnet)?;
-    let header_dep_resolver = DefaultHeaderDepResolver::new(&rpc_url);
-    let tx_dep_provider = DefaultTransactionDependencyProvider::new(&rpc_url, 10);
+    let header_dep_resolver = rpc.header_dep_resolver();
+    let tx_dep_provider = rpc.tx_dep_provider();
 
     let tx = builder
         .build_balanced(
-            &mut cell_collector,
+            &mut *cell_collector,
             &cell_dep_resolver,
-            &header_dep_resolver,
-            &tx_dep_provider,
+            &*header_dep_resolver,
+            &*tx_dep_provider,
             &balancer,
             &Default::default(),
         )
@@ -297,7 +293,6 @@ impl<'a> QpDaoPrepareBuilder<'a> {
         deposit_out_points: Vec<OutPoint>,
         fee_rate: u64,
     ) -> Result<TransactionView, NodeManagerError> {
-        let rpc_url = self.rpc.get_rpc_url();
         let lock_script = Script::from(from_address.payload());
 
         // Create prepare items from deposit outpoints.
@@ -319,18 +314,18 @@ impl<'a> QpDaoPrepareBuilder<'a> {
         // Fix: build the base transaction, inject a WitnessArgs placeholder at
         // witness 0, then run the balancer on the patched transaction so fee
         // calculation includes the full witness size.
-        let mut cell_collector = DefaultCellCollector::new(&rpc_url);
+        let mut cell_collector = self.rpc.cell_collector();
         let cell_dep_resolver =
             super::utils::cell_dep_resolver_from_rpc(self.rpc, self.is_mainnet)?;
-        let header_dep_resolver = DefaultHeaderDepResolver::new(&rpc_url);
-        let tx_dep_provider = DefaultTransactionDependencyProvider::new(&rpc_url, 10);
+        let header_dep_resolver = self.rpc.header_dep_resolver();
+        let tx_dep_provider = self.rpc.tx_dep_provider();
 
         let base_tx = prepare_builder
             .build_base(
-                &mut cell_collector,
+                &mut *cell_collector,
                 &cell_dep_resolver,
-                &header_dep_resolver,
-                &tx_dep_provider,
+                &*header_dep_resolver,
+                &*tx_dep_provider,
             )
             .map_err(|e| {
                 NodeManagerError::RpcError(format!("Failed to build DAO prepare base: {:?}", e))
@@ -368,10 +363,10 @@ impl<'a> QpDaoPrepareBuilder<'a> {
         let tx = balance_tx_capacity(
             &patched_tx,
             &balancer,
-            &mut cell_collector,
-            &tx_dep_provider,
+            &mut *cell_collector,
+            &*tx_dep_provider,
             &cell_dep_resolver,
-            &header_dep_resolver,
+            &*header_dep_resolver,
         )
         .map_err(|e| {
             NodeManagerError::RpcError(format!("Failed to balance DAO prepare: {:?}", e))

@@ -3,10 +3,7 @@
 use crate::error::NodeManagerError;
 use crate::rpc::CkbRpc;
 use ckb_sdk::{
-    traits::{
-        CellDepResolver, DefaultCellCollector, DefaultHeaderDepResolver,
-        DefaultTransactionDependencyProvider,
-    },
+    traits::CellDepResolver,
     tx_builder::{
         transfer::CapacityTransferBuilder, CapacityBalancer, CapacityProvider, TxBuilder,
     },
@@ -71,7 +68,6 @@ impl<'a> QpTransferBuilder<'a> {
         fee_rate: u64,
         data: Option<Vec<u8>>,
     ) -> Result<TransactionView, NodeManagerError> {
-        let rpc_url = self.rpc.get_rpc_url();
         let from_lock_script = Script::from(from_address.payload());
         let to_lock_script = Script::from(to_address.payload());
 
@@ -105,20 +101,21 @@ impl<'a> QpTransferBuilder<'a> {
             force_small_change_as_fee: None,
         };
 
-        // Create collectors and resolvers
-        let mut cell_collector = DefaultCellCollector::new(&rpc_url);
+        // Create collectors and resolvers via the trait so the right
+        // backend impl (full node vs light client) is used.
+        let mut cell_collector = self.rpc.cell_collector();
         let cell_dep_resolver =
             super::utils::cell_dep_resolver_from_rpc(self.rpc, self.is_mainnet)?;
-        let header_dep_resolver = DefaultHeaderDepResolver::new(&rpc_url);
-        let tx_dep_provider = DefaultTransactionDependencyProvider::new(&rpc_url, 10);
+        let header_dep_resolver = self.rpc.header_dep_resolver();
+        let tx_dep_provider = self.rpc.tx_dep_provider();
 
         // Build the transaction
         let tx = transfer_builder
             .build_balanced(
-                &mut cell_collector,
+                &mut *cell_collector,
                 &cell_dep_resolver,
-                &header_dep_resolver,
-                &tx_dep_provider,
+                &*header_dep_resolver,
+                &*tx_dep_provider,
                 &balancer,
                 &Default::default(),
             )

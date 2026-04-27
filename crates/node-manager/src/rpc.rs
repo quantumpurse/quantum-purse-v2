@@ -7,8 +7,10 @@ use ckb_sdk::rpc::ckb_indexer::{
 use ckb_sdk::rpc::ckb_light_client::{LightClientRpcClient, ScriptStatus, SetScriptsCommand};
 use ckb_sdk::rpc::{CkbRpcClient, ResponseFormatGetter};
 use ckb_sdk::traits::{
-    CellCollector, CellQueryOptions, DefaultCellCollector, LiveCell, PrimaryScriptType,
-    ValueRangeOption,
+    CellCollector, CellQueryOptions, DefaultCellCollector, DefaultHeaderDepResolver,
+    DefaultTransactionDependencyProvider, HeaderDepResolver, LightClientCellCollector,
+    LightClientHeaderDepResolver, LightClientTransactionDependencyProvider, LiveCell,
+    PrimaryScriptType, TransactionDependencyProvider, ValueRangeOption,
 };
 use ckb_types::prelude::*;
 use ckb_types::H256;
@@ -96,6 +98,21 @@ pub trait CkbRpc: Send + Sync + Any {
         &self,
         query: &CellQueryOptions,
     ) -> Result<Vec<LiveCell>, NodeManagerError>;
+
+    /// Returns a fresh ckb-sdk `CellCollector` bound to this backend.
+    /// Used by tx builders that consume `&mut dyn CellCollector` (e.g.
+    /// `build_balanced`). Full node returns `DefaultCellCollector`; light
+    /// client returns `LightClientCellCollector`.
+    fn cell_collector(&self) -> Box<dyn CellCollector>;
+
+    /// Returns a fresh ckb-sdk `HeaderDepResolver` bound to this backend.
+    /// Used by tx builders that consume `&dyn HeaderDepResolver`.
+    fn header_dep_resolver(&self) -> Box<dyn HeaderDepResolver>;
+
+    /// Returns a fresh ckb-sdk `TransactionDependencyProvider` bound to
+    /// this backend. Used by tx builders that consume
+    /// `&dyn TransactionDependencyProvider`.
+    fn tx_dep_provider(&self) -> Box<dyn TransactionDependencyProvider>;
 
     /// Gets the RPC URL (temporary method for SDK components).
     /// TODO: Remove when we implement custom collectors using the trait.
@@ -239,6 +256,18 @@ impl CkbRpc for FullNodeRpc {
             .collect_live_cells(query, false)
             .map_err(|e| NodeManagerError::RpcError(e.to_string()))?;
         Ok(cells)
+    }
+
+    fn cell_collector(&self) -> Box<dyn CellCollector> {
+        Box::new(DefaultCellCollector::new(&self.rpc_url))
+    }
+
+    fn header_dep_resolver(&self) -> Box<dyn HeaderDepResolver> {
+        Box::new(DefaultHeaderDepResolver::new(&self.rpc_url))
+    }
+
+    fn tx_dep_provider(&self) -> Box<dyn TransactionDependencyProvider> {
+        Box::new(DefaultTransactionDependencyProvider::new(&self.rpc_url, 10))
     }
 
     fn get_rpc_url(&self) -> String {
@@ -588,6 +617,18 @@ impl CkbRpc for LightClientRpc {
         }
 
         Ok(collected)
+    }
+
+    fn cell_collector(&self) -> Box<dyn CellCollector> {
+        Box::new(LightClientCellCollector::new(&self.rpc_url))
+    }
+
+    fn header_dep_resolver(&self) -> Box<dyn HeaderDepResolver> {
+        Box::new(LightClientHeaderDepResolver::new(&self.rpc_url))
+    }
+
+    fn tx_dep_provider(&self) -> Box<dyn TransactionDependencyProvider> {
+        Box::new(LightClientTransactionDependencyProvider::new(&self.rpc_url))
     }
 
     fn get_rpc_url(&self) -> String {
