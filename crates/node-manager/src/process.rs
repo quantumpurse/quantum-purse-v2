@@ -82,7 +82,10 @@ impl NodeProcess for LightClientProcess {
         let config_path = data_dir.join("config.toml");
         let log_path = data_dir.join("node.log");
 
-        let mut child = spawn_node_binary(&binary, &config_path, &log_path)?;
+        let mut command = Command::new(&binary);
+        command.arg("run").arg("--config-file").arg(&config_path);
+
+        let mut child = execute(command, &log_path)?;
         wait_for_rpc(&mut child, &config.rpc_url)?;
 
         Ok(Self { child })
@@ -109,15 +112,12 @@ impl Drop for LightClientProcess {
 
 // ── Shared lifecycle helpers ─────────────────────────────────────────────
 
-/// Builds and spawns the `<binary> run --config-file <config>` invocation,
-/// redirecting stdout+stderr to a log file at `log_path` so signed `.app`
-/// bundle runs (where inherited stderr vanishes) still leave a paper
-/// trail. Truncates the log on each start.
-fn spawn_node_binary(
-    binary: &Path,
-    config_file: &Path,
-    log_path: &Path,
-) -> Result<Child, NodeManagerError> {
+/// Spawns a pre-built `Command`, redirecting stdout+stderr to a log file
+/// at `log_path` so signed `.app` bundle runs (where inherited stderr
+/// vanishes) still leave a paper trail. Truncates the log on each call.
+/// Per-backend `start()` implementations build their own `Command`
+/// (binary path + args) and pass it here.
+fn execute(mut command: Command, log_path: &Path) -> Result<Child, NodeManagerError> {
     let log_file = File::create(log_path).map_err(|e| {
         NodeManagerError::ProcessError(format!(
             "Failed to create node log at '{}': {}",
@@ -129,20 +129,11 @@ fn spawn_node_binary(
         NodeManagerError::ProcessError(format!("Failed to clone log handle: {}", e))
     })?;
 
-    Command::new(binary)
-        .arg("run")
-        .arg("--config-file")
-        .arg(config_file)
+    command
         .stdout(Stdio::from(log_file))
         .stderr(Stdio::from(log_file_err))
         .spawn()
-        .map_err(|e| {
-            NodeManagerError::ProcessError(format!(
-                "Failed to spawn node binary '{}': {}",
-                binary.display(),
-                e
-            ))
-        })
+        .map_err(|e| NodeManagerError::ProcessError(format!("Failed to spawn node binary: {}", e)))
 }
 
 /// SIGTERM + grace period + SIGKILL on Unix; immediate kill elsewhere.
