@@ -113,6 +113,11 @@ pub(crate) struct App {
     pub(crate) node_status: NodeStatus,
     pub(crate) node_status_rx: Option<mpsc::Receiver<NodeStatusUpdate>>,
 
+    // Manual "set scan from block" input on the Light Client card.
+    // Transient UI state; not persisted across sessions.
+    pub(crate) set_block_input: String,
+    pub(crate) set_block_editing: bool,
+
     // Periodic polling timer for balances, tx history, and DAO cells.
     pub(crate) last_poll_time: std::time::Instant,
 
@@ -286,6 +291,8 @@ impl App {
             tx_history_rx: None,
             node_status: NodeStatus::default(),
             node_status_rx: None,
+            set_block_input: String::new(),
+            set_block_editing: false,
             last_poll_time: std::time::Instant::now(),
             status_seen: Status::None,
             status_set_at: None,

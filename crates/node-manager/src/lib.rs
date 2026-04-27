@@ -295,6 +295,33 @@ impl NodeManager {
         light.register_lock_scripts(&scripts, self.config.network)
     }
 
+    /// Forces every given lock script to `start_block` on the light
+    /// client, **without** the cursor-preservation filter. Use for the
+    /// manual "set scan from block" UI; do not use for the auto-flow
+    /// (account creation, network switch) — those should stay on
+    /// [`Self::register_lock_scripts`] so existing cursors aren't
+    /// clobbered. Errors when called against a non-LightClient backend.
+    pub fn register_all_lock_scripts(
+        &self,
+        lock_args_list: &[String],
+        start_block: u64,
+    ) -> Result<(), NodeManagerError> {
+        let Some(light) = self.rpc.as_any().downcast_ref::<rpc::LightClientRpc>() else {
+            return Err(NodeManagerError::UnsupportedOperation {
+                node_type: self.config.node_type.to_string(),
+                reason: "register_all_lock_scripts is light-client-only.".to_string(),
+            });
+        };
+        if lock_args_list.is_empty() {
+            return Ok(());
+        }
+        let scripts: Vec<(&str, u64)> = lock_args_list
+            .iter()
+            .map(|a| (a.as_str(), start_block))
+            .collect();
+        light.register_all_lock_scripts(&scripts, self.config.network)
+    }
+
     // ── Local process lifecycle ───────────────────────────────────────
 
     /// Spawns the local node process for the active backend and stores

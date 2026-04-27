@@ -341,29 +341,26 @@ impl LightClientRpc {
 
     /// Registers one or more QuantumPurse lock scripts with the light
     /// client so it indexes matching cells. Each entry is a
-    /// `(lock_args_hex, start_block)` pair — the LC begins indexing that
-    /// script from `start_block`. Builds `ScriptStatus`es from
-    /// network-specific code_hash/hash_type constants and submits them
-    /// in one `set_scripts(Partial)` call.
+    /// `(lock_args_hex, start_block)` pair. Submits all in one
+    /// `set_scripts(Partial)` call.
     ///
-    /// Why we filter against `get_scripts` first
-    /// -----------------------------------------
-    /// `set_scripts(Partial)` **overwrites** the stored block_number for
-    /// any script that's already registered (per upstream LC's
-    /// `update_filter_scripts` — it always `put`s the new value, never
-    /// merges). LC data dirs are per-network and persistent, so when the
-    /// user switches mainnet ↔ testnet the target network's RocksDB may
-    /// already contain our scripts with valid sync cursors from a prior
-    /// session. Naively re-registering at `tip` would yank those cursors
-    /// forward and silently skip any blocks indexed since the last
-    /// visit. To avoid that, read `get_scripts` and drop any candidate
-    /// that's already tracked — its cursor stays put.
+    /// Filters against `get_scripts` first so already-tracked scripts
+    /// are skipped — their existing sync cursors stay put. This is the
+    /// safe path used by the auto-flow (account creation, network
+    /// switch). For deliberate cursor reset (manual UI) use
+    /// [`Self::register_all_lock_scripts`].
     ///
-    /// Net effect:
-    ///   - First time on this network's LC → register all at `tip`.
-    ///   - Returning to a network the LC has seen before → no-op for
-    ///     accounts already known; new accounts (if any) get added at
-    ///     `tip` like usual.
+    /// Why filter
+    /// ----------
+    /// `set_scripts(Partial)` overwrites the stored block_number for
+    /// any script that's already registered (upstream LC's
+    /// `update_filter_scripts` always `put`s the new value, never
+    /// merges). LC data dirs are per-network and persistent, so when
+    /// the user switches mainnet ↔ testnet the target network's
+    /// RocksDB may already contain our scripts with valid sync cursors
+    /// from a prior session. Naively re-registering at `tip` would
+    /// yank those cursors forward and silently skip any blocks indexed
+    /// since the last visit.
     pub fn register_lock_scripts(
         &self,
         scripts: &[(&str, u64)],
@@ -372,35 +369,6 @@ impl LightClientRpc {
         if scripts.is_empty() {
             return Ok(());
         }
-
-        let (code_hash_hex, hash_type_str) = match network {
-            NetworkType::Mainnet => (
-                qpv2_core::constants::CKB_MAINNET_CODE_HASH,
-                qpv2_core::constants::CKB_MAINNET_HASH_TYPE,
-            ),
-            NetworkType::Testnet => (
-                qpv2_core::constants::CKB_TESTNET_CODE_HASH,
-                qpv2_core::constants::CKB_TESTNET_HASH_TYPE,
-            ),
-        };
-
-        let script_hash_type = match hash_type_str {
-            "type" => ckb_jsonrpc_types::ScriptHashType::Type,
-            "data1" => ckb_jsonrpc_types::ScriptHashType::Data1,
-            _ => ckb_jsonrpc_types::ScriptHashType::Data,
-        };
-
-        let code_hash_clean = code_hash_hex.strip_prefix("0x").unwrap_or(code_hash_hex);
-        let mut code_hash_bytes = [0u8; 32];
-        let decoded = hex::decode(code_hash_clean)
-            .map_err(|e| NodeManagerError::RpcError(format!("Invalid code hash hex: {}", e)))?;
-        if decoded.len() != 32 {
-            return Err(NodeManagerError::RpcError(format!(
-                "Code hash must be 32 bytes, got {}.",
-                decoded.len()
-            )));
-        }
-        code_hash_bytes.copy_from_slice(&decoded);
 
         // Set of lock_args bytes the LC already tracks. Only this wallet
         // talks to this LC, so every entry came from us — comparing by
@@ -414,38 +382,106 @@ impl LightClientRpc {
             .map(|ss| ss.script.args.as_bytes().to_vec())
             .collect();
 
-        let mut statuses: Vec<ScriptStatus> = Vec::with_capacity(scripts.len());
-        for (lock_args_hex, start_block) in scripts {
-            let lock_args_clean = lock_args_hex.strip_prefix("0x").unwrap_or(lock_args_hex);
-            let args_bytes = hex::decode(lock_args_clean).map_err(|e| {
-                NodeManagerError::RpcError(format!("Invalid lock args hex: {}", e))
-            })?;
+        // Drop already-tracked entries; only newly-seen scripts go through.
+        let filtered: Vec<(&str, u64)> = scripts
+            .iter()
+            .copied()
+            .filter(|(args_hex, _)| {
+                let clean = args_hex.strip_prefix("0x").unwrap_or(args_hex);
+                match hex::decode(clean) {
+                    Ok(bytes) => !existing.contains(&bytes),
+                    // Invalid hex: let the helper surface a precise error
+                    // when it tries to decode the same value.
+                    Err(_) => true,
+                }
+            })
+            .collect();
 
-            // Already tracked → its existing cursor must stay put
-            // (see the doc comment above).
-            if existing.contains(&args_bytes) {
-                continue;
-            }
-
-            let script = ckb_jsonrpc_types::Script {
-                code_hash: H256(code_hash_bytes),
-                hash_type: script_hash_type,
-                args: JsonBytes::from_bytes(args_bytes.into()),
-            };
-
-            statuses.push(ScriptStatus {
-                script,
-                script_type: ScriptType::Lock,
-                block_number: (*start_block).into(),
-            });
-        }
-
+        let statuses = build_lock_script_statuses(&filtered, network)?;
         if statuses.is_empty() {
             return Ok(());
         }
-
         self.set_scripts(statuses, Some(SetScriptsCommand::Partial))
     }
+
+    /// Force-applies a `set_scripts(Partial)` call for every entry,
+    /// **without** filtering. The user's intent is to deliberately
+    /// reset (rewind or advance) the LC's stored sync cursor for these
+    /// scripts — typically wired to a manual "set scan from block N"
+    /// UI control.
+    ///
+    /// Same construction logic as [`Self::register_lock_scripts`]; only
+    /// the filter is skipped. Empty input is a no-op.
+    pub fn register_all_lock_scripts(
+        &self,
+        scripts: &[(&str, u64)],
+        network: NetworkType,
+    ) -> Result<(), NodeManagerError> {
+        if scripts.is_empty() {
+            return Ok(());
+        }
+        let statuses = build_lock_script_statuses(scripts, network)?;
+        self.set_scripts(statuses, Some(SetScriptsCommand::Partial))
+    }
+}
+
+/// Builds `ScriptStatus`es for a list of `(lock_args_hex, start_block)`
+/// pairs against the active network's code_hash/hash_type. Pure
+/// construction — no RPC. Shared between `register_lock_scripts` (auto,
+/// filtered) and `set_all_lock_scripts` (manual, force).
+fn build_lock_script_statuses(
+    scripts: &[(&str, u64)],
+    network: NetworkType,
+) -> Result<Vec<ScriptStatus>, NodeManagerError> {
+    let (code_hash_hex, hash_type_str) = match network {
+        NetworkType::Mainnet => (
+            qpv2_core::constants::CKB_MAINNET_CODE_HASH,
+            qpv2_core::constants::CKB_MAINNET_HASH_TYPE,
+        ),
+        NetworkType::Testnet => (
+            qpv2_core::constants::CKB_TESTNET_CODE_HASH,
+            qpv2_core::constants::CKB_TESTNET_HASH_TYPE,
+        ),
+    };
+
+    let script_hash_type = match hash_type_str {
+        "type" => ckb_jsonrpc_types::ScriptHashType::Type,
+        "data1" => ckb_jsonrpc_types::ScriptHashType::Data1,
+        _ => ckb_jsonrpc_types::ScriptHashType::Data,
+    };
+
+    let code_hash_clean = code_hash_hex.strip_prefix("0x").unwrap_or(code_hash_hex);
+    let mut code_hash_bytes = [0u8; 32];
+    let decoded = hex::decode(code_hash_clean)
+        .map_err(|e| NodeManagerError::RpcError(format!("Invalid code hash hex: {}", e)))?;
+    if decoded.len() != 32 {
+        return Err(NodeManagerError::RpcError(format!(
+            "Code hash must be 32 bytes, got {}.",
+            decoded.len()
+        )));
+    }
+    code_hash_bytes.copy_from_slice(&decoded);
+
+    let mut statuses: Vec<ScriptStatus> = Vec::with_capacity(scripts.len());
+    for (lock_args_hex, start_block) in scripts {
+        let lock_args_clean = lock_args_hex.strip_prefix("0x").unwrap_or(lock_args_hex);
+        let args_bytes = hex::decode(lock_args_clean)
+            .map_err(|e| NodeManagerError::RpcError(format!("Invalid lock args hex: {}", e)))?;
+
+        let script = ckb_jsonrpc_types::Script {
+            code_hash: H256(code_hash_bytes),
+            hash_type: script_hash_type,
+            args: JsonBytes::from_bytes(args_bytes.into()),
+        };
+
+        statuses.push(ScriptStatus {
+            script,
+            script_type: ScriptType::Lock,
+            block_number: (*start_block).into(),
+        });
+    }
+
+    Ok(statuses)
 }
 
 impl CkbRpc for LightClientRpc {

@@ -39,6 +39,31 @@ impl App {
         }
     }
 
+    /// Manual override: force the running light client to start scanning
+    /// every account from `start_block`. Bypasses the cursor-preservation
+    /// filter — use only from a UI control where the user explicitly
+    /// asked for it. No-op outside LightClient or with no local process.
+    pub(crate) fn set_all_accounts_lock_script_block(&mut self, start_block: u64) {
+        if self.node_manager.config().node_type != node_manager::NodeType::LightClient
+            || !self.node_manager.has_local_process()
+            || self.accounts.is_empty()
+        {
+            return;
+        }
+        let accounts = self.accounts.clone();
+        if let Err(e) = self
+            .node_manager
+            .register_all_lock_scripts(&accounts, start_block)
+        {
+            self.status = Status::Error(format!("Failed to set scan block: {}", e));
+        } else {
+            self.status = Status::Info(format!(
+                "Rescan from block {} requested.",
+                start_block
+            ));
+        }
+    }
+
     /// Highest committed block number in `tx_history`, or 0 when empty.
     /// Used as `after_block` for the next incremental sync. Derived from
     /// the in-memory vector — no cached state to keep in sync.

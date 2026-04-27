@@ -39,7 +39,7 @@ impl App {
         });
     }
 
-    fn draw_backend_card(&self, ui: &mut egui::Ui, backend: NodeType) {
+    fn draw_backend_card(&mut self, ui: &mut egui::Ui, backend: NodeType) {
         let active = self.node_manager.config().node_type == backend;
 
         let (icon, title, subtitle) = match backend {
@@ -138,11 +138,7 @@ impl App {
                             "Block Height",
                             block_height_text(self.node_status.tip_block),
                         );
-                        self.draw_metric(
-                            &mut cols[1],
-                            "Synced",
-                            block_height_text(self.node_status.synced_block),
-                        );
+                        self.draw_synced_metric_editable(&mut cols[1]);
                         self.draw_metric(
                             &mut cols[2],
                             "Peers",
@@ -209,6 +205,92 @@ impl App {
                         .color(fg),
                 );
             });
+    }
+
+    /// Editable "Synced" metric: shows the current synced block, with a
+    /// pencil glyph at right that swaps the value for an input + Set /
+    /// Cancel buttons. On Set, force-applies a `set_scripts(Partial)`
+    /// for every account at the user's chosen block (manual cursor
+    /// reset). Set is disabled until the input is a valid `u64` and
+    /// not above the LC's known tip.
+    fn draw_synced_metric_editable(&mut self, ui: &mut egui::Ui) {
+        let muted = self.colors.text_muted;
+        let text_color = self.colors.text;
+        let accent = self.colors.accent;
+        let synced_text = block_height_text(self.node_status.synced_block);
+        let synced_value = self.node_status.synced_block;
+        let tip = self.node_status.tip_block;
+
+        ui.vertical(|ui| {
+            ui.label(
+                egui::RichText::new("SYNCED")
+                    .size(10.0)
+                    .family(egui::FontFamily::Monospace)
+                    .color(muted),
+            );
+            ui.add_space(3.0);
+
+            if !self.set_block_editing {
+                // Read-only: value + pencil affordance on the right.
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(&synced_text)
+                            .size(15.0)
+                            .strong()
+                            .color(text_color),
+                    );
+                    let pencil = egui::Label::new(
+                        egui::RichText::new("\u{270E}").size(12.0).color(muted),
+                    )
+                    .sense(egui::Sense::click());
+                    let resp = ui
+                        .add(pencil)
+                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                    if resp.clicked() {
+                        self.set_block_editing = true;
+                        self.set_block_input = synced_value
+                            .map(|b| b.to_string())
+                            .unwrap_or_default();
+                    }
+                });
+            } else {
+                // Edit mode: input + Set / Cancel.
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.set_block_input)
+                        .desired_width(110.0)
+                        .font(egui::FontId::monospace(13.0))
+                        .text_color(accent),
+                );
+
+                // Validate: numeric and ≤ known tip (when tip is known).
+                let parsed = self
+                    .set_block_input
+                    .trim()
+                    .replace(',', "")
+                    .parse::<u64>();
+                let valid = matches!(&parsed, Ok(b) if tip.map_or(true, |t| *b <= t));
+
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    let set_clicked = ui
+                        .add_enabled(valid, egui::Button::new("Set"))
+                        .clicked();
+                    let cancel_clicked = ui.button("Cancel").clicked();
+                    let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
+
+                    if set_clicked {
+                        if let Ok(block) = parsed {
+                            self.set_all_accounts_lock_script_block(block);
+                            self.set_block_editing = false;
+                            self.set_block_input.clear();
+                        }
+                    } else if cancel_clicked || escape {
+                        self.set_block_editing = false;
+                        self.set_block_input.clear();
+                    }
+                });
+            }
+        });
     }
 
     fn draw_metric(&self, ui: &mut egui::Ui, label: &str, value: String) {
