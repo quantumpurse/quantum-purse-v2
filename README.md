@@ -2,6 +2,8 @@
 
 Quantum Purse version 2 built entirely in Rust. Secure and Performant. There are 2 UI options: CLI and GUI (egui).
 
+Developed in collaboration with Claude Opus (4.5 / 4.6 / 4.7): developer-led architecture, abstraction boundaries, and design decisions; Claude-authored implementation under per-step review.
+
 ###### <u>Feature list</u>:
 
 | Feature               | Details              |
@@ -128,11 +130,38 @@ qpv2-cli --help
 ./launch.sh --release
 ```
 
+### Node Backends
+
+The GUI lets the user pick how the wallet talks to the CKB chain. Each
+backend is selectable from the Node Manager tab and persists across
+sessions.
+
+| Backend       | What it is                                         | When to use |
+|---------------|----------------------------------------------------|-------------|
+| **Public RPC**| Remote JSON-RPC endpoint (default).                | Quick start, no local resources. |
+| **Light Client** | Local `ckb-light-client` child process; header-only sync, per-script cell index. | Privacy-preserving; modest disk + bandwidth. |
+| **Full Node** | Local `ckb` child process; full chain verification, full indexer. | Maximum sovereignty; ~100 GB disk and multi-day sync. |
+
+Both local backends are bundled inside the signed `qpv2.app`
+(`Contents/MacOS/{ckb-light-client,ckb}`) and spawned/stopped by the GUI
+automatically. Per-network data dirs live under `~/Library/Application
+Support/quantum-purse/node/`.
+
 ### Data Storage
 
-Wallet data is stored in `~/.quantum-purse/`:
-- `master_seed.json` - Encrypted master seed
-- `accounts.json` - Encrypted account private keys
+Wallet state lives in the platform-standard application data dir:
+
+- macOS:   `~/Library/Application Support/quantum-purse/`
+- Linux:   `~/.local/share/quantum-purse/`
+- Windows: `%APPDATA%\quantum-purse\`
+
+Files:
+
+- `master_seed.json` — encrypted master seed
+- `accounts.json` — derived SPHINCS+ accounts
+- `wallet_info.json` — variant + auth method
+- `tx_history_<network>.json` — per-network tx-history cache
+- `node/` — node-manager state (config + per-backend chain dirs)
 
 ### Supported SPHINCS+ Variants
 
