@@ -214,25 +214,29 @@ impl App {
 
         // Restore the last-known node configuration (network + backend +
         // RPC URL) so reopening the app preserves the user's previous
-        // choice. For local backends (Light Client today, Full Node
-        // planned), the spawn below also restarts the child process so
-        // the wallet doesn't come up silently OFFLINE.
+        // choice. For local backends (Light Client and Full Node), the
+        // spawn below also restarts the child process so the wallet
+        // doesn't come up silently OFFLINE.
         let node_config = NodeConfig::load_or_default().unwrap_or_default();
         let node_manager = NodeManager::new(node_config.clone());
 
         let startup_status = match node_manager.spawn() {
             Ok(()) => {
                 if node_manager.has_local_process() {
-                    // Warmup: ask the LC to fetch the QR-lock-script
-                    // cell dep so the first transfer doesn't race-fail
-                    // with an OutPoint Unknown error. Only the RPC error
-                    // is surfaced — `Ok(false)` (fetch in progress) is
-                    // expected at warmup and not actionable.
-                    if let Err(e) = node_manager.fetch_qr_lock_dep() {
-                        Status::Error(format!(
-                            "Failed to request lock-script cell dep fetch: {}",
-                            e
-                        ))
+                    // LC-only: warmup the QR-lock-script cell dep so
+                    // the first transfer doesn't race-fail. Surface RPC
+                    // transport errors; not-yet-Fetched is expected.
+                    // Full node indexes everything — no warmup needed,
+                    // and the call would error `UnsupportedOperation`.
+                    if node_config.node_type == NodeType::LightClient {
+                        if let Err(e) = node_manager.fetch_qr_lock_dep() {
+                            Status::Error(format!(
+                                "Failed to request lock-script cell dep fetch: {}",
+                                e
+                            ))
+                        } else {
+                            Status::Info("Local node started.".to_string())
+                        }
                     } else {
                         Status::Info("Local node started.".to_string())
                     }
