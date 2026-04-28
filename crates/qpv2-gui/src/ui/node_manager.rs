@@ -29,12 +29,14 @@ impl App {
 
                 ui.add_space(22.0);
 
-                // Two cards stacked vertically. Side-by-side layout is left
-                // to a future design pass; vertical scales down nicely on
-                // narrow windows.
+                // Three cards stacked vertically. Side-by-side layout is
+                // left to a future design pass; vertical scales down
+                // nicely on narrow windows.
                 self.draw_backend_card(ui, NodeType::PublicRpc);
                 ui.add_space(14.0);
                 self.draw_backend_card(ui, NodeType::LightClient);
+                ui.add_space(14.0);
+                self.draw_backend_card(ui, NodeType::FullNode);
             });
         });
     }
@@ -164,10 +166,36 @@ impl App {
                         self.draw_metric(&mut cols[3], "RPC Port", default_port(url));
                         self.draw_metric(&mut cols[4], "DB Size", "—".into());
                     }
-                    // FullNode path stays invisible until the backend is
-                    // implemented; skip the card entirely rather than
-                    // render something misleading.
-                    (NodeType::FullNode, _) => {}
+                    (NodeType::FullNode, true) => {
+                        self.draw_metric(
+                            &mut cols[0],
+                            "Block Height",
+                            block_height_text(self.node_status.tip_block),
+                        );
+                        self.draw_metric(
+                            &mut cols[1],
+                            "Peers",
+                            peers_text(self.node_status.peer_count),
+                        );
+                        self.draw_metric(
+                            &mut cols[2],
+                            "RPC Port",
+                            port_text(self.node_status.rpc_port),
+                        );
+                        self.draw_metric(
+                            &mut cols[3],
+                            "DB Size",
+                            db_size_text(self.node_status.db_size_bytes),
+                        );
+                    }
+                    (NodeType::FullNode, false) => {
+                        let url =
+                            NodeConfig::default_rpc_url_for(backend, self.node_manager.network());
+                        self.draw_metric(&mut cols[0], "Block Height", "—".into());
+                        self.draw_metric(&mut cols[1], "Peers", "—".into());
+                        self.draw_metric(&mut cols[2], "RPC Port", default_port(url));
+                        self.draw_metric(&mut cols[3], "DB Size", "—".into());
+                    }
                 });
             });
     }

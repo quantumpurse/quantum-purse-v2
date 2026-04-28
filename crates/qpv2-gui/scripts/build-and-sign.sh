@@ -69,6 +69,21 @@ if [ ! -f "$LIGHT_CLIENT_BIN" ]; then
     exit 1
 fi
 
+# Build the bundled ckb full-node binary. Same submodule pattern as the
+# light client. Heavy build — minutes on a clean target dir, multi-GB
+# build artifacts. Skipped automatically when re-running incrementally.
+FULL_NODE_NAME="ckb"
+FULL_NODE_SRC="$PROJECT_ROOT/vendor/ckb"
+FULL_NODE_BIN="$FULL_NODE_SRC/target/$BUILD_TYPE/$FULL_NODE_NAME"
+echo "==> Building $FULL_NODE_NAME ($BUILD_TYPE)..."
+cargo build -p $FULL_NODE_NAME $CARGO_FLAGS \
+    --manifest-path "$FULL_NODE_SRC/Cargo.toml"
+
+if [ ! -f "$FULL_NODE_BIN" ]; then
+    echo "ERROR: $FULL_NODE_NAME binary not found at $FULL_NODE_BIN"
+    exit 1
+fi
+
 echo "==> Creating app bundle at $APP_BUNDLE..."
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
@@ -77,6 +92,7 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 # Copy binaries.
 cp "$TARGET_DIR/$BINARY_NAME" "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME"
 cp "$LIGHT_CLIENT_BIN" "$APP_BUNDLE/Contents/MacOS/$LIGHT_CLIENT_NAME"
+cp "$FULL_NODE_BIN" "$APP_BUNDLE/Contents/MacOS/$FULL_NODE_NAME"
 
 # Create Info.plist.
 cat > "$APP_BUNDLE/Contents/Info.plist" << PLIST
@@ -126,11 +142,15 @@ fi
 
 echo "==> Signing with identity: $SIGNING_IDENTITY"
 # Sign inner binaries first, then the bundle (Apple recommends against
-# --deep). The light client is a standalone TCP/HTTP daemon with no keychain
-# or passkey access, so it gets hardened-runtime but no entitlements.
+# --deep). The light client and full node are standalone TCP/HTTP daemons
+# with no keychain or passkey access, so they get hardened-runtime but
+# no entitlements.
 codesign --force --sign "$SIGNING_IDENTITY" \
 	--options runtime \
 	"$APP_BUNDLE/Contents/MacOS/$LIGHT_CLIENT_NAME"
+codesign --force --sign "$SIGNING_IDENTITY" \
+	--options runtime \
+	"$APP_BUNDLE/Contents/MacOS/$FULL_NODE_NAME"
 codesign --force --sign "$SIGNING_IDENTITY" \
 	--entitlements "$ENTITLEMENTS" \
 	--options runtime \

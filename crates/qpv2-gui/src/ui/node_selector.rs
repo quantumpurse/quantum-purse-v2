@@ -20,7 +20,7 @@ impl App {
         // Position dropdown below the selector box
         let dropdown_pos = egui::pos2(selector_rect.left(), selector_rect.bottom() + 4.0);
 
-        egui::Area::new(egui::Id::new("node_selector_dropdown"))
+        let area_response = egui::Area::new(egui::Id::new("node_selector_dropdown"))
             .fixed_pos(dropdown_pos)
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
@@ -167,13 +167,66 @@ impl App {
                         ui.add_space(10.0);
 
                         // Apply button
-                        let apply_btn = egui::Button::new(
-                            egui::RichText::new("Apply").color(self.colors.bg)
-                        )
-                        .fill(self.colors.accent)
-                        .min_size(egui::vec2(ui.available_width(), 28.0));
+                        // Reset the FullNode confirmation flag if the
+                        // user navigated away from FullNode while the
+                        // warning was showing — keeps state honest.
+                        if self.confirm_full_node_pending
+                            && self.temp_node_type != NodeType::FullNode
+                        {
+                            self.confirm_full_node_pending = false;
+                        }
 
-                        if ui.add(apply_btn).clicked() {
+                        let mut commit_apply = false;
+
+                        if self.confirm_full_node_pending {
+                            // Warning state: replaces the Apply button
+                            // with a "Full node will sync ~100GB / days"
+                            // notice + Confirm / Cancel.
+                            ui.label(
+                                egui::RichText::new(
+                                    "\u{26A0} Full node will sync ~100 GB and may take \
+                                     several days. Disk and bandwidth heavy.",
+                                )
+                                .size(11.5)
+                                .color(self.colors.warn),
+                            );
+                            ui.add_space(8.0);
+                            ui.horizontal(|ui| {
+                                let confirm_btn = egui::Button::new(
+                                    egui::RichText::new("Confirm").color(self.colors.bg),
+                                )
+                                .fill(self.colors.warn);
+                                if ui.add(confirm_btn).clicked() {
+                                    self.confirm_full_node_pending = false;
+                                    commit_apply = true;
+                                }
+                                if ui.button("Cancel").clicked() {
+                                    self.confirm_full_node_pending = false;
+                                }
+                            });
+                        } else {
+                            let apply_btn = egui::Button::new(
+                                egui::RichText::new("Apply").color(self.colors.bg),
+                            )
+                            .fill(self.colors.accent)
+                            .min_size(egui::vec2(ui.available_width(), 28.0));
+
+                            if ui.add(apply_btn).clicked() {
+                                // Switching to FullNode from any other
+                                // backend triggers the warning gate.
+                                let current = self.node_manager.config();
+                                let switching_to_full_node =
+                                    self.temp_node_type == NodeType::FullNode
+                                        && current.node_type != NodeType::FullNode;
+                                if switching_to_full_node {
+                                    self.confirm_full_node_pending = true;
+                                } else {
+                                    commit_apply = true;
+                                }
+                            }
+                        }
+
+                        if commit_apply {
                             // Compare the popup's draft (`temp_*`) against
                             // the currently-committed config. No draft on
                             // `App` — the committed state lives inside
@@ -261,20 +314,22 @@ impl App {
                             }
 
                             self.node_selector_open = false;
+                            self.confirm_full_node_pending = false;
                         }
                     });
             });
 
-        // Click outside to close
+        // Click outside to close. Use the popup's actual rendered rect
+        // (not a hardcoded estimate) so clicks on the bottom-most
+        // controls — Apply, or Confirm/Cancel in the FullNode warning
+        // state — are correctly classified as inside.
         if ctx.input(|i| i.pointer.any_click()) {
             let pointer_pos = ctx.input(|i| i.pointer.hover_pos());
             if let Some(pos) = pointer_pos {
-                let dropdown_rect = egui::Rect::from_min_size(
-                    dropdown_pos,
-                    egui::vec2(selector_rect.width(), 200.0), // Approximate height
-                );
+                let dropdown_rect = area_response.response.rect;
                 if !dropdown_rect.contains(pos) && !selector_rect.contains(pos) {
                     self.node_selector_open = false;
+                    self.confirm_full_node_pending = false;
                 }
             }
         }
