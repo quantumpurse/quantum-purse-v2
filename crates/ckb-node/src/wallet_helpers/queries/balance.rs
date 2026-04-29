@@ -2,7 +2,7 @@
 
 use crate::config::NetworkType;
 use crate::error::NodeManagerError;
-use crate::rpc::CkbRpc;
+use crate::rpc::Client;
 use ckb_jsonrpc_types::JsonBytes;
 use ckb_sdk::rpc::ckb_indexer::{ScriptType, SearchKey, SearchKeyFilter};
 
@@ -16,7 +16,7 @@ use ckb_sdk::rpc::ckb_indexer::{ScriptType, SearchKey, SearchKeyFilter};
 /// - `hash_type_str`: one of `"type"`, `"data1"`, or `"data"`.
 /// - `lock_args_hex`: hex-encoded lock args (with or without `0x` prefix).
 pub fn fetch_lock_script_balance(
-    rpc: &dyn CkbRpc,
+    client: &dyn Client,
     code_hash_hex: &str,
     hash_type_str: &str,
     lock_args_hex: &str,
@@ -69,7 +69,7 @@ pub fn fetch_lock_script_balance(
         group_by_transaction: None,
     };
 
-    match rpc.get_cells_capacity(search_key)? {
+    match client.get_cells_capacity(search_key)? {
         Some(capacity) => Ok(capacity.capacity.value()),
         None => Ok(0),
     }
@@ -80,7 +80,7 @@ pub fn fetch_lock_script_balance(
 /// Selects the correct lock script deployment (code hash + hash type) for the
 /// requested network, then delegates to `fetch_lock_script_balance`.
 pub fn fetch_quantum_lock_balance(
-    rpc: &dyn CkbRpc,
+    client: &dyn Client,
     lock_args_hex: &str,
     network: NetworkType,
 ) -> Result<u64, NodeManagerError> {
@@ -95,5 +95,5 @@ pub fn fetch_quantum_lock_balance(
         ),
     };
 
-    fetch_lock_script_balance(rpc, code_hash, hash_type, lock_args_hex)
+    fetch_lock_script_balance(client, code_hash, hash_type, lock_args_hex)
 }

@@ -4,7 +4,7 @@
 //! the endpoint exists and can be switched to.
 
 use eframe::egui;
-use node_manager::{NodeConfig, NodeType};
+use ckb_node::{NodeConfig, NodeType};
 
 use crate::App;
 
@@ -42,7 +42,7 @@ impl App {
     }
 
     fn draw_backend_card(&mut self, ui: &mut egui::Ui, backend: NodeType) {
-        let active = self.node_manager.config().node_type == backend;
+        let active = self.client.config().node_type == backend;
 
         let (icon, title, subtitle) = match backend {
             NodeType::LightClient => (
@@ -93,12 +93,9 @@ impl App {
                         );
                     });
 
-                    ui.with_layout(
-                        egui::Layout::right_to_left(egui::Align::Center),
-                        |ui| {
-                            self.draw_status_pill(ui, backend, active);
-                        },
-                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        self.draw_status_pill(ui, backend, active);
+                    });
                 });
 
                 ui.add_space(18.0);
@@ -106,7 +103,11 @@ impl App {
                 // Metric row — live for active, static for inactive.
                 // LightClient gets a 5th column ("Synced") so the user
                 // can see how far the indexer has caught up.
-                let cols_count = if backend == NodeType::LightClient { 5 } else { 4 };
+                let cols_count = if backend == NodeType::LightClient {
+                    5
+                } else {
+                    4
+                };
                 ui.columns(cols_count, |cols| match (backend, active) {
                     (NodeType::PublicRpc, true) => {
                         self.draw_metric(
@@ -117,7 +118,7 @@ impl App {
                         self.draw_metric(
                             &mut cols[1],
                             "Endpoint",
-                            hostname_of(&self.node_manager.config().rpc_url),
+                            hostname_of(&self.client.config().rpc_url),
                         );
                         self.draw_metric(
                             &mut cols[2],
@@ -127,8 +128,7 @@ impl App {
                         self.draw_metric(&mut cols[3], "Peers", "—".into());
                     }
                     (NodeType::PublicRpc, false) => {
-                        let url =
-                            NodeConfig::default_rpc_url_for(backend, self.node_manager.network());
+                        let url = NodeConfig::default_rpc_url_for(backend, self.client.network());
                         self.draw_metric(&mut cols[0], "Block Height", "—".into());
                         self.draw_metric(&mut cols[1], "Endpoint", hostname_of(url));
                         self.draw_metric(&mut cols[2], "Port", default_port(url));
@@ -158,8 +158,7 @@ impl App {
                         );
                     }
                     (NodeType::LightClient, false) => {
-                        let url =
-                            NodeConfig::default_rpc_url_for(backend, self.node_manager.network());
+                        let url = NodeConfig::default_rpc_url_for(backend, self.client.network());
                         self.draw_metric(&mut cols[0], "Block Height", "—".into());
                         self.draw_metric(&mut cols[1], "Synced", "—".into());
                         self.draw_metric(&mut cols[2], "Peers", "—".into());
@@ -189,8 +188,7 @@ impl App {
                         );
                     }
                     (NodeType::FullNode, false) => {
-                        let url =
-                            NodeConfig::default_rpc_url_for(backend, self.node_manager.network());
+                        let url = NodeConfig::default_rpc_url_for(backend, self.client.network());
                         self.draw_metric(&mut cols[0], "Block Height", "—".into());
                         self.draw_metric(&mut cols[1], "Peers", "—".into());
                         self.draw_metric(&mut cols[2], "RPC Port", default_port(url));
@@ -210,8 +208,12 @@ impl App {
                 self.colors.text_muted,
             )
         } else if self.node_status.online {
-            ("\u{25CF} ONLINE", self.colors.accent_tint, self.colors.accent)
-        } else if backend != NodeType::PublicRpc && self.node_manager.has_local_process() {
+            (
+                "\u{25CF} ONLINE",
+                self.colors.accent_tint,
+                self.colors.accent,
+            )
+        } else if backend != NodeType::PublicRpc && self.local_node.has_local_process() {
             ("\u{25CC} STARTING", self.colors.warn_tint, self.colors.warn)
         } else {
             (
@@ -267,18 +269,16 @@ impl App {
                             .strong()
                             .color(text_color),
                     );
-                    let pencil = egui::Label::new(
-                        egui::RichText::new("\u{270E}").size(12.0).color(muted),
-                    )
-                    .sense(egui::Sense::click());
+                    let pencil =
+                        egui::Label::new(egui::RichText::new("\u{270E}").size(12.0).color(muted))
+                            .sense(egui::Sense::click());
                     let resp = ui
                         .add(pencil)
                         .on_hover_cursor(egui::CursorIcon::PointingHand);
                     if resp.clicked() {
                         self.set_block_editing = true;
-                        self.set_block_input = synced_value
-                            .map(|b| b.to_string())
-                            .unwrap_or_default();
+                        self.set_block_input =
+                            synced_value.map(|b| b.to_string()).unwrap_or_default();
                     }
                 });
             } else {
@@ -291,25 +291,19 @@ impl App {
                 );
 
                 // Validate: numeric and ≤ known tip (when tip is known).
-                let parsed = self
-                    .set_block_input
-                    .trim()
-                    .replace(',', "")
-                    .parse::<u64>();
+                let parsed = self.set_block_input.trim().replace(',', "").parse::<u64>();
                 let valid = matches!(&parsed, Ok(b) if tip.map_or(true, |t| *b <= t));
 
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    let set_clicked = ui
-                        .add_enabled(valid, egui::Button::new("Set"))
-                        .clicked();
+                    let set_clicked = ui.add_enabled(valid, egui::Button::new("Set")).clicked();
                     let cancel_clicked = ui.button("Cancel").clicked();
-                    // Auto-detect via a one-shot FullNodeRpc against the
+                    // Auto-detect via a one-shot FullNodeClient against the
                     // network's public endpoint. Disabled while a
                     // detection is in flight or there are no accounts
                     // to look up.
-                    let auto_enabled = self.earliest_funding_block_rx.is_none()
-                        && !self.accounts.is_empty();
+                    let auto_enabled =
+                        self.earliest_funding_block_rx.is_none() && !self.accounts.is_empty();
                     let auto_label = if self.earliest_funding_block_rx.is_some() {
                         "Auto…"
                     } else {
@@ -368,13 +362,12 @@ fn peers_text(count: Option<usize>) -> String {
 }
 
 fn port_text(port: Option<u16>) -> String {
-    port.map(|p| p.to_string()).unwrap_or_else(|| "—".to_string())
+    port.map(|p| p.to_string())
+        .unwrap_or_else(|| "—".to_string())
 }
 
 fn db_size_text(bytes: Option<u64>) -> String {
-    bytes
-        .map(format_bytes)
-        .unwrap_or_else(|| "—".to_string())
+    bytes.map(format_bytes).unwrap_or_else(|| "—".to_string())
 }
 
 /// Strips scheme + path to return just the hostname of an RPC URL.

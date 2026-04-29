@@ -1,4 +1,4 @@
-use crate::config::NetworkType;
+use crate::config::{NetworkType, NodeConfig, NodeType};
 use crate::error::NodeManagerError;
 use ckb_jsonrpc_types::{JsonBytes, Uint64};
 use ckb_sdk::rpc::ckb_indexer::{
@@ -17,6 +17,7 @@ use ckb_sdk::traits::{
 use ckb_types::prelude::*;
 use ckb_types::H256;
 use std::any::Any;
+use std::sync::Arc;
 
 /// Unified RPC interface for wallet operations.
 ///
@@ -24,15 +25,15 @@ use std::any::Any;
 /// so wallet code does not need to know which backend is active.
 ///
 /// The `Send + Sync` supertraits allow a single client instance to be shared
-/// across background threads via `Arc<dyn CkbRpc>` inside `NodeManager`.
+/// across background threads via `Arc<dyn Client>` inside `LocalNodeProcess`.
 ///
-/// `Any` enables downcasting from `Arc<dyn CkbRpc>` back to the concrete
+/// `Any` enables downcasting from `Arc<dyn Client>` back to the concrete
 /// type when callers need backend-specific methods (e.g.
-/// `LightClientRpc::register_lock_script`) — avoids constructing a second
+/// `LightClient::register_lock_script`) — avoids constructing a second
 /// RPC client when one already exists.
-pub trait CkbRpc: Send + Sync + Any {
+pub trait Client: Send + Sync + Any {
     /// Concrete-type access for downcast. Each impl returns `self` so
-    /// callers can do `self.rpc.as_any().downcast_ref::<LightClientRpc>()`.
+    /// callers can do `self.rpc.as_any().downcast_ref::<LightClient>()`.
     fn as_any(&self) -> &dyn Any;
 
     /// Returns the tip (latest) block header.
@@ -96,10 +97,7 @@ pub trait CkbRpc: Send + Sync + Any {
     /// Closes the cell-collection escape hatch — call sites used to
     /// construct `DefaultCellCollector::new(rpc_url)` directly, which only
     /// speaks full-node RPC and fails on a light client.
-    fn collect_cells(
-        &self,
-        query: &CellQueryOptions,
-    ) -> Result<Vec<LiveCell>, NodeManagerError>;
+    fn collect_cells(&self, query: &CellQueryOptions) -> Result<Vec<LiveCell>, NodeManagerError>;
 
     /// Returns a fresh ckb-sdk `CellCollector` bound to this backend.
     /// Used by tx builders that consume `&mut dyn CellCollector` (e.g.
@@ -136,12 +134,12 @@ pub struct TransactionStatus {
 }
 
 /// Full node / public RPC implementation.
-pub struct FullNodeRpc {
+pub struct FullNodeClient {
     client: CkbRpcClient,
     rpc_url: String,
 }
 
-impl FullNodeRpc {
+impl FullNodeClient {
     pub fn new(rpc_url: &str) -> Self {
         Self {
             client: CkbRpcClient::new(rpc_url),
@@ -160,12 +158,12 @@ impl FullNodeRpc {
     /// Light-client utility: best-effort discovery of the earliest
     /// funding block across a set of QuantumPurse accounts.
     ///
-    /// Although this method lives on `FullNodeRpc`, its sole purpose is
+    /// Although this method lives on `FullNodeClient`, its sole purpose is
     /// to support the **light-client backend's** manual "Auto-detect
     /// rescan block" flow. The light client only indexes scripts it has
     /// been told to track — it cannot itself answer "when was account X
     /// first funded?" The wallet therefore constructs an ad-hoc
-    /// `FullNodeRpc` against a richly-indexed public endpoint, calls
+    /// `FullNodeClient` against a richly-indexed public endpoint, calls
     /// this method, and uses the result to pre-fill the user's
     /// `set_scripts(start_block)` input on the LC.
     ///
@@ -219,9 +217,8 @@ impl FullNodeRpc {
         let mut earliest: Option<u64> = None;
         for lock_args_hex in lock_args_list {
             let lock_args_clean = lock_args_hex.strip_prefix("0x").unwrap_or(lock_args_hex);
-            let args_bytes = hex::decode(lock_args_clean).map_err(|e| {
-                NodeManagerError::RpcError(format!("Invalid lock args hex: {}", e))
-            })?;
+            let args_bytes = hex::decode(lock_args_clean)
+                .map_err(|e| NodeManagerError::RpcError(format!("Invalid lock args hex: {}", e)))?;
 
             let script = ckb_jsonrpc_types::Script {
                 code_hash: H256(code_hash_bytes),
@@ -254,7 +251,7 @@ impl FullNodeRpc {
     }
 }
 
-impl CkbRpc for FullNodeRpc {
+impl Client for FullNodeClient {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -268,7 +265,9 @@ impl CkbRpc for FullNodeRpc {
     fn get_genesis_block(&self) -> Result<ckb_jsonrpc_types::BlockView, NodeManagerError> {
         self.client
             .get_block_by_number(0u64.into())
-            .map_err(|e| NodeManagerError::RpcError(format!("Failed to fetch genesis block: {}", e)))?
+            .map_err(|e| {
+                NodeManagerError::RpcError(format!("Failed to fetch genesis block: {}", e))
+            })?
             .ok_or_else(|| NodeManagerError::RpcError("Genesis block not found.".to_string()))
     }
 
@@ -345,10 +344,7 @@ impl CkbRpc for FullNodeRpc {
             .map_err(|e| NodeManagerError::RpcError(e.to_string()))
     }
 
-    fn collect_cells(
-        &self,
-        query: &CellQueryOptions,
-    ) -> Result<Vec<LiveCell>, NodeManagerError> {
+    fn collect_cells(&self, query: &CellQueryOptions) -> Result<Vec<LiveCell>, NodeManagerError> {
         let mut collector = DefaultCellCollector::new(&self.rpc_url);
         let (cells, _) = collector
             .collect_live_cells(query, false)
@@ -375,14 +371,14 @@ impl CkbRpc for FullNodeRpc {
 
 /// Light client RPC implementation.
 ///
-/// Provides the same `CkbRpc` interface plus light-client-specific methods
+/// Provides the same `Client` interface plus light-client-specific methods
 /// for script registration.
-pub struct LightClientRpc {
+pub struct LightClient {
     client: LightClientRpcClient,
     rpc_url: String,
 }
 
-impl LightClientRpc {
+impl LightClient {
     pub fn new(rpc_url: &str) -> Self {
         Self {
             client: LightClientRpcClient::new(rpc_url),
@@ -580,7 +576,7 @@ fn build_lock_script_statuses(
     Ok(statuses)
 }
 
-impl CkbRpc for LightClientRpc {
+impl Client for LightClient {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -592,9 +588,9 @@ impl CkbRpc for LightClientRpc {
     }
 
     fn get_genesis_block(&self) -> Result<ckb_jsonrpc_types::BlockView, NodeManagerError> {
-        self.client
-            .get_genesis_block()
-            .map_err(|e| NodeManagerError::RpcError(format!("Failed to fetch genesis block: {}", e)))
+        self.client.get_genesis_block().map_err(|e| {
+            NodeManagerError::RpcError(format!("Failed to fetch genesis block: {}", e))
+        })
     }
 
     fn get_cells(
@@ -729,10 +725,7 @@ impl CkbRpc for LightClientRpc {
         })
     }
 
-    fn collect_cells(
-        &self,
-        query: &CellQueryOptions,
-    ) -> Result<Vec<LiveCell>, NodeManagerError> {
+    fn collect_cells(&self, query: &CellQueryOptions) -> Result<Vec<LiveCell>, NodeManagerError> {
         // Translate ckb-sdk's `CellQueryOptions` into a light-client indexer
         // `SearchKey`. Then page through `get_cells` until either the total
         // capacity reaches `query.min_total_capacity` or the indexer runs out.
@@ -777,7 +770,12 @@ impl CkbRpc for LightClientRpc {
         loop {
             let page = self
                 .client
-                .get_cells(search_key.clone(), Order::Asc, page_size.into(), after.clone())
+                .get_cells(
+                    search_key.clone(),
+                    Order::Asc,
+                    page_size.into(),
+                    after.clone(),
+                )
                 .map_err(|e| NodeManagerError::RpcError(e.to_string()))?;
 
             if page.objects.is_empty() {
@@ -786,10 +784,7 @@ impl CkbRpc for LightClientRpc {
 
             for cell in page.objects {
                 let output: ckb_types::packed::CellOutput = cell.output.into();
-                let output_data = cell
-                    .output_data
-                    .map(|b| b.into_bytes())
-                    .unwrap_or_default();
+                let output_data = cell.output_data.map(|b| b.into_bytes()).unwrap_or_default();
                 let out_point: ckb_types::packed::OutPoint = cell.out_point.into();
                 let block_number: u64 = cell.block_number.value();
                 let tx_index: u32 = cell.tx_index.value();
@@ -833,4 +828,47 @@ impl CkbRpc for LightClientRpc {
     fn get_rpc_url(&self) -> String {
         self.rpc_url.clone()
     }
+}
+
+// ── Top-level helpers (no LocalNodeProcess required) ──────────────────────────
+
+/// Builds the right `Arc<dyn Client>` for the given config. The active
+/// backend determines the concrete RPC client; the App owns the single
+/// shared instance and replaces it on every config change.
+pub fn build(config: &NodeConfig) -> Arc<dyn Client> {
+    match config.node_type {
+        NodeType::PublicRpc | NodeType::FullNode => Arc::new(FullNodeClient::new(&config.rpc_url)),
+        NodeType::LightClient => Arc::new(LightClient::new(&config.rpc_url)),
+    }
+}
+
+/// Number of peers for local-node backends. `Ok(None)` for `PublicRpc`
+/// (peer count of a remote endpoint isn't meaningful wallet-side).
+/// `Err` when the local node is unreachable.
+pub fn peer_count(
+    client: &dyn Client,
+    node_type: NodeType,
+) -> Result<Option<usize>, NodeManagerError> {
+    if let Some(light) = client.as_any().downcast_ref::<LightClient>() {
+        return light.get_peer_count().map(Some);
+    }
+    if let Some(full) = client.as_any().downcast_ref::<FullNodeClient>() {
+        // FullNodeClient is shared by FullNode + PublicRpc backends; only
+        // the local FullNode case has a meaningful peer count.
+        return match node_type {
+            NodeType::FullNode => full.get_peer_count().map(Some),
+            _ => Ok(None),
+        };
+    }
+    Ok(None)
+}
+
+/// Min synced block across all scripts the LC is tracking. `Ok(None)`
+/// outside `LightClient` and when no scripts are registered.
+pub fn synced_block(rpc: &dyn Client) -> Result<Option<u64>, NodeManagerError> {
+    let Some(light) = rpc.as_any().downcast_ref::<LightClient>() else {
+        return Ok(None);
+    };
+    let scripts = light.get_scripts()?;
+    Ok(scripts.iter().map(|s| s.block_number.value()).min())
 }

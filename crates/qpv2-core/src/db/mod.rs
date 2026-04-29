@@ -236,7 +236,9 @@ pub fn clear_tx_history() -> Result<(), KeyVaultDBError> {
     for entry in fs::read_dir(&dir)? {
         let entry = entry?;
         let name = entry.file_name();
-        let Some(name_str) = name.to_str() else { continue };
+        let Some(name_str) = name.to_str() else {
+            continue;
+        };
         if name_str.starts_with("tx_history_") && name_str.ends_with(".json") {
             fs::remove_file(entry.path())?;
         }

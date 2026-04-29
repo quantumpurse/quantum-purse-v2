@@ -20,10 +20,8 @@ const SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(5);
 /// (or when the user deletes the file) one of these is written to
 /// `<data_dir>/config.toml` with the relative `[store]` / `[network]`
 /// paths rewritten to absolute paths inside the per-network directory.
-const TESTNET_TEMPLATE: &str =
-    include_str!("../../../vendor/ckb-light-client/config/testnet.toml");
-const MAINNET_TEMPLATE: &str =
-    include_str!("../../../vendor/ckb-light-client/config/mainnet.toml");
+const TESTNET_TEMPLATE: &str = include_str!("../../../vendor/ckb-light-client/config/testnet.toml");
+const MAINNET_TEMPLATE: &str = include_str!("../../../vendor/ckb-light-client/config/mainnet.toml");
 
 // ── Trait ────────────────────────────────────────────────────────────────
 
@@ -68,8 +66,7 @@ impl NodeProcess for LightClientProcess {
         if config.node_type != NodeType::LightClient {
             return Err(NodeManagerError::UnsupportedOperation {
                 node_type: config.node_type.to_string(),
-                reason: "LightClientProcess::start called with non-LightClient config."
-                    .to_string(),
+                reason: "LightClientProcess::start called with non-LightClient config.".to_string(),
             });
         }
 
@@ -217,9 +214,9 @@ fn stop_child(child: &mut Child) -> Result<(), NodeManagerError> {
         }
     }
 
-    child.kill().map_err(|e| {
-        NodeManagerError::ProcessError(format!("Failed to kill node process: {e}"))
-    })?;
+    child
+        .kill()
+        .map_err(|e| NodeManagerError::ProcessError(format!("Failed to kill node process: {e}")))?;
     child.wait().map_err(|e| {
         NodeManagerError::ProcessError(format!("Error waiting for node process after kill: {e}"))
     })?;
@@ -398,10 +395,7 @@ fn rewrite_light_client_template_paths(template: &str, data_dir: &Path) -> Strin
                     continue;
                 }
                 Some("network") => {
-                    out.push_str(&format!(
-                        "path = {:?}\n",
-                        network_abs.display().to_string()
-                    ));
+                    out.push_str(&format!("path = {:?}\n", network_abs.display().to_string()));
                     continue;
                 }
                 _ => {}
@@ -528,11 +522,7 @@ fn ensure_full_node_chain_dir(
 /// want to disturb its surrounding comments / formatting.
 fn enable_indexer_rpc_module(toml_path: &Path) -> Result<(), NodeManagerError> {
     let content = std::fs::read_to_string(toml_path).map_err(|e| {
-        NodeManagerError::ProcessError(format!(
-            "Failed to read '{}': {}",
-            toml_path.display(),
-            e
-        ))
+        NodeManagerError::ProcessError(format!("Failed to read '{}': {}", toml_path.display(), e))
     })?;
 
     let mut changed = false;

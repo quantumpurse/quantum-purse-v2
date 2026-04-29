@@ -1,7 +1,7 @@
 //! Transfer transaction builder.
 
 use crate::error::NodeManagerError;
-use crate::rpc::CkbRpc;
+use crate::rpc::Client;
 use ckb_sdk::{
     traits::CellDepResolver,
     tx_builder::{
@@ -21,7 +21,7 @@ const DEFAULT_PLACEHOLDER_LOCK_SIZE: usize = 65;
 
 /// Builder for transfer transactions.
 pub struct QpTransferBuilder<'a> {
-    rpc: &'a dyn CkbRpc,
+    rpc: &'a dyn Client,
     /// Whether the target network is mainnet (affects cell dep resolution).
     is_mainnet: bool,
     /// Size of the placeholder lock field in the witness.
@@ -31,7 +31,7 @@ pub struct QpTransferBuilder<'a> {
 
 impl<'a> QpTransferBuilder<'a> {
     /// Creates a new transfer builder with default secp256k1 placeholder size.
-    pub fn new(rpc: &'a dyn CkbRpc, is_mainnet: bool) -> Self {
+    pub fn new(rpc: &'a dyn Client, is_mainnet: bool) -> Self {
         QpTransferBuilder {
             rpc,
             is_mainnet,
@@ -141,8 +141,10 @@ impl<'a> QpTransferBuilder<'a> {
         let to_lock_script = Script::from(to_address.payload());
         let output_data = Bytes::from(data.unwrap_or_default());
 
-        let spendable_cells =
-            crate::queries::spendable::collect_spendable_cells(self.rpc, &from_lock_script)?;
+        let spendable_cells = crate::wallet_helpers::queries::spendable::collect_spendable_cells(
+            self.rpc,
+            &from_lock_script,
+        )?;
 
         let total_input_capacity: u64 = spendable_cells
             .iter()

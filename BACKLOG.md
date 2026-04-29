@@ -25,6 +25,27 @@
 - [ ] **Ensure all dispatched calls are managed securely**
 - [ ] **How much concurrency are being managed?**
 
+## Offline Capability
+
+- [ ] **GUI unlock requires periodic internet (Apple AASA).** The PRF
+  cryptography itself is fully offline (`HMAC-SHA-256(CredRandom, salt)`
+  inside the Secure Enclave, no network involvement). But Apple's
+  `AuthenticationServices` framework verifies the WebAuthn relying-party
+  association by fetching `https://quantumpurse.org/.well-known/apple-app-site-association`
+  before letting the SE produce an assertion, with a cache window of
+  roughly 24 hours. If the user is offline outside that window, unlock
+  fails with "Unable to verify webcredentials association ...". There's
+  no API to skip the AASA check; it's enforced inside Apple's framework.
+  Two real escape paths:
+  1. **USB FIDO2 + libfido2 via CTAP2 `hmac-secret`** — same PRF
+     semantics, no Apple framework, no AASA, fully offline after
+     registration. Requires the user to plug in a hardware security
+     key (YubiKey 5 series, NitroKey, etc.).
+  2. **Password-based GUI unlock as fallback**, mirroring the CLI's
+     password `AuthMethod`. Trade-off: egui's text input lives in a
+     GPU texture atlas the app can't zeroize. Mitigatable but not as
+     clean as the CLI's `rpassword` path.
+
 ## Chain / Sync
 
 - [ ] **Reorg handling for tx history.** `tx_history.json` currently freezes records once their block is below the watermark. CKB reorgs (rare) would leave stale records in the store. Maintain a mutable "reorg window" of the last ~24 blocks: re-fetch on each tick, reconcile pending↔committed, remove records whose hash is no longer on chain. Below the window, finalize.

@@ -2,7 +2,7 @@
 
 use crate::config::NetworkType;
 use crate::error::NodeManagerError;
-use crate::rpc::CkbRpc;
+use crate::rpc::Client;
 use ckb_jsonrpc_types::JsonBytes;
 use ckb_sdk::rpc::ckb_indexer::{Order, ScriptType, SearchKey, SearchKeyFilter, Tx};
 
@@ -11,7 +11,7 @@ use ckb_sdk::rpc::ckb_indexer::{Order, ScriptType, SearchKey, SearchKeyFilter, T
 /// Paginates through the full result set using `last_cursor`. Returns grouped
 /// `Tx` entries in descending order (newest first), one per unique transaction.
 pub fn fetch_recent_transactions(
-    rpc: &dyn CkbRpc,
+    client: &dyn Client,
     lock_args_hex: &str,
     network: NetworkType,
     after_block: Option<u64>,
@@ -87,7 +87,7 @@ pub fn fetch_recent_transactions(
     let mut cursor: Option<JsonBytes> = None;
 
     loop {
-        let page = rpc.get_transactions(search_key.clone(), Order::Desc, page_size, cursor)?;
+        let page = client.get_transactions(search_key.clone(), Order::Desc, page_size, cursor)?;
         let is_last = page.objects.len() < page_size as usize;
         all_txs.extend(page.objects);
 

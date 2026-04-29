@@ -24,8 +24,8 @@ impl TxHistoryStore {
     /// when the file is absent (fresh wallet or never synced on this
     /// network), `Err` when the file exists but can't be read or parsed.
     pub fn load(network_tag: &str) -> Result<Option<Self>, String> {
-        let path = qpv2_core::db::get_tx_history_path(network_tag)
-            .map_err(|e| format!("path: {}", e))?;
+        let path =
+            qpv2_core::db::get_tx_history_path(network_tag).map_err(|e| format!("path: {}", e))?;
         if !path.exists() {
             return Ok(None);
         }
@@ -42,15 +42,13 @@ impl TxHistoryStore {
     /// cannot corrupt the canonical file. `network_tag` scopes the file to
     /// the active chain.
     pub fn save(&self, network_tag: &str) -> Result<(), String> {
-        let final_path = qpv2_core::db::get_tx_history_path(network_tag)
-            .map_err(|e| format!("path: {}", e))?;
+        let final_path =
+            qpv2_core::db::get_tx_history_path(network_tag).map_err(|e| format!("path: {}", e))?;
         let tmp_path = final_path.with_extension("json.tmp");
 
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| format!("serialize: {}", e))?;
+        let json = serde_json::to_string_pretty(self).map_err(|e| format!("serialize: {}", e))?;
         {
-            let mut file =
-                File::create(&tmp_path).map_err(|e| format!("create tmp: {}", e))?;
+            let mut file = File::create(&tmp_path).map_err(|e| format!("create tmp: {}", e))?;
             file.write_all(json.as_bytes())
                 .map_err(|e| format!("write tmp: {}", e))?;
             file.sync_all().map_err(|e| format!("fsync tmp: {}", e))?;

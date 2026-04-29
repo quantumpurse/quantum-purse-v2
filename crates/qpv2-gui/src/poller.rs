@@ -429,7 +429,7 @@ impl App {
                     let store = crate::tx_history_store::TxHistoryStore {
                         records: self.tx_history.clone(),
                     };
-                    if let Err(e) = store.save(self.node_manager.network().tag()) {
+                    if let Err(e) = store.save(self.client.network().tag()) {
                         eprintln!("tx_history: failed to persist: {}", e);
                     }
                     break;
@@ -474,7 +474,7 @@ impl App {
 
     /// Pick up the result of a `detect_earliest_funding_block_async`
     /// call. On success, write the discovered block (minus 1 — see
-    /// `FullNodeRpc::find_earliest_funding_block` doc) into
+    /// `FullNodeClient::find_earliest_funding_block` doc) into
     /// `set_block_input` so the user can review and click Set. We do
     /// **not** auto-submit (option B from the design discussion).
     pub(crate) fn poll_earliest_funding_block(&mut self) {

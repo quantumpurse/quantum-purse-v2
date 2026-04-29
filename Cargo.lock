@@ -1027,6 +1027,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "ckb-node"
+version = "0.1.0"
+dependencies = [
+ "byteorder",
+ "ckb-jsonrpc-types",
+ "ckb-sdk",
+ "ckb-types",
+ "dirs",
+ "hex",
+ "libc",
+ "qpv2-core",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "ckb-occupied-capacity"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3216,23 +3233,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "node-manager"
-version = "0.1.0"
-dependencies = [
- "byteorder",
- "ckb-jsonrpc-types",
- "ckb-sdk",
- "ckb-types",
- "dirs",
- "hex",
- "libc",
- "qpv2-core",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "nohash-hasher"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4229,11 +4229,11 @@ dependencies = [
  "ckb-fips205-utils",
  "ckb-gen-types",
  "ckb-jsonrpc-types",
+ "ckb-node",
  "ckb-sdk",
  "ckb-types",
  "eframe",
  "hex",
- "node-manager",
  "objc2 0.6.4",
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",

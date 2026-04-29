@@ -13,7 +13,7 @@ mod wallet;
 mod window_handle;
 
 use eframe::egui;
-use node_manager::{NodeConfig, NodeManager, NodeType};
+use ckb_node::{LocalNodeProcess, NodeClient, NodeConfig, NodeType};
 use qpv2_core::types::SpxVariant;
 use qpv2_core::KeyVault;
 use std::collections::HashMap;
@@ -50,11 +50,16 @@ pub(crate) struct App {
     // Balance cache: lock_args -> balance in shannons (None = not yet fetched).
     pub(crate) balances: HashMap<String, Option<u64>>,
 
-    // Single handle for everything node-related — config snapshot, RPC
-    // client, and the (optional) local process, all behind internal Arc
-    // so background threads can clone cheaply. Replaced (not mutated)
-    // whenever the user saves a new config.
-    pub(crate) node_manager: NodeManager,
+    /// Single-owner slot for the local CKB node child process.
+    /// Not `Clone` and not shared — its `Drop` is what stops the child
+    /// (SIGTERM → grace → SIGKILL), so background-thread aliases are
+    /// disallowed by construction.
+    pub(crate) local_node: LocalNodeProcess,
+    /// Cloneable handle to the active backend — rpc client plus the
+    /// `NodeConfig` snapshot it was built from. Background threads
+    /// take a clone of this single field instead of capturing the rpc
+    /// and a fistful of config scalars separately.
+    pub(crate) client: NodeClient,
 
     // Editable settings fields (buffered until saved).
     pub(crate) settings_rpc_url: String,
@@ -72,7 +77,7 @@ pub(crate) struct App {
     pub(crate) node_selector_open: bool,
     pub(crate) node_selector_rect: Option<egui::Rect>,
     // Temporary values for node selector popup.
-    pub(crate) temp_network: node_manager::NetworkType,
+    pub(crate) temp_network: ckb_node::NetworkType,
     pub(crate) temp_node_type: NodeType,
 
     // Transaction state shared by both transfer and DAO flows.
@@ -92,11 +97,11 @@ pub(crate) struct App {
     // DAO state.
     // Each cell is stored with the lock_args of the account that owns it.
     pub(crate) dao_view: DaoView,
-    pub(crate) dao_deposited_cells: Vec<(String, node_manager::DepositedCell)>,
-    pub(crate) dao_prepared_cells: Vec<(String, node_manager::PreparedCell)>,
+    pub(crate) dao_deposited_cells: Vec<(String, ckb_node::DepositedCell)>,
+    pub(crate) dao_prepared_cells: Vec<(String, ckb_node::PreparedCell)>,
     // Staging vectors: accumulated during polling, swapped into display on Done.
-    dao_deposited_staging: Vec<(String, node_manager::DepositedCell)>,
-    dao_prepared_staging: Vec<(String, node_manager::PreparedCell)>,
+    dao_deposited_staging: Vec<(String, ckb_node::DepositedCell)>,
+    dao_prepared_staging: Vec<(String, ckb_node::PreparedCell)>,
     pub(crate) dao_cells_query_rx: Option<mpsc::Receiver<DaoQueryResult>>,
     pub(crate) dao_deposit_amount: String,
     pub(crate) dao_deposit_fee_rate: String,
@@ -122,11 +127,10 @@ pub(crate) struct App {
     // navigates away from the FullNode option.
     pub(crate) confirm_full_node_pending: bool,
     // In-flight async lookup for the "Auto" button — uses a one-shot
-    // FullNodeRpc against a public endpoint to discover the earliest
+    // FullNodeClient against a public endpoint to discover the earliest
     // funding block across all accounts. Some(_) means a detection is
     // running; the poller swaps the result into `set_block_input`.
-    pub(crate) earliest_funding_block_rx:
-        Option<mpsc::Receiver<Result<Option<u64>, String>>>,
+    pub(crate) earliest_funding_block_rx: Option<mpsc::Receiver<Result<Option<u64>, String>>>,
 
     // Periodic polling timer for balances, tx history, and DAO cells.
     pub(crate) last_poll_time: std::time::Instant,
@@ -218,18 +222,23 @@ impl App {
         // spawn below also restarts the child process so the wallet
         // doesn't come up silently OFFLINE.
         let node_config = NodeConfig::load_or_default().unwrap_or_default();
-        let node_manager = NodeManager::new(node_config.clone());
+        let mut local_node = LocalNodeProcess::new(node_config.clone());
+        let client = NodeClient::new(node_config.clone());
 
-        let startup_status = match node_manager.spawn() {
+        let startup_status = match local_node.spawn() {
             Ok(()) => {
-                if node_manager.has_local_process() {
+                if local_node.has_local_process() {
                     // LC-only: warmup the QR-lock-script cell dep so
                     // the first transfer doesn't race-fail. Surface RPC
                     // transport errors; not-yet-Fetched is expected.
                     // Full node indexes everything — no warmup needed,
                     // and the call would error `UnsupportedOperation`.
                     if node_config.node_type == NodeType::LightClient {
-                        if let Err(e) = node_manager.fetch_qr_lock_dep() {
+                        if let Err(e) = ckb_node::wallet_helpers::scripts::fetch_qr_lock_dep(
+                            client.client_ref(),
+                            client.network(),
+                            client.node_type(),
+                        ) {
                             Status::Error(format!(
                                 "Failed to request lock-script cell dep fetch: {}",
                                 e
@@ -271,7 +280,8 @@ impl App {
             accounts: Vec::new(),
             confirm_remove: false,
             balances: HashMap::new(),
-            node_manager,
+            local_node,
+            client,
             settings_rpc_url,
             settings_binary_path,
             settings_data_dir,

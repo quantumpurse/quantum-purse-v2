@@ -1,8 +1,8 @@
 [package]
-name = "node-manager"
+name = "ckb-node"
 version = "0.1.0"
 edition = "2021"
-description = "CKB node process lifecycle management and unified RPC abstraction for full node, light client, and public endpoints."
+description = "CKB node abstraction: process lifecycle, unified client (full node, light client, public RPC), and wallet-domain helpers."
 license = "MIT"
 
 [dependencies]

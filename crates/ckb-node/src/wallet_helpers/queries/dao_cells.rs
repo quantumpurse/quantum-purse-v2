@@ -2,7 +2,7 @@
 //! and compute the maximum withdrawable capacity for prepared cells.
 
 use crate::error::NodeManagerError;
-use crate::rpc::CkbRpc;
+use crate::rpc::Client;
 use byteorder::{ByteOrder, LittleEndian};
 use ckb_sdk::{
     constants::DAO_TYPE_HASH,
@@ -45,10 +45,10 @@ pub struct PreparedCell {
 /// Queries all DAO cells for an address and partitions them into deposited and
 /// prepared cells.
 pub fn categorize_dao_cells(
-    rpc: &dyn CkbRpc,
+    client: &dyn Client,
     address: &Address,
 ) -> Result<(Vec<DepositedCell>, Vec<PreparedCell>), NodeManagerError> {
-    let cells = collect_dao_cells(rpc, address)?;
+    let cells = collect_dao_cells(client, address)?;
 
     let mut deposited = Vec::new();
     let mut prepared = Vec::new();
@@ -69,7 +69,7 @@ pub fn categorize_dao_cells(
             });
         } else {
             let (max_withdraw, deposit_block_number, prepare_block_number) =
-                calculate_max_withdraw(rpc, &cell)?;
+                calculate_max_withdraw(client, &cell)?;
             prepared.push(PreparedCell {
                 out_point: cell.out_point,
                 capacity: cell.output.capacity().unpack(),
@@ -88,7 +88,7 @@ pub fn categorize_dao_cells(
 /// Returns the raw `LiveCell` list so callers can partition into
 /// deposited vs prepared.
 fn collect_dao_cells(
-    rpc: &dyn CkbRpc,
+    client: &dyn Client,
     address: &Address,
 ) -> Result<Vec<LiveCell>, NodeManagerError> {
     let lock_script = Script::from(address.payload());
@@ -103,7 +103,7 @@ fn collect_dao_cells(
     query.data_len_range = Some(ValueRangeOption::new_exact(8));
     query.min_total_capacity = u64::MAX;
 
-    rpc.collect_cells(&query)
+    client.collect_cells(&query)
 }
 
 /// Calculates the maximum withdrawable capacity for a prepared DAO cell.
@@ -116,14 +116,14 @@ fn collect_dao_cells(
 ///
 /// Returns `(maximum_withdraw, deposit_block_number, prepare_block_number)`.
 fn calculate_max_withdraw(
-    rpc: &dyn CkbRpc,
+    client: &dyn Client,
     cell: &LiveCell,
 ) -> Result<(u64, u64, u64), NodeManagerError> {
     let prepare_tx_hash: H256 = cell.out_point.tx_hash().unpack();
     let prepare_output_index: u32 = cell.out_point.index().unpack();
 
     // 1. Get the prepare transaction and its block hash.
-    let prepare_tx_status = rpc
+    let prepare_tx_status = client
         .get_transaction(prepare_tx_hash.clone())?
         .ok_or_else(|| {
             NodeManagerError::RpcError(format!(
@@ -158,7 +158,7 @@ fn calculate_max_withdraw(
 
     // 3. Get the deposit transaction and its block hash.
     let deposit_tx_hash: H256 = deposit_out_point.tx_hash().unpack();
-    let deposit_tx_status = rpc
+    let deposit_tx_status = client
         .get_transaction(deposit_tx_hash.clone())?
         .ok_or_else(|| {
             NodeManagerError::RpcError(format!(
@@ -190,12 +190,12 @@ fn calculate_max_withdraw(
         })?;
 
     // 5. Fetch both headers.
-    let deposit_header: HeaderView = rpc
+    let deposit_header: HeaderView = client
         .get_header(deposit_block_hash)?
         .ok_or_else(|| NodeManagerError::RpcError("Deposit block header not found.".to_string()))?
         .into();
 
-    let prepare_header: HeaderView = rpc
+    let prepare_header: HeaderView = client
         .get_header(prepare_block_hash)?
         .ok_or_else(|| NodeManagerError::RpcError("Prepare block header not found.".to_string()))?
         .into();

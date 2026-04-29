@@ -4,7 +4,7 @@ members = [
 	"crates/qpv2-cli",
 	"crates/qpv2-core",
 	"crates/qpv2-gui",
-	"crates/node-manager",
+	"crates/ckb-node",
 	"crates/passkey-prf",
 ]
 default-members = ["crates/qpv2-cli"]

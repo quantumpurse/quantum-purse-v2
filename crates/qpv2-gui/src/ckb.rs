@@ -32,10 +32,7 @@ const RETRY_MAX_DELAY: Duration = Duration::from_secs(30);
 /// Used by the tx-history sync thread so a transient public-RPC failure
 /// never drops a tx silently. See `BACKLOG.md` ("Reorg handling") for the
 /// cancellation story once reorg-aware sync lands.
-fn retry_until_ready<T, E: Display>(
-    tag: &str,
-    mut f: impl FnMut() -> Result<Option<T>, E>,
-) -> T {
+fn retry_until_ready<T, E: Display>(tag: &str, mut f: impl FnMut() -> Result<Option<T>, E>) -> T {
     let mut delay = RETRY_BASE_DELAY;
     loop {
         match f() {
@@ -44,7 +41,10 @@ fn retry_until_ready<T, E: Display>(
                 eprintln!("tx history: {} returned None, retrying in {:?}", tag, delay);
             }
             Err(e) => {
-                eprintln!("tx history: {} failed ({}), retrying in {:?}", tag, e, delay);
+                eprintln!(
+                    "tx history: {} failed ({}), retrying in {:?}",
+                    tag, e, delay
+                );
             }
         }
         std::thread::sleep(delay);
@@ -123,7 +123,7 @@ impl App {
         self.dao_prepared_staging.clear();
 
         let is_mainnet = self.is_mainnet();
-        let nm = self.node_manager.clone();
+        let rpc = self.client.client();
         let all_lock_args: Vec<String> = self.accounts.clone();
 
         let (tx, rx) = mpsc::channel();
@@ -146,13 +146,17 @@ impl App {
                     }
                 };
 
-                let (deposited, prepared) = match nm.categorize_dao_cells(&address) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        let _ = tx.send(Err(format!("Failed to query DAO cells: {}", e)));
-                        continue;
-                    }
-                };
+                let (deposited, prepared) =
+                    match ckb_node::wallet_helpers::queries::categorize_dao_cells(
+                        rpc.as_ref(),
+                        &address,
+                    ) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            let _ = tx.send(Err(format!("Failed to query DAO cells: {}", e)));
+                            continue;
+                        }
+                    };
 
                 for cell in deposited {
                     // If the receiver is dropped (e.g. wallet locked), stop.
@@ -206,7 +210,7 @@ impl App {
             }
         };
 
-        let nm = self.node_manager.clone();
+        let rpc = self.client.client();
         let (tx, rx) = mpsc::channel();
         self.spendable_capacity_rx = Some((target, rx));
 
@@ -216,7 +220,7 @@ impl App {
                     .parse()
                     .map_err(|e| format!("Invalid sender address: {}", e))?;
 
-                nm.spendable_capacity(&from_address)
+                ckb_node::wallet_helpers::queries::spendable_capacity(rpc.as_ref(), &from_address)
                     .map_err(|e| format!("Failed to fetch spendable capacity: {}", e))
             })();
 
@@ -243,8 +247,8 @@ impl App {
             None
         };
 
-        let nm = self.node_manager.clone();
-        let network = nm.network();
+        let rpc = self.client.client();
+        let network = self.client.network();
         let all_lock_args: Vec<String> = self.accounts.clone();
 
         let (sender, rx) = mpsc::channel();
@@ -256,8 +260,8 @@ impl App {
 
             // Wallet lock script code hash for filtering outputs that belong to us.
             let wallet_code_hash = match network {
-                node_manager::NetworkType::Mainnet => qpv2_core::constants::CKB_MAINNET_CODE_HASH,
-                node_manager::NetworkType::Testnet => qpv2_core::constants::CKB_TESTNET_CODE_HASH,
+                ckb_node::NetworkType::Mainnet => qpv2_core::constants::CKB_MAINNET_CODE_HASH,
+                ckb_node::NetworkType::Testnet => qpv2_core::constants::CKB_TESTNET_CODE_HASH,
             };
             let all_lock_args_set: HashSet<&str> =
                 all_lock_args.iter().map(|s| s.as_str()).collect();
@@ -299,8 +303,21 @@ impl App {
                 // account silently because a dropped page becomes a permanently
                 // missing tx once the watermark advances.
                 let txs = retry_until_ready(
-                    &format!("fetch_recent_transactions | lock_args=0x{} | after_block={}", lock_args, after_block.map_or("none".to_string(), |b| b.to_string())),
-                    || nm.fetch_recent_transactions(lock_args, after_block, None).map(Some),
+                    &format!(
+                        "fetch_recent_transactions | lock_args=0x{} | after_block={}",
+                        lock_args,
+                        after_block.map_or("none".to_string(), |b| b.to_string())
+                    ),
+                    || {
+                        ckb_node::wallet_helpers::queries::fetch_recent_transactions(
+                            rpc.as_ref(),
+                            lock_args,
+                            network,
+                            after_block,
+                            None,
+                        )
+                        .map(Some)
+                    },
                 );
 
                 for tx_entry in txs {
@@ -312,23 +329,23 @@ impl App {
                         owner_lock_args: lock_args.clone(),
                     });
 
-                    let mut record_io = |cell_type: &node_manager::CellType| match cell_type {
-                        node_manager::CellType::Input => {
+                    let mut record_io = |cell_type: &ckb_node::CellType| match cell_type {
+                        ckb_node::CellType::Input => {
                             info.input_accounts.insert(lock_args.clone());
                         }
-                        node_manager::CellType::Output => {
+                        ckb_node::CellType::Output => {
                             info.output_accounts.insert(lock_args.clone());
                         }
                     };
 
                     match tx_entry {
-                        node_manager::Tx::Grouped(ref grouped) => {
+                        ckb_node::Tx::Grouped(ref grouped) => {
                             info.block_number = grouped.block_number.value();
                             for (cell_type, _idx) in &grouped.cells {
                                 record_io(cell_type);
                             }
                         }
-                        node_manager::Tx::Ungrouped(ref cell) => {
+                        ckb_node::Tx::Ungrouped(ref cell) => {
                             info.block_number = cell.block_number.value();
                             record_io(&cell.io_type);
                         }
@@ -373,7 +390,7 @@ impl App {
                 let tx_hash_key = tx_hash_bytes.clone();
                 let tx_status = retry_until_ready(
                     &format!("get_transaction tx_hash={:#x}", tx_hash_key),
-                    || nm.rpc.get_transaction(tx_hash_bytes.clone()),
+                    || rpc.get_transaction(tx_hash_bytes.clone()),
                 );
 
                 let is_pending = tx_status.status != "Committed" && tx_status.status != "committed";
@@ -387,8 +404,7 @@ impl App {
                     None => retry_until_ready(
                         &format!("get_transaction.tx_view tx_hash={:#x}", tx_hash_key),
                         || {
-                            nm.rpc
-                                .get_transaction(tx_hash_bytes.clone())
+                            rpc.get_transaction(tx_hash_bytes.clone())
                                 .map(|opt| opt.and_then(|s| s.transaction))
                         },
                     ),
@@ -404,7 +420,7 @@ impl App {
                         let bh_clone = bh.clone();
                         let header = retry_until_ready(
                             &format!("get_header block_hash={:#x}", bh_clone),
-                            || nm.rpc.get_header(bh_clone.clone()),
+                            || rpc.get_header(bh_clone.clone()),
                         );
                         // CKB header timestamp is in milliseconds.
                         let ts = header.inner.timestamp.value() / 1000;
@@ -486,7 +502,7 @@ impl App {
                             if external_recipient.is_none() && !is_dao_output {
                                 let packed: ckb_types::packed::Script = out.lock.clone().into();
                                 let is_mainnet =
-                                    matches!(network, node_manager::NetworkType::Mainnet);
+                                    matches!(network, ckb_node::NetworkType::Mainnet);
                                 external_recipient = Some(script_to_address(&packed, is_mainnet));
                             }
                         }
@@ -565,15 +581,19 @@ impl App {
             return;
         }
 
-        let nm = self.node_manager.clone();
+        let rpc = self.client.client();
+        let network = self.client.network();
         let (tx, rx) = mpsc::channel();
         self.balance_receiver = Some(rx);
 
         std::thread::spawn(move || {
             for lock_args in accounts {
-                let result = nm
-                    .fetch_quantum_lock_balance(&lock_args)
-                    .map_err(|e| e.to_string());
+                let result = ckb_node::wallet_helpers::queries::fetch_quantum_lock_balance(
+                    rpc.as_ref(),
+                    &lock_args,
+                    network,
+                )
+                .map_err(|e| e.to_string());
                 // If the receiver is dropped (e.g. wallet locked), stop.
                 if tx.send((lock_args, result)).is_err() {
                     break;
@@ -589,30 +609,33 @@ impl App {
             return;
         }
 
-        let nm = self.node_manager.clone();
-        let cfg = nm.config();
+        let cfg = self.client.config();
         let rpc_port = parse_rpc_port(&cfg.rpc_url);
         let data_dir = cfg.node_data_dir();
         let is_local = cfg.requires_binary();
-        let has_process = self.node_manager.has_local_process();
+        let node_type = cfg.node_type;
+        let has_process = self.local_node.has_local_process();
+        let rpc = self.client.client();
 
         let (tx, rx) = mpsc::channel();
         self.node_status_rx = Some(rx);
 
         std::thread::spawn(move || {
             // Tip header — the primary online-ness signal.
-            let tip_block = match nm.rpc.get_tip_header() {
+            let tip_block = match rpc.get_tip_header() {
                 Ok(h) => Some(h.inner.number.value()),
                 Err(_) => None,
             };
             let online = tip_block.is_some();
 
             // Peer count — None for PublicRpc by design.
-            let peer_count = nm.peer_count().ok().flatten();
+            let peer_count = ckb_node::rpc::peer_count(rpc.as_ref(), node_type)
+                .ok()
+                .flatten();
 
             // Synced block — None for PublicRpc/FullNode and when no
             // scripts are registered yet (fresh light client).
-            let synced_block = nm.synced_block().ok().flatten();
+            let synced_block = ckb_node::rpc::synced_block(rpc.as_ref()).ok().flatten();
 
             // DB size — only meaningful for local backends. Treat walk
             // failures as "not available" rather than propagating; the
