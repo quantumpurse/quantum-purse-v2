@@ -2,7 +2,7 @@
 
 use crate::types::{spx_witness_lock_size, TransactionKind, TransactionStatus, CKB_DECIMAL_PLACES};
 use crate::App;
-use ckb_node::{Client, NetworkType, NodeType};
+use ckb_node::{CkbClient, NetworkType, NodeType};
 use qpv2_core::KeyVault;
 use std::sync::mpsc;
 
@@ -16,14 +16,14 @@ use std::sync::mpsc;
 /// every cell); `Ok(())` for LightClient when the dep is already in the
 /// store. Otherwise returns a user-facing message ready for `App.status`.
 fn check_qr_lock_dep_ready(
-    client: &dyn Client,
+    ckb_client: &dyn CkbClient,
     network: NetworkType,
     node_type: NodeType,
 ) -> Result<(), String> {
     if node_type != NodeType::LightClient {
         return Ok(());
     }
-    match ckb_node::wallet_helpers::scripts::fetch_qr_lock_dep(client, network, node_type) {
+    match ckb_node::wallet_helpers::lc::fetch_qr_lock_dep(ckb_client, network, node_type) {
         Ok(true) => Ok(()),
         Ok(false) => Err(
             "Light client hasn't fetched the lock-script cell dep yet. Try again in a moment."
@@ -96,17 +96,17 @@ impl App {
         };
 
         self.tx_status = TransactionStatus::Building;
-        let rpc = self.client.client();
-        let network = self.client.network();
-        let node_type = self.client.config().node_type;
-        let is_mainnet = self.client.is_mainnet();
+        let client = self.qp_client.ckb_client();
+        let network = self.qp_client.network();
+        let node_type = self.qp_client.config().node_type;
+        let is_mainnet = self.qp_client.is_mainnet();
 
         let (tx, rx) = mpsc::channel();
         self.transaction_build_rx = Some(rx);
 
         std::thread::spawn(move || {
             let result = (|| -> Result<_, String> {
-                check_qr_lock_dep_ready(rpc.as_ref(), network, node_type)?;
+                check_qr_lock_dep_ready(client.as_ref(), network, node_type)?;
 
                 // Parse addresses
                 let from_address: ckb_sdk::Address = from_addr_str
@@ -116,7 +116,7 @@ impl App {
                     .parse()
                     .map_err(|e| format!("Invalid recipient address: {}", e))?;
 
-                let builder = ckb_node::QpTransferBuilder::new(rpc.as_ref(), is_mainnet)
+                let builder = ckb_node::QpTransferBuilder::new(client.as_ref(), is_mainnet)
                     .with_placeholder_lock_size(witness_lock_size);
 
                 let unsigned_tx = if send_all {
@@ -137,9 +137,11 @@ impl App {
                 };
 
                 // Fetch input cells for CKB_TX_MESSAGE_ALL
-                let input_cells =
-                    ckb_node::wallet_helpers::tx_builder::fetch_input_cells(rpc.as_ref(), &unsigned_tx)
-                        .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
+                let input_cells = ckb_node::wallet_helpers::tx_builder::fetch_input_cells(
+                    client.as_ref(),
+                    &unsigned_tx,
+                )
+                .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
                 Ok((
                     TransactionKind::Transfer,
@@ -207,23 +209,23 @@ impl App {
         };
 
         self.tx_status = TransactionStatus::Building;
-        let rpc = self.client.client();
-        let network = self.client.network();
-        let node_type = self.client.config().node_type;
-        let is_mainnet = self.client.is_mainnet();
+        let client = self.qp_client.ckb_client();
+        let network = self.qp_client.network();
+        let node_type = self.qp_client.config().node_type;
+        let is_mainnet = self.qp_client.is_mainnet();
 
         let (tx, rx) = mpsc::channel();
         self.transaction_build_rx = Some(rx);
 
         std::thread::spawn(move || {
             let result = (|| -> Result<_, String> {
-                check_qr_lock_dep_ready(rpc.as_ref(), network, node_type)?;
+                check_qr_lock_dep_ready(client.as_ref(), network, node_type)?;
 
                 let from_address: ckb_sdk::Address = from_addr_str
                     .parse()
                     .map_err(|e| format!("Invalid sender address: {}", e))?;
 
-                let builder = ckb_node::QpDaoDepositBuilder::new(rpc.as_ref(), is_mainnet)
+                let builder = ckb_node::QpDaoDepositBuilder::new(client.as_ref(), is_mainnet)
                     .with_placeholder_lock_size(witness_lock_size);
 
                 let unsigned_tx = if deposit_all {
@@ -237,9 +239,11 @@ impl App {
                         .map_err(|e| format!("Failed to build DAO deposit: {}", e))?
                 };
 
-                let input_cells =
-                    ckb_node::wallet_helpers::tx_builder::fetch_input_cells(rpc.as_ref(), &unsigned_tx)
-                        .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
+                let input_cells = ckb_node::wallet_helpers::tx_builder::fetch_input_cells(
+                    client.as_ref(),
+                    &unsigned_tx,
+                )
+                .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
                 Ok((TransactionKind::Dao, unsigned_tx, input_cells, lock_args))
             })();
@@ -276,23 +280,23 @@ impl App {
         let witness_lock_size = spx_witness_lock_size(variant);
 
         self.tx_status = TransactionStatus::Building;
-        let rpc = self.client.client();
-        let network = self.client.network();
-        let node_type = self.client.config().node_type;
-        let is_mainnet = self.client.is_mainnet();
+        let client = self.qp_client.ckb_client();
+        let network = self.qp_client.network();
+        let node_type = self.qp_client.config().node_type;
+        let is_mainnet = self.qp_client.is_mainnet();
 
         let (tx, rx) = mpsc::channel();
         self.transaction_build_rx = Some(rx);
 
         std::thread::spawn(move || {
             let result = (|| -> Result<_, String> {
-                check_qr_lock_dep_ready(rpc.as_ref(), network, node_type)?;
+                check_qr_lock_dep_ready(client.as_ref(), network, node_type)?;
 
                 let from_address: ckb_sdk::Address = from_addr_str
                     .parse()
                     .map_err(|e| format!("Invalid sender address: {}", e))?;
 
-                let unsigned_tx = ckb_node::QpDaoPrepareBuilder::new(rpc.as_ref(), is_mainnet)
+                let unsigned_tx = ckb_node::QpDaoPrepareBuilder::new(client.as_ref(), is_mainnet)
                     .with_placeholder_lock_size(witness_lock_size)
                     .build_unsigned_dao_request_withdraw(
                         &from_address,
@@ -301,9 +305,11 @@ impl App {
                     )
                     .map_err(|e| format!("Failed to build DAO prepare: {}", e))?;
 
-                let input_cells =
-                    ckb_node::wallet_helpers::tx_builder::fetch_input_cells(rpc.as_ref(), &unsigned_tx)
-                        .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
+                let input_cells = ckb_node::wallet_helpers::tx_builder::fetch_input_cells(
+                    client.as_ref(),
+                    &unsigned_tx,
+                )
+                .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
                 Ok((TransactionKind::Dao, unsigned_tx, input_cells, lock_args))
             })();
@@ -340,30 +346,32 @@ impl App {
         let witness_lock_size = spx_witness_lock_size(variant);
 
         self.tx_status = TransactionStatus::Building;
-        let rpc = self.client.client();
-        let network = self.client.network();
-        let node_type = self.client.config().node_type;
-        let is_mainnet = self.client.is_mainnet();
+        let client = self.qp_client.ckb_client();
+        let network = self.qp_client.network();
+        let node_type = self.qp_client.config().node_type;
+        let is_mainnet = self.qp_client.is_mainnet();
 
         let (tx, rx) = mpsc::channel();
         self.transaction_build_rx = Some(rx);
 
         std::thread::spawn(move || {
             let result = (|| -> Result<_, String> {
-                check_qr_lock_dep_ready(rpc.as_ref(), network, node_type)?;
+                check_qr_lock_dep_ready(client.as_ref(), network, node_type)?;
 
                 let from_address: ckb_sdk::Address = from_addr_str
                     .parse()
                     .map_err(|e| format!("Invalid sender address: {}", e))?;
 
-                let unsigned_tx = ckb_node::QpDaoWithdrawBuilder::new(rpc.as_ref(), is_mainnet)
+                let unsigned_tx = ckb_node::QpDaoWithdrawBuilder::new(client.as_ref(), is_mainnet)
                     .with_placeholder_lock_size(witness_lock_size)
                     .build_unsigned_dao_withdraw(&from_address, vec![prepared_out_point], fee_rate)
                     .map_err(|e| format!("Failed to build DAO withdraw: {}", e))?;
 
-                let input_cells =
-                    ckb_node::wallet_helpers::tx_builder::fetch_input_cells(rpc.as_ref(), &unsigned_tx)
-                        .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
+                let input_cells = ckb_node::wallet_helpers::tx_builder::fetch_input_cells(
+                    client.as_ref(),
+                    &unsigned_tx,
+                )
+                .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
                 Ok((TransactionKind::Dao, unsigned_tx, input_cells, lock_args))
             })();
@@ -454,14 +462,14 @@ impl App {
         };
 
         self.tx_status = TransactionStatus::Sending;
-        let rpc = self.client.client();
+        let client = self.qp_client.ckb_client();
         let (tx_send, rx_send) = mpsc::channel();
         self.transaction_send_rx = Some(rx_send);
 
         // Spawn a thread to handle transaction submission.
         std::thread::spawn(move || {
             let result =
-                ckb_node::wallet_helpers::tx_builder::send_transaction(rpc.as_ref(), &signed_tx)
+                ckb_node::wallet_helpers::tx_builder::send_transaction(client.as_ref(), &signed_tx)
                     .map(|hash| format!("{:#x}", hash))
                     .map_err(|e| format!("Failed to send transaction: {}", e));
             let _ = tx_send.send((kind, result));

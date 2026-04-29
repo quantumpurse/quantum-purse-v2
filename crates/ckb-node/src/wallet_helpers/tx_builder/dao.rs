@@ -1,7 +1,7 @@
 //! DAO transaction builders.
 
+use crate::client::CkbClient;
 use crate::error::NodeManagerError;
-use crate::rpc::Client;
 use ckb_sdk::{
     constants::DAO_TYPE_HASH,
     traits::CellDepResolver,
@@ -33,7 +33,7 @@ fn build_balanced_dao_tx(
     builder: &dyn TxBuilder,
     lock_script: &Script,
     fee_rate: u64,
-    client: &dyn Client,
+    ckb_client: &dyn CkbClient,
     is_mainnet: bool,
     placeholder_lock_size: usize,
 ) -> Result<TransactionView, NodeManagerError> {
@@ -51,10 +51,10 @@ fn build_balanced_dao_tx(
         force_small_change_as_fee: None,
     };
 
-    let mut cell_collector = client.cell_collector();
-    let cell_dep_resolver = super::utils::cell_dep_resolver_from_rpc(client, is_mainnet)?;
-    let header_dep_resolver = client.header_dep_resolver();
-    let tx_dep_provider = client.tx_dep_provider();
+    let mut cell_collector = ckb_client.cell_collector();
+    let cell_dep_resolver = super::utils::cell_dep_resolver_from_rpc(ckb_client, is_mainnet)?;
+    let header_dep_resolver = ckb_client.header_dep_resolver();
+    let tx_dep_provider = ckb_client.tx_dep_provider();
 
     let tx = builder
         .build_balanced(
@@ -72,16 +72,16 @@ fn build_balanced_dao_tx(
 
 /// Builder for DAO deposit transactions.
 pub struct QpDaoDepositBuilder<'a> {
-    rpc: &'a dyn Client,
+    client: &'a dyn CkbClient,
     is_mainnet: bool,
     placeholder_lock_size: usize,
 }
 
 impl<'a> QpDaoDepositBuilder<'a> {
     /// Creates a new DAO deposit builder with default secp256k1 placeholder size.
-    pub fn new(rpc: &'a dyn Client, is_mainnet: bool) -> Self {
+    pub fn new(client: &'a dyn CkbClient, is_mainnet: bool) -> Self {
         QpDaoDepositBuilder {
-            rpc,
+            client,
             is_mainnet,
             placeholder_lock_size: DEFAULT_PLACEHOLDER_LOCK_SIZE,
         }
@@ -122,7 +122,7 @@ impl<'a> QpDaoDepositBuilder<'a> {
             &deposit_builder,
             &lock_script,
             fee_rate,
-            self.rpc,
+            self.client,
             self.is_mainnet,
             self.placeholder_lock_size,
         )
@@ -139,8 +139,10 @@ impl<'a> QpDaoDepositBuilder<'a> {
     ) -> Result<(TransactionView, u64), NodeManagerError> {
         let lock_script = Script::from(from_address.payload());
 
-        let spendable_cells =
-            crate::wallet_helpers::queries::spendable::collect_spendable_cells(self.rpc, &lock_script)?;
+        let spendable_cells = crate::wallet_helpers::queries::spendable::collect_spendable_cells(
+            self.client,
+            &lock_script,
+        )?;
 
         let total_input_capacity: u64 = spendable_cells
             .iter()
@@ -151,7 +153,7 @@ impl<'a> QpDaoDepositBuilder<'a> {
             .sum();
 
         let cell_dep_resolver =
-            super::utils::cell_dep_resolver_from_rpc(self.rpc, self.is_mainnet)?;
+            super::utils::cell_dep_resolver_from_rpc(self.client, self.is_mainnet)?;
         let sender_lock_dep = cell_dep_resolver.resolve(&lock_script).ok_or_else(|| {
             NodeManagerError::RpcError("Failed to resolve sender lock cell dep.".to_string())
         })?;
@@ -253,16 +255,16 @@ impl<'a> QpDaoDepositBuilder<'a> {
 
 /// Builder for DAO prepare (withdraw phase 1) transactions.
 pub struct QpDaoPrepareBuilder<'a> {
-    rpc: &'a dyn Client,
+    client: &'a dyn CkbClient,
     is_mainnet: bool,
     placeholder_lock_size: usize,
 }
 
 impl<'a> QpDaoPrepareBuilder<'a> {
     /// Creates a new DAO prepare builder with default secp256k1 placeholder size.
-    pub fn new(rpc: &'a dyn Client, is_mainnet: bool) -> Self {
+    pub fn new(client: &'a dyn CkbClient, is_mainnet: bool) -> Self {
         QpDaoPrepareBuilder {
-            rpc,
+            client,
             is_mainnet,
             placeholder_lock_size: DEFAULT_PLACEHOLDER_LOCK_SIZE,
         }
@@ -314,11 +316,11 @@ impl<'a> QpDaoPrepareBuilder<'a> {
         // Fix: build the base transaction, inject a WitnessArgs placeholder at
         // witness 0, then run the balancer on the patched transaction so fee
         // calculation includes the full witness size.
-        let mut cell_collector = self.rpc.cell_collector();
+        let mut cell_collector = self.client.cell_collector();
         let cell_dep_resolver =
-            super::utils::cell_dep_resolver_from_rpc(self.rpc, self.is_mainnet)?;
-        let header_dep_resolver = self.rpc.header_dep_resolver();
-        let tx_dep_provider = self.rpc.tx_dep_provider();
+            super::utils::cell_dep_resolver_from_rpc(self.client, self.is_mainnet)?;
+        let header_dep_resolver = self.client.header_dep_resolver();
+        let tx_dep_provider = self.client.tx_dep_provider();
 
         let base_tx = prepare_builder
             .build_base(
@@ -378,16 +380,16 @@ impl<'a> QpDaoPrepareBuilder<'a> {
 
 /// Builder for DAO withdraw (phase 2) transactions.
 pub struct QpDaoWithdrawBuilder<'a> {
-    rpc: &'a dyn Client,
+    client: &'a dyn CkbClient,
     is_mainnet: bool,
     placeholder_lock_size: usize,
 }
 
 impl<'a> QpDaoWithdrawBuilder<'a> {
     /// Creates a new DAO withdraw builder with default secp256k1 placeholder size.
-    pub fn new(rpc: &'a dyn Client, is_mainnet: bool) -> Self {
+    pub fn new(client: &'a dyn CkbClient, is_mainnet: bool) -> Self {
         QpDaoWithdrawBuilder {
-            rpc,
+            client,
             is_mainnet,
             placeholder_lock_size: DEFAULT_PLACEHOLDER_LOCK_SIZE,
         }
@@ -451,7 +453,7 @@ impl<'a> QpDaoWithdrawBuilder<'a> {
             &withdraw_builder,
             &lock_script,
             fee_rate,
-            self.rpc,
+            self.client,
             self.is_mainnet,
             self.placeholder_lock_size,
         )

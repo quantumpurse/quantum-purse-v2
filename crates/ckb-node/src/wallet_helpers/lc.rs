@@ -14,9 +14,9 @@
 
 use ckb_types::H256;
 
+use crate::client::{CkbClient, LightClient};
 use crate::config::{NetworkType, NodeType};
 use crate::error::NodeManagerError;
-use crate::rpc::{Client, LightClient};
 
 /// Asks the light client to pull the QR-lock-script deployment cell
 /// into its local store. The LC otherwise wouldn't index it (its lock
@@ -26,11 +26,11 @@ use crate::rpc::{Client, LightClient};
 /// Returns `true` once the dep is in the LC's store; `false` while the
 /// fetch is still pending. Idempotent.
 pub fn fetch_qr_lock_dep(
-    client: &dyn Client,
+    ckb_client: &dyn CkbClient,
     network: NetworkType,
     node_type: NodeType,
 ) -> Result<bool, NodeManagerError> {
-    let Some(light) = client.as_any().downcast_ref::<LightClient>() else {
+    let Some(light) = ckb_client.as_any().downcast_ref::<LightClient>() else {
         return Err(NodeManagerError::UnsupportedOperation {
             node_type: node_type.to_string(),
             reason: "fetch_qr_lock_dep is light-client-only.".to_string(),
@@ -58,12 +58,12 @@ pub fn fetch_qr_lock_dep(
 /// For deliberate cursor reset (manual rescan), call
 /// [`register_all_lock_scripts`] instead.
 pub fn register_lock_scripts(
-    client: &dyn Client,
+    ckb_client: &dyn CkbClient,
     network: NetworkType,
     node_type: NodeType,
     lock_args_list: &[String],
 ) -> Result<(), NodeManagerError> {
-    let Some(light) = client.as_any().downcast_ref::<LightClient>() else {
+    let Some(light) = ckb_client.as_any().downcast_ref::<LightClient>() else {
         return Err(NodeManagerError::UnsupportedOperation {
             node_type: node_type.to_string(),
             reason: "register_lock_scripts is light-client-only.".to_string(),
@@ -91,13 +91,13 @@ pub fn register_lock_scripts(
 /// "set scan from block" UI control where the user explicitly asked
 /// for a rescan. Empty input is a no-op.
 pub fn register_all_lock_scripts(
-    client: &dyn Client,
+    ckb_client: &dyn CkbClient,
     network: NetworkType,
     node_type: NodeType,
     lock_args_list: &[String],
     start_block: u64,
 ) -> Result<(), NodeManagerError> {
-    let Some(light) = client.as_any().downcast_ref::<LightClient>() else {
+    let Some(light) = ckb_client.as_any().downcast_ref::<LightClient>() else {
         return Err(NodeManagerError::UnsupportedOperation {
             node_type: node_type.to_string(),
             reason: "register_all_lock_scripts is light-client-only.".to_string(),

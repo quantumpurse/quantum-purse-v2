@@ -3,8 +3,8 @@
 //! `NodeStatus`; the other card shows its static config so the user knows
 //! the endpoint exists and can be switched to.
 
-use eframe::egui;
 use ckb_node::{NodeConfig, NodeType};
+use eframe::egui;
 
 use crate::App;
 
@@ -42,7 +42,7 @@ impl App {
     }
 
     fn draw_backend_card(&mut self, ui: &mut egui::Ui, backend: NodeType) {
-        let active = self.client.config().node_type == backend;
+        let active = self.qp_client.config().node_type == backend;
 
         let (icon, title, subtitle) = match backend {
             NodeType::LightClient => (
@@ -118,7 +118,7 @@ impl App {
                         self.draw_metric(
                             &mut cols[1],
                             "Endpoint",
-                            hostname_of(&self.client.config().rpc_url),
+                            hostname_of(&self.qp_client.config().rpc_url),
                         );
                         self.draw_metric(
                             &mut cols[2],
@@ -128,7 +128,8 @@ impl App {
                         self.draw_metric(&mut cols[3], "Peers", "—".into());
                     }
                     (NodeType::PublicRpc, false) => {
-                        let url = NodeConfig::default_rpc_url_for(backend, self.client.network());
+                        let url =
+                            NodeConfig::default_rpc_url_for(backend, self.qp_client.network());
                         self.draw_metric(&mut cols[0], "Block Height", "—".into());
                         self.draw_metric(&mut cols[1], "Endpoint", hostname_of(url));
                         self.draw_metric(&mut cols[2], "Port", default_port(url));
@@ -158,7 +159,8 @@ impl App {
                         );
                     }
                     (NodeType::LightClient, false) => {
-                        let url = NodeConfig::default_rpc_url_for(backend, self.client.network());
+                        let url =
+                            NodeConfig::default_rpc_url_for(backend, self.qp_client.network());
                         self.draw_metric(&mut cols[0], "Block Height", "—".into());
                         self.draw_metric(&mut cols[1], "Synced", "—".into());
                         self.draw_metric(&mut cols[2], "Peers", "—".into());
@@ -188,7 +190,8 @@ impl App {
                         );
                     }
                     (NodeType::FullNode, false) => {
-                        let url = NodeConfig::default_rpc_url_for(backend, self.client.network());
+                        let url =
+                            NodeConfig::default_rpc_url_for(backend, self.qp_client.network());
                         self.draw_metric(&mut cols[0], "Block Height", "—".into());
                         self.draw_metric(&mut cols[1], "Peers", "—".into());
                         self.draw_metric(&mut cols[2], "RPC Port", default_port(url));

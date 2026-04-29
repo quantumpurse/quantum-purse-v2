@@ -2,15 +2,14 @@ pub mod client;
 pub mod config;
 pub mod error;
 pub mod process;
-pub mod rpc;
 pub mod wallet_helpers;
 
-pub use ckb_sdk::rpc::ckb_indexer::{CellType, Tx, TxWithCell, TxWithCells};
-pub use client::NodeClient;
+pub use ckb_sdk::rpc::ckb_indexer::{CellType, Tx};
+pub use client::{CkbClient, QpClient};
 pub use config::{NetworkType, NodeConfig, NodeType};
-pub use error::NodeManagerError;
-pub use process::{FullNodeProcess, LightClientProcess, NodeProcess};
-pub use rpc::{Client, LightClient, TransactionStatus};
+
+use error::NodeManagerError;
+use process::{FullNodeProcess, LightClientProcess, NodeProcess};
 pub use wallet_helpers::queries::{DepositedCell, PreparedCell};
 pub use wallet_helpers::tx_builder::{
     fill_witness, QpDaoDepositBuilder, QpDaoPrepareBuilder, QpDaoWithdrawBuilder, QpTransferBuilder,
@@ -28,14 +27,9 @@ pub use wallet_helpers::tx_builder::{
 /// 2. Backend switches are full replacements. A new
 ///    `LocalNodeProcess::new(new_cfg)` retires the old one via that same
 ///    `Drop` chain — no in-place mutation of the running process.
-///
-/// Cloneable, thread-shared concerns (the rpc client, `wallet_helpers::*`
-/// queries, tx builders) deliberately live elsewhere — see
-/// `NodeClient`. Mixing them with this slot would force a
-/// shared-everything shape and break (1).
 pub struct LocalNodeProcess {
     /// Held only because `spawn()` needs it to construct the right
-    /// `NodeProcess` impl. External readers go through `NodeClient`.
+    /// `NodeProcess` impl. External readers go through `QpClient`.
     config: NodeConfig,
     /// `None` for `PublicRpc`, and for `LightClient`/`FullNode` until
     /// `spawn()` is called or after `stop()`.
@@ -79,7 +73,7 @@ impl LocalNodeProcess {
 
     /// `true` when the slot is occupied — `spawn()` succeeded and
     /// `stop()` hasn't run. Not a strict liveness check; for true
-    /// online-ness, probe the RPC via `NodeClient`.
+    /// online-ness, probe the RPC via `QpClient`.
     pub fn has_local_process(&self) -> bool {
         self.process.is_some()
     }

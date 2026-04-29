@@ -1,5 +1,17 @@
-use crate::config::{NetworkType, NodeConfig, NodeType};
-use crate::error::NodeManagerError;
+//! Light client — wraps `ckb_sdk::LightClientRpcClient`.
+//!
+//! Adds light-client-specific operations: `set_scripts` filter
+//! registration, `fetch_transaction` (pull a tx + its committing block
+//! header into the LC's local store), and the QPV2-specific
+//! `register_lock_scripts` flows that wrap them.
+//!
+//! Several `Client` trait methods need bespoke logic here because the
+//! upstream LC's response types have private fields that prevent
+//! direct field access — those methods round-trip through serde_json
+//! to reach the data.
+
+use std::any::Any;
+
 use ckb_jsonrpc_types::{JsonBytes, Uint64};
 use ckb_sdk::rpc::ckb_indexer::{
     Cell, CellsCapacity, Order, Pagination, ScriptType, SearchKey, SearchKeyFilter, Tx,
@@ -7,372 +19,19 @@ use ckb_sdk::rpc::ckb_indexer::{
 use ckb_sdk::rpc::ckb_light_client::{
     FetchStatus, LightClientRpcClient, ScriptStatus, SetScriptsCommand,
 };
-use ckb_sdk::rpc::{CkbRpcClient, ResponseFormatGetter};
 use ckb_sdk::traits::{
-    CellCollector, CellQueryOptions, DefaultCellCollector, DefaultHeaderDepResolver,
-    DefaultTransactionDependencyProvider, HeaderDepResolver, LightClientCellCollector,
+    CellCollector, CellQueryOptions, HeaderDepResolver, LightClientCellCollector,
     LightClientHeaderDepResolver, LightClientTransactionDependencyProvider, LiveCell,
     PrimaryScriptType, TransactionDependencyProvider, ValueRangeOption,
 };
 use ckb_types::prelude::*;
 use ckb_types::H256;
-use std::any::Any;
-use std::sync::Arc;
 
-/// Unified RPC interface for wallet operations.
-///
-/// Abstracts over full node (`CkbRpcClient`) and light client (`LightClientRpcClient`)
-/// so wallet code does not need to know which backend is active.
-///
-/// The `Send + Sync` supertraits allow a single client instance to be shared
-/// across background threads via `Arc<dyn Client>` inside `LocalNodeProcess`.
-///
-/// `Any` enables downcasting from `Arc<dyn Client>` back to the concrete
-/// type when callers need backend-specific methods (e.g.
-/// `LightClient::register_lock_script`) — avoids constructing a second
-/// RPC client when one already exists.
-pub trait Client: Send + Sync + Any {
-    /// Concrete-type access for downcast. Each impl returns `self` so
-    /// callers can do `self.rpc.as_any().downcast_ref::<LightClient>()`.
-    fn as_any(&self) -> &dyn Any;
+use crate::config::NetworkType;
+use crate::error::NodeManagerError;
 
-    /// Returns the tip (latest) block header.
-    fn get_tip_header(&self) -> Result<ckb_jsonrpc_types::HeaderView, NodeManagerError>;
+use super::{CkbClient, TransactionStatus};
 
-    /// Returns the genesis block. Full nodes serve this via
-    /// `get_block_by_number(0)`; the light client has a dedicated
-    /// `get_genesis_block` RPC. Used to bootstrap the system-script
-    /// `CellDepResolver` for transaction building.
-    fn get_genesis_block(&self) -> Result<ckb_jsonrpc_types::BlockView, NodeManagerError>;
-
-    /// Queries live cells matching the given search key.
-    fn get_cells(
-        &self,
-        search_key: SearchKey,
-        order: Order,
-        limit: u32,
-        after: Option<JsonBytes>,
-    ) -> Result<Pagination<Cell>, NodeManagerError>;
-
-    /// Returns the total capacity of live cells matching the search key.
-    fn get_cells_capacity(
-        &self,
-        search_key: SearchKey,
-    ) -> Result<Option<CellsCapacity>, NodeManagerError>;
-
-    /// Submits a transaction to the network.
-    fn send_transaction(
-        &self,
-        tx: ckb_jsonrpc_types::Transaction,
-    ) -> Result<H256, NodeManagerError>;
-
-    /// Retrieves a transaction by hash, returning its status.
-    fn get_transaction(&self, hash: H256) -> Result<Option<TransactionStatus>, NodeManagerError>;
-
-    /// Gets a header by its hash.
-    fn get_header(
-        &self,
-        hash: H256,
-    ) -> Result<Option<ckb_jsonrpc_types::HeaderView>, NodeManagerError>;
-
-    /// Gets detailed transaction with status (needed for DAO calculations).
-    fn get_transaction_with_status(
-        &self,
-        hash: H256,
-    ) -> Result<Option<ckb_jsonrpc_types::TransactionWithStatusResponse>, NodeManagerError>;
-
-    /// Queries transactions matching the given search key via the indexer.
-    fn get_transactions(
-        &self,
-        search_key: SearchKey,
-        order: Order,
-        limit: u32,
-        after: Option<JsonBytes>,
-    ) -> Result<Pagination<Tx>, NodeManagerError>;
-
-    /// Collects live cells matching `query`. Each backend picks its best
-    /// strategy: full node delegates to ckb-sdk's `DefaultCellCollector`;
-    /// light client paginates its indexer (`get_cells`) directly.
-    ///
-    /// Closes the cell-collection escape hatch — call sites used to
-    /// construct `DefaultCellCollector::new(rpc_url)` directly, which only
-    /// speaks full-node RPC and fails on a light client.
-    fn collect_cells(&self, query: &CellQueryOptions) -> Result<Vec<LiveCell>, NodeManagerError>;
-
-    /// Returns a fresh ckb-sdk `CellCollector` bound to this backend.
-    /// Used by tx builders that consume `&mut dyn CellCollector` (e.g.
-    /// `build_balanced`). Full node returns `DefaultCellCollector`; light
-    /// client returns `LightClientCellCollector`.
-    fn cell_collector(&self) -> Box<dyn CellCollector>;
-
-    /// Returns a fresh ckb-sdk `HeaderDepResolver` bound to this backend.
-    /// Used by tx builders that consume `&dyn HeaderDepResolver`.
-    fn header_dep_resolver(&self) -> Box<dyn HeaderDepResolver>;
-
-    /// Returns a fresh ckb-sdk `TransactionDependencyProvider` bound to
-    /// this backend. Used by tx builders that consume
-    /// `&dyn TransactionDependencyProvider`.
-    fn tx_dep_provider(&self) -> Box<dyn TransactionDependencyProvider>;
-
-    /// Gets the RPC URL (temporary method for SDK components).
-    /// TODO: Remove when we implement custom collectors using the trait.
-    fn get_rpc_url(&self) -> String;
-}
-
-/// Simplified transaction status returned by `get_transaction`.
-///
-/// Normalizes the different response types from full node and light client
-/// into a common representation.
-#[derive(Debug, Clone)]
-pub struct TransactionStatus {
-    /// The transaction view, if available.
-    pub transaction: Option<ckb_jsonrpc_types::TransactionView>,
-    /// Transaction status string: "pending", "proposed", "committed", "rejected", or "unknown".
-    pub status: String,
-    /// Block hash of the block that committed this transaction, if committed.
-    pub block_hash: Option<H256>,
-}
-
-/// Full node / public RPC implementation.
-pub struct FullNodeClient {
-    client: CkbRpcClient,
-    rpc_url: String,
-}
-
-impl FullNodeClient {
-    pub fn new(rpc_url: &str) -> Self {
-        Self {
-            client: CkbRpcClient::new(rpc_url),
-            rpc_url: rpc_url.to_string(),
-        }
-    }
-
-    /// Number of peers the node is currently connected to.
-    pub fn get_peer_count(&self) -> Result<usize, NodeManagerError> {
-        self.client
-            .get_peers()
-            .map(|peers| peers.len())
-            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
-    }
-
-    /// Light-client utility: best-effort discovery of the earliest
-    /// funding block across a set of QuantumPurse accounts.
-    ///
-    /// Although this method lives on `FullNodeClient`, its sole purpose is
-    /// to support the **light-client backend's** manual "Auto-detect
-    /// rescan block" flow. The light client only indexes scripts it has
-    /// been told to track — it cannot itself answer "when was account X
-    /// first funded?" The wallet therefore constructs an ad-hoc
-    /// `FullNodeClient` against a richly-indexed public endpoint, calls
-    /// this method, and uses the result to pre-fill the user's
-    /// `set_scripts(start_block)` input on the LC.
-    ///
-    /// For each account, asks the indexer for the earliest tx
-    /// (`Order::Asc`, limit 1) involving that lock script and returns
-    /// the minimum block number across all accounts. `Ok(None)` when
-    /// no account has any indexer history.
-    ///
-    /// Returns the **raw** earliest block as the indexer reports it.
-    /// Callers wiring this into the LC's `set_scripts` MUST account
-    /// for the upstream LC's "already-filtered up to and including N"
-    /// semantics (subtract 1 — sync resumes at `block_number + 1`, so
-    /// passing the raw earliest would skip the very tx we just
-    /// discovered).
-    pub fn find_earliest_funding_block(
-        &self,
-        lock_args_list: &[String],
-        network: NetworkType,
-    ) -> Result<Option<u64>, NodeManagerError> {
-        if lock_args_list.is_empty() {
-            return Ok(None);
-        }
-
-        let (code_hash_hex, hash_type_str) = match network {
-            NetworkType::Mainnet => (
-                qpv2_core::constants::CKB_MAINNET_CODE_HASH,
-                qpv2_core::constants::CKB_MAINNET_HASH_TYPE,
-            ),
-            NetworkType::Testnet => (
-                qpv2_core::constants::CKB_TESTNET_CODE_HASH,
-                qpv2_core::constants::CKB_TESTNET_HASH_TYPE,
-            ),
-        };
-        let script_hash_type = match hash_type_str {
-            "type" => ckb_jsonrpc_types::ScriptHashType::Type,
-            "data1" => ckb_jsonrpc_types::ScriptHashType::Data1,
-            _ => ckb_jsonrpc_types::ScriptHashType::Data,
-        };
-        let code_hash_clean = code_hash_hex.strip_prefix("0x").unwrap_or(code_hash_hex);
-        let mut code_hash_bytes = [0u8; 32];
-        let decoded = hex::decode(code_hash_clean)
-            .map_err(|e| NodeManagerError::RpcError(format!("Invalid code hash hex: {}", e)))?;
-        if decoded.len() != 32 {
-            return Err(NodeManagerError::RpcError(format!(
-                "Code hash must be 32 bytes, got {}.",
-                decoded.len()
-            )));
-        }
-        code_hash_bytes.copy_from_slice(&decoded);
-
-        let mut earliest: Option<u64> = None;
-        for lock_args_hex in lock_args_list {
-            let lock_args_clean = lock_args_hex.strip_prefix("0x").unwrap_or(lock_args_hex);
-            let args_bytes = hex::decode(lock_args_clean)
-                .map_err(|e| NodeManagerError::RpcError(format!("Invalid lock args hex: {}", e)))?;
-
-            let script = ckb_jsonrpc_types::Script {
-                code_hash: H256(code_hash_bytes),
-                hash_type: script_hash_type,
-                args: JsonBytes::from_bytes(args_bytes.into()),
-            };
-            let search_key = SearchKey {
-                script,
-                script_type: ScriptType::Lock,
-                script_search_mode: None,
-                filter: None,
-                with_data: None,
-                group_by_transaction: None,
-            };
-
-            let page = self
-                .client
-                .get_transactions(search_key, Order::Asc, 1u32.into(), None)
-                .map_err(|e| NodeManagerError::RpcError(e.to_string()))?;
-
-            if let Some(first) = page.objects.first() {
-                let block_num = match first {
-                    Tx::Ungrouped(t) => t.block_number.value(),
-                    Tx::Grouped(t) => t.block_number.value(),
-                };
-                earliest = Some(earliest.map_or(block_num, |e| e.min(block_num)));
-            }
-        }
-        Ok(earliest)
-    }
-}
-
-impl Client for FullNodeClient {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn get_tip_header(&self) -> Result<ckb_jsonrpc_types::HeaderView, NodeManagerError> {
-        self.client
-            .get_tip_header()
-            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
-    }
-
-    fn get_genesis_block(&self) -> Result<ckb_jsonrpc_types::BlockView, NodeManagerError> {
-        self.client
-            .get_block_by_number(0u64.into())
-            .map_err(|e| {
-                NodeManagerError::RpcError(format!("Failed to fetch genesis block: {}", e))
-            })?
-            .ok_or_else(|| NodeManagerError::RpcError("Genesis block not found.".to_string()))
-    }
-
-    fn get_cells(
-        &self,
-        search_key: SearchKey,
-        order: Order,
-        limit: u32,
-        after: Option<JsonBytes>,
-    ) -> Result<Pagination<Cell>, NodeManagerError> {
-        self.client
-            .get_cells(search_key, order, limit.into(), after)
-            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
-    }
-
-    fn get_cells_capacity(
-        &self,
-        search_key: SearchKey,
-    ) -> Result<Option<CellsCapacity>, NodeManagerError> {
-        self.client
-            .get_cells_capacity(search_key)
-            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
-    }
-
-    fn send_transaction(
-        &self,
-        tx: ckb_jsonrpc_types::Transaction,
-    ) -> Result<H256, NodeManagerError> {
-        self.client
-            .send_transaction(tx, None)
-            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
-    }
-
-    fn get_transaction(&self, hash: H256) -> Result<Option<TransactionStatus>, NodeManagerError> {
-        let resp = self
-            .client
-            .get_transaction(hash)
-            .map_err(|e| NodeManagerError::RpcError(e.to_string()))?;
-
-        Ok(resp.map(|r| TransactionStatus {
-            transaction: r.transaction.and_then(|inner| inner.get_value().ok()),
-            status: format!("{:?}", r.tx_status.status),
-            block_hash: r.tx_status.block_hash,
-        }))
-    }
-
-    fn get_header(
-        &self,
-        hash: H256,
-    ) -> Result<Option<ckb_jsonrpc_types::HeaderView>, NodeManagerError> {
-        self.client
-            .get_header(hash)
-            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
-    }
-
-    fn get_transaction_with_status(
-        &self,
-        hash: H256,
-    ) -> Result<Option<ckb_jsonrpc_types::TransactionWithStatusResponse>, NodeManagerError> {
-        self.client
-            .get_transaction(hash)
-            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
-    }
-
-    fn get_transactions(
-        &self,
-        search_key: SearchKey,
-        order: Order,
-        limit: u32,
-        after: Option<JsonBytes>,
-    ) -> Result<Pagination<Tx>, NodeManagerError> {
-        self.client
-            .get_transactions(search_key, order, limit.into(), after)
-            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
-    }
-
-    fn collect_cells(&self, query: &CellQueryOptions) -> Result<Vec<LiveCell>, NodeManagerError> {
-        let mut collector = DefaultCellCollector::new(&self.rpc_url);
-        let (cells, _) = collector
-            .collect_live_cells(query, false)
-            .map_err(|e| NodeManagerError::RpcError(e.to_string()))?;
-        Ok(cells)
-    }
-
-    fn cell_collector(&self) -> Box<dyn CellCollector> {
-        Box::new(DefaultCellCollector::new(&self.rpc_url))
-    }
-
-    fn header_dep_resolver(&self) -> Box<dyn HeaderDepResolver> {
-        Box::new(DefaultHeaderDepResolver::new(&self.rpc_url))
-    }
-
-    fn tx_dep_provider(&self) -> Box<dyn TransactionDependencyProvider> {
-        Box::new(DefaultTransactionDependencyProvider::new(&self.rpc_url, 10))
-    }
-
-    fn get_rpc_url(&self) -> String {
-        self.rpc_url.clone()
-    }
-}
-
-/// Light client RPC implementation.
-///
-/// Provides the same `Client` interface plus light-client-specific methods
-/// for script registration.
 pub struct LightClient {
     client: LightClientRpcClient,
     rpc_url: String,
@@ -520,7 +179,7 @@ impl LightClient {
 /// Builds `ScriptStatus`es for a list of `(lock_args_hex, start_block)`
 /// pairs against the active network's code_hash/hash_type. Pure
 /// construction — no RPC. Shared between `register_lock_scripts` (auto,
-/// filtered) and `set_all_lock_scripts` (manual, force).
+/// filtered) and `register_all_lock_scripts` (manual, force).
 fn build_lock_script_statuses(
     scripts: &[(&str, u64)],
     network: NetworkType,
@@ -576,7 +235,7 @@ fn build_lock_script_statuses(
     Ok(statuses)
 }
 
-impl Client for LightClient {
+impl CkbClient for LightClient {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -828,47 +487,4 @@ impl Client for LightClient {
     fn get_rpc_url(&self) -> String {
         self.rpc_url.clone()
     }
-}
-
-// ── Top-level helpers (no LocalNodeProcess required) ──────────────────────────
-
-/// Builds the right `Arc<dyn Client>` for the given config. The active
-/// backend determines the concrete RPC client; the App owns the single
-/// shared instance and replaces it on every config change.
-pub fn build(config: &NodeConfig) -> Arc<dyn Client> {
-    match config.node_type {
-        NodeType::PublicRpc | NodeType::FullNode => Arc::new(FullNodeClient::new(&config.rpc_url)),
-        NodeType::LightClient => Arc::new(LightClient::new(&config.rpc_url)),
-    }
-}
-
-/// Number of peers for local-node backends. `Ok(None)` for `PublicRpc`
-/// (peer count of a remote endpoint isn't meaningful wallet-side).
-/// `Err` when the local node is unreachable.
-pub fn peer_count(
-    client: &dyn Client,
-    node_type: NodeType,
-) -> Result<Option<usize>, NodeManagerError> {
-    if let Some(light) = client.as_any().downcast_ref::<LightClient>() {
-        return light.get_peer_count().map(Some);
-    }
-    if let Some(full) = client.as_any().downcast_ref::<FullNodeClient>() {
-        // FullNodeClient is shared by FullNode + PublicRpc backends; only
-        // the local FullNode case has a meaningful peer count.
-        return match node_type {
-            NodeType::FullNode => full.get_peer_count().map(Some),
-            _ => Ok(None),
-        };
-    }
-    Ok(None)
-}
-
-/// Min synced block across all scripts the LC is tracking. `Ok(None)`
-/// outside `LightClient` and when no scripts are registered.
-pub fn synced_block(rpc: &dyn Client) -> Result<Option<u64>, NodeManagerError> {
-    let Some(light) = rpc.as_any().downcast_ref::<LightClient>() else {
-        return Ok(None);
-    };
-    let scripts = light.get_scripts()?;
-    Ok(scripts.iter().map(|s| s.block_number.value()).min())
 }

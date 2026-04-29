@@ -12,8 +12,8 @@ mod wallet;
 #[cfg(target_os = "macos")]
 mod window_handle;
 
+use ckb_node::{LocalNodeProcess, NodeConfig, NodeType, QpClient};
 use eframe::egui;
-use ckb_node::{LocalNodeProcess, NodeClient, NodeConfig, NodeType};
 use qpv2_core::types::SpxVariant;
 use qpv2_core::KeyVault;
 use std::collections::HashMap;
@@ -59,7 +59,7 @@ pub(crate) struct App {
     /// `NodeConfig` snapshot it was built from. Background threads
     /// take a clone of this single field instead of capturing the rpc
     /// and a fistful of config scalars separately.
-    pub(crate) client: NodeClient,
+    pub(crate) qp_client: QpClient,
 
     // Editable settings fields (buffered until saved).
     pub(crate) settings_rpc_url: String,
@@ -223,7 +223,7 @@ impl App {
         // doesn't come up silently OFFLINE.
         let node_config = NodeConfig::load_or_default().unwrap_or_default();
         let mut local_node = LocalNodeProcess::new(node_config.clone());
-        let client = NodeClient::new(node_config.clone());
+        let qp_client = QpClient::new(node_config.clone());
 
         let startup_status = match local_node.spawn() {
             Ok(()) => {
@@ -234,10 +234,10 @@ impl App {
                     // Full node indexes everything — no warmup needed,
                     // and the call would error `UnsupportedOperation`.
                     if node_config.node_type == NodeType::LightClient {
-                        if let Err(e) = ckb_node::wallet_helpers::scripts::fetch_qr_lock_dep(
-                            client.client_ref(),
-                            client.network(),
-                            client.node_type(),
+                        if let Err(e) = ckb_node::wallet_helpers::lc::fetch_qr_lock_dep(
+                            qp_client.client_ref(),
+                            qp_client.network(),
+                            qp_client.node_type(),
                         ) {
                             Status::Error(format!(
                                 "Failed to request lock-script cell dep fetch: {}",
@@ -281,7 +281,7 @@ impl App {
             confirm_remove: false,
             balances: HashMap::new(),
             local_node,
-            client,
+            qp_client,
             settings_rpc_url,
             settings_binary_path,
             settings_data_dir,

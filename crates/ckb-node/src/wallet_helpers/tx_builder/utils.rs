@@ -1,7 +1,7 @@
 //! Utilities for transaction building.
 
+use crate::client::CkbClient;
 use crate::error::NodeManagerError;
-use crate::rpc::Client;
 use ckb_sdk::traits::DefaultCellDepResolver;
 use ckb_sdk::types::ScriptId;
 use ckb_types::core::{BlockView, DepType, ScriptHashType};
@@ -13,17 +13,17 @@ use qpv2_core::constants;
 /// Fetches the genesis block via the active backend's RPC and creates a
 /// cell dep resolver with the quantum-resistant lock script registered.
 ///
-/// Routes through `Client::get_genesis_block` so it works on both the
+/// Routes through `CkbClient::get_genesis_block` so it works on both the
 /// full node (`get_block_by_number(0)`) and the light client
 /// (`get_genesis_block`). The genesis block contains the system script
 /// cell deps (sighash, multisig, DAO). The quantum-resistant lock
 /// script is a custom deployment and must be registered explicitly
 /// using the known deployment OutPoint.
 pub fn cell_dep_resolver_from_rpc(
-    client: &dyn Client,
+    ckb_client: &dyn CkbClient,
     is_mainnet: bool,
 ) -> Result<DefaultCellDepResolver, NodeManagerError> {
-    let genesis_block = client.get_genesis_block()?;
+    let genesis_block = ckb_client.get_genesis_block()?;
     let block_view: BlockView = genesis_block.into();
     let mut resolver = DefaultCellDepResolver::from_genesis(&block_view).map_err(|e| {
         NodeManagerError::RpcError(format!("Failed to parse genesis info: {:?}", e))

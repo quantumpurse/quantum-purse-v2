@@ -11,7 +11,7 @@ use crate::App;
 impl App {
     /// Whether the app is configured for CKB mainnet (derived from node config).
     pub(crate) fn is_mainnet(&self) -> bool {
-        self.client.is_mainnet()
+        self.qp_client.is_mainnet()
     }
 
     /// Tells the running light client to start indexing the given
@@ -25,15 +25,15 @@ impl App {
     /// start block per account) is deliberately not covered here; that
     /// flow isn't implemented yet.
     pub(crate) fn register_lock_scripts_with_light_client(&mut self, lock_args_list: &[String]) {
-        if self.client.config().node_type != ckb_node::NodeType::LightClient
+        if self.qp_client.config().node_type != ckb_node::NodeType::LightClient
             || !self.local_node.has_local_process()
             || lock_args_list.is_empty()
         {
             return;
         }
-        let cfg = self.client.config();
-        if let Err(e) = ckb_node::wallet_helpers::scripts::register_lock_scripts(
-            self.client.client_ref(),
+        let cfg = self.qp_client.config();
+        if let Err(e) = ckb_node::wallet_helpers::lc::register_lock_scripts(
+            self.qp_client.client_ref(),
             cfg.network,
             cfg.node_type,
             lock_args_list,
@@ -53,22 +53,20 @@ impl App {
             return;
         }
 
-        let network = self.client.network();
+        let network = self.qp_client.network();
         // Always use the network's public RPC — even if the active
         // backend is already PublicRpc, building a fresh client keeps
         // this a self-contained one-shot.
-        let public_rpc_url = ckb_node::NodeConfig::default_rpc_url_for(
-            ckb_node::NodeType::PublicRpc,
-            network,
-        )
-        .to_string();
+        let public_rpc_url =
+            ckb_node::NodeConfig::default_rpc_url_for(ckb_node::NodeType::PublicRpc, network)
+                .to_string();
         let accounts = self.accounts.clone();
 
         let (tx, rx) = std::sync::mpsc::channel();
         self.earliest_funding_block_rx = Some(rx);
 
         std::thread::spawn(move || {
-            let pub_rpc_client = ckb_node::rpc::FullNodeClient::new(&public_rpc_url);
+            let pub_rpc_client = ckb_node::client::FullNodeClient::new(&public_rpc_url);
             let result = pub_rpc_client
                 .find_earliest_funding_block(&accounts, network)
                 .map_err(|e| e.to_string());
@@ -81,16 +79,16 @@ impl App {
     /// filter — use only from a UI control where the user explicitly
     /// asked for it. No-op outside LightClient or with no local process.
     pub(crate) fn set_all_accounts_lock_script_block(&mut self, start_block: u64) {
-        if self.client.config().node_type != ckb_node::NodeType::LightClient
+        if self.qp_client.config().node_type != ckb_node::NodeType::LightClient
             || !self.local_node.has_local_process()
             || self.accounts.is_empty()
         {
             return;
         }
         let accounts = self.accounts.clone();
-        let cfg = self.client.config();
-        if let Err(e) = ckb_node::wallet_helpers::scripts::register_all_lock_scripts(
-            self.client.client_ref(),
+        let cfg = self.qp_client.config();
+        if let Err(e) = ckb_node::wallet_helpers::lc::register_all_lock_scripts(
+            self.qp_client.client_ref(),
             cfg.network,
             cfg.node_type,
             &accounts,
@@ -165,7 +163,7 @@ impl App {
     /// `node_config` on `App`, so this is the only place where an edit
     /// becomes committed state.
     pub(crate) fn save_node_config(&mut self) {
-        let mut new_cfg = self.client.config().clone();
+        let mut new_cfg = self.qp_client.config().clone();
         new_cfg.node_type = self.temp_node_type;
         new_cfg.network = self.temp_network;
         new_cfg.rpc_url = self.settings_rpc_url.clone();
@@ -188,9 +186,9 @@ impl App {
         // Replace the manager + client with fresh ones bound to the
         // newly-saved config. The old LocalNodeProcess's drop stops its
         // child cleanly via the inner *Process::drop; the old
-        // NodeClient lives on inside any in-flight thread until that
+        // QpClient lives on inside any in-flight thread until that
         // thread finishes its unit of work.
-        self.client = ckb_node::NodeClient::new(new_cfg.clone());
+        self.qp_client = ckb_node::QpClient::new(new_cfg.clone());
         self.local_node = ckb_node::LocalNodeProcess::new(new_cfg);
         self.status = Status::Info("Configuration saved. RPC reconnected.".to_string());
 
@@ -295,7 +293,7 @@ impl App {
     /// or first time on this network) or read failure (corrupted file →
     /// surfaces as a status warning; next sync rebuilds from scratch).
     pub(crate) fn load_tx_history_from_disk(&mut self) {
-        match TxHistoryStore::load(self.client.network().tag()) {
+        match TxHistoryStore::load(self.qp_client.network().tag()) {
             Ok(Some(store)) => {
                 self.tx_history = store.records;
             }
@@ -407,15 +405,15 @@ impl App {
             Ok(lock_args) => {
                 // Mark as loading and fetch balance in the background.
                 self.balances.insert(lock_args.clone(), None);
-                let rpc = self.client.client();
-                let network = self.client.network();
+                let client = self.qp_client.ckb_client();
+                let network = self.qp_client.network();
                 let args = lock_args.clone();
                 let (tx, rx) = std::sync::mpsc::channel();
                 self.balance_receiver = Some(rx);
 
                 std::thread::spawn(move || {
                     let result = ckb_node::wallet_helpers::queries::fetch_quantum_lock_balance(
-                        rpc.as_ref(),
+                        client.as_ref(),
                         &args,
                         network,
                     )

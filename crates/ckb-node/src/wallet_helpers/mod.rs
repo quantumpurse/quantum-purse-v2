@@ -12,6 +12,6 @@
 //! layer below (`crate::rpc`) deliberately doesn't know any of that —
 //! keeping the protocol speakers reusable beyond this wallet.
 
+pub mod lc;
 pub mod queries;
-pub mod scripts;
 pub mod tx_builder;

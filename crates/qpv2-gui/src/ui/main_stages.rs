@@ -2,8 +2,8 @@
 
 use crate::types::{Screen, Status, Tab};
 use crate::App;
-use eframe::egui;
 use ckb_node::NodeType;
+use eframe::egui;
 use qpv2_core::{types::SpxVariant, KeyVault};
 
 impl App {
@@ -216,7 +216,7 @@ impl App {
                     );
 
                     // Node type
-                    let node_name = match self.client.config().node_type {
+                    let node_name = match self.qp_client.config().node_type {
                         NodeType::PublicRpc => "Public RPC",
                         NodeType::LightClient => "Light Client",
                         NodeType::FullNode => "Full Node",
@@ -241,11 +241,11 @@ impl App {
                     );
 
                     // Network badge
-                    let network = match self.client.network() {
+                    let network = match self.qp_client.network() {
                         ckb_node::NetworkType::Mainnet => "MAIN",
                         ckb_node::NetworkType::Testnet => "TEST",
                     };
-                    let network_color = if self.client.is_mainnet() {
+                    let network_color = if self.qp_client.is_mainnet() {
                         self.colors.accent
                     } else {
                         self.colors.warn
@@ -265,7 +265,7 @@ impl App {
                         // each time it opens so stale selections from a
                         // previous (un-applied) session don't leak through.
                         if self.node_selector_open {
-                            let cfg = self.client.config();
+                            let cfg = self.qp_client.config();
                             self.temp_network = cfg.network;
                             self.temp_node_type = cfg.node_type;
                         }
