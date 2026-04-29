@@ -478,33 +478,100 @@ fn ensure_full_node_chain_dir(
     network: NetworkType,
     data_dir: &Path,
 ) -> Result<(), NodeManagerError> {
-    if data_dir.join("ckb.toml").exists() {
-        return Ok(());
-    }
+    let toml_path = data_dir.join("ckb.toml");
 
-    let status = Command::new(binary)
-        .arg("init")
-        .arg("--chain")
-        .arg(network.tag())
-        .arg("-C")
-        .arg(data_dir)
-        .status()
-        .map_err(|e| {
-            NodeManagerError::ProcessError(format!(
-                "Failed to run `ckb init --chain {} -C {}`: {}",
+    // Only run `ckb init` when the chain dir hasn't been scaffolded yet.
+    if !toml_path.exists() {
+        let status = Command::new(binary)
+            .arg("init")
+            .arg("--chain")
+            .arg(network.tag())
+            .arg("-C")
+            .arg(data_dir)
+            .status()
+            .map_err(|e| {
+                NodeManagerError::ProcessError(format!(
+                    "Failed to run `ckb init --chain {} -C {}`: {}",
+                    network.tag(),
+                    data_dir.display(),
+                    e
+                ))
+            })?;
+
+        if !status.success() {
+            return Err(NodeManagerError::ProcessError(format!(
+                "`ckb init --chain {} -C {}` exited with status {}.",
                 network.tag(),
                 data_dir.display(),
+                status
+            )));
+        }
+    }
+
+    // Run on every spawn (not gated on the init branch above) so existing
+    // chain dirs scaffolded before this fix also get patched. The function
+    // is idempotent — only writes when "Indexer" is missing from the
+    // `rpc.modules` array.
+    enable_indexer_rpc_module(&toml_path)?;
+
+    Ok(())
+}
+
+/// Adds `"Indexer"` to the `rpc.modules` array in a `ckb.toml`, in
+/// place. Idempotent: no-op (no disk write) when `"Indexer"` is already
+/// listed. Required because `ckb init`'s default `rpc.modules` omits
+/// `"Indexer"`, which makes the wallet's reads (`get_cells_capacity`,
+/// `get_cells`, `get_transactions`) hit `Method not found`.
+///
+/// Line-based edit instead of pulling in a TOML round-tripper — the
+/// upstream template declares `modules` on a single line and we don't
+/// want to disturb its surrounding comments / formatting.
+fn enable_indexer_rpc_module(toml_path: &Path) -> Result<(), NodeManagerError> {
+    let content = std::fs::read_to_string(toml_path).map_err(|e| {
+        NodeManagerError::ProcessError(format!(
+            "Failed to read '{}': {}",
+            toml_path.display(),
+            e
+        ))
+    })?;
+
+    let mut changed = false;
+    let new_content: String = content
+        .lines()
+        .map(|line| {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("modules") && trimmed.contains('=') && line.contains('[') {
+                if line.contains("\"Indexer\"") {
+                    return line.to_string();
+                }
+                if let Some(idx) = line.rfind(']') {
+                    changed = true;
+                    let mut out = String::with_capacity(line.len() + 12);
+                    out.push_str(&line[..idx]);
+                    out.push_str(", \"Indexer\"]");
+                    out.push_str(&line[idx + 1..]);
+                    return out;
+                }
+            }
+            line.to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if changed {
+        // `lines()` strips the trailing newline; restore if present.
+        let final_content = if content.ends_with('\n') {
+            format!("{}\n", new_content)
+        } else {
+            new_content
+        };
+        std::fs::write(toml_path, final_content).map_err(|e| {
+            NodeManagerError::ProcessError(format!(
+                "Failed to write '{}': {}",
+                toml_path.display(),
                 e
             ))
         })?;
-
-    if !status.success() {
-        return Err(NodeManagerError::ProcessError(format!(
-            "`ckb init --chain {} -C {}` exited with status {}.",
-            network.tag(),
-            data_dir.display(),
-            status
-        )));
     }
     Ok(())
 }
