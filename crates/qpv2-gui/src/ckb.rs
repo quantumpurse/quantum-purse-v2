@@ -638,6 +638,10 @@ impl App {
                 .ok()
                 .flatten();
 
+            // Sync state — None outside FullNode. Drives the IBD phase
+            // label + bar fill on the Full Node card.
+            let sync_state = qp_client.sync_state().ok().flatten();
+
             // DB size — only meaningful for local backends. Treat walk
             // failures as "not available" rather than propagating; the
             // directory may not exist yet on a fresh spawn.
@@ -653,6 +657,7 @@ impl App {
                 db_size_bytes,
                 rpc_port,
                 synced_block,
+                sync_state,
                 online,
             };
             let _ = tx.send(Ok(status) as NodeStatusUpdate);

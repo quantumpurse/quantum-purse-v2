@@ -134,6 +134,16 @@ impl FullNodeClient {
         }
         Ok(earliest)
     }
+
+    /// Full node `sync_state` RPC. Reports IBD progress (header sync,
+    /// block download, assume-valid-target verification, synced) so the
+    /// Node Manager UI can render the active phase. Light clients have
+    /// no analogue — their sync is per-script via `get_scripts`.
+    pub fn sync_state(&self) -> Result<ckb_jsonrpc_types::SyncState, NodeManagerError> {
+        self.client
+            .sync_state()
+            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
+    }
 }
 
 impl UnifiedClient for FullNodeClient {

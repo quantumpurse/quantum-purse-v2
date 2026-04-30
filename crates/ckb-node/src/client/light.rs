@@ -32,7 +32,7 @@ use crate::error::NodeManagerError;
 
 use super::{UnifiedClient, TransactionStatus};
 
-pub struct LightClient {
+pub(crate) struct LightClient {
     client: LightClientRpcClient,
     rpc_url: String,
 }

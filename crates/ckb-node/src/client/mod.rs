@@ -302,6 +302,21 @@ impl QpClient {
         Ok(scripts.iter().map(|s| s.block_number.value()).min())
     }
 
+    /// Full node IBD progress and phase (header sync / block download /
+    /// verifying / synced). `Ok(None)` for `LightClient` (no analogue)
+    /// and `PublicRpc` (remote endpoint's sync isn't *our* sync, same
+    /// policy as `peer_count`). `Some(_)` only for `FullNode`.
+    pub fn sync_state(
+        &self,
+    ) -> Result<Option<ckb_jsonrpc_types::SyncState>, NodeManagerError> {
+        if self.config.node_type != NodeType::FullNode {
+            return Ok(None);
+        }
+        let Some(full) = self.unified_client.as_any().downcast_ref::<FullNodeClient>() else {
+            return Ok(None);
+        };
+        full.sync_state().map(Some)
+    }
 }
 
 /// Builds the right `Arc<dyn UnifiedClient>` for the given config. The active

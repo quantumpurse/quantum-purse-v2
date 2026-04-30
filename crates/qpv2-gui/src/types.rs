@@ -123,6 +123,10 @@ pub(crate) struct NodeStatus {
     /// Min synced block across all registered scripts (light client only).
     /// `None` for PublicRpc/FullNode and when no scripts are registered.
     pub synced_block: Option<u64>,
+    /// Full node IBD state — phase (header sync / block download /
+    /// verifying / synced) and the network's best-known tip. `None`
+    /// outside `FullNode`.
+    pub sync_state: Option<ckb_jsonrpc_types::SyncState>,
     /// True when the most recent poll reached the node successfully.
     pub online: bool,
 }

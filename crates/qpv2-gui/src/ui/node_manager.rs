@@ -140,22 +140,37 @@ impl App {
 
                 ui.add_space(18.0);
 
-                // 2×2 metric grid — same shape for every backend so cards
-                // line up at equal heights across the row. Compute the
-                // four `(label, value)` cells first, then render
-                // uniformly. Backend-specific affordances (e.g. the LC's
-                // editable Synced widget) live BELOW this grid as a
-                // full-width section.
+                // Metric grid. PublicRpc is 2×2 (4 tiles). Local-node
+                // cards (FullNode + LightClient) are 3+2 — three tiles
+                // on top (Sync, Local Tip / Tip, Peers), two on the
+                // bottom (RPC Port, DB Size) — so users see both the
+                // synced height and the moving target side by side
+                // without parsing an `X / Y` formatted single tile.
+                // Backend-specific affordances (e.g. the LC's editable
+                // Synced widget) live BELOW this grid as a full-width
+                // section.
                 let metrics = self.metric_cells(backend, active);
-                ui.columns(2, |cols| {
-                    let [m1, m2, m3, m4] = metrics;
-                    self.draw_metric(&mut cols[0], m1.0, m1.1);
-                    self.draw_metric(&mut cols[1], m2.0, m2.1);
-                    cols[0].add_space(METRIC_ROW_GAP);
-                    cols[1].add_space(METRIC_ROW_GAP);
-                    self.draw_metric(&mut cols[0], m3.0, m3.1);
-                    self.draw_metric(&mut cols[1], m4.0, m4.1);
-                });
+                if metrics.len() == 5 {
+                    ui.columns(3, |cols| {
+                        self.draw_metric(&mut cols[0], metrics[0].0, metrics[0].1.clone());
+                        self.draw_metric(&mut cols[1], metrics[1].0, metrics[1].1.clone());
+                        self.draw_metric(&mut cols[2], metrics[2].0, metrics[2].1.clone());
+                    });
+                    ui.add_space(METRIC_ROW_GAP);
+                    ui.columns(2, |cols| {
+                        self.draw_metric(&mut cols[0], metrics[3].0, metrics[3].1.clone());
+                        self.draw_metric(&mut cols[1], metrics[4].0, metrics[4].1.clone());
+                    });
+                } else {
+                    ui.columns(2, |cols| {
+                        self.draw_metric(&mut cols[0], metrics[0].0, metrics[0].1.clone());
+                        self.draw_metric(&mut cols[1], metrics[1].0, metrics[1].1.clone());
+                        cols[0].add_space(METRIC_ROW_GAP);
+                        cols[1].add_space(METRIC_ROW_GAP);
+                        self.draw_metric(&mut cols[0], metrics[2].0, metrics[2].1.clone());
+                        self.draw_metric(&mut cols[1], metrics[3].0, metrics[3].1.clone());
+                    });
+                }
 
                 // Sync-bar footer for both local-node backends. Always
                 // rendered (even when the backend isn't active) so the
@@ -212,12 +227,15 @@ impl App {
         );
     }
 
-    /// Returns the four `(label, value)` cells for a card's metric grid
-    /// in row-major order: `[col0_row0, col1_row0, col0_row1, col1_row1]`.
-    /// Live values come from `node_status` for the active backend;
-    /// inactive cards fall back to a "—" placeholder, except where a
+    /// Returns the metric tiles for a card. PublicRpc returns 4 tiles
+    /// (rendered 2×2). FullNode and LightClient return 5 tiles
+    /// (rendered 3+2): the second tile is the backend's "moving
+    /// target" (LOCAL TIP for FullNode = `best_known_block_number`,
+    /// TIP for LightClient = chain tip from `get_tip_header`) so the
+    /// user sees both the synced height and the goalpost side by side.
+    /// Inactive cards fall back to a "—" placeholder, except where a
     /// purely-static value (RPC URL hostname, default port) makes sense.
-    fn metric_cells(&self, backend: NodeType, active: bool) -> [(&'static str, String); 4] {
+    fn metric_cells(&self, backend: NodeType, active: bool) -> Vec<(&'static str, String)> {
         const DASH: &str = "—";
         match backend {
             NodeType::PublicRpc => {
@@ -240,7 +258,7 @@ impl App {
                 } else {
                     default_port(url)
                 };
-                [
+                vec![
                     ("Block Height", block_height),
                     ("Endpoint", hostname_of(url)),
                     ("Port", port),
@@ -248,9 +266,15 @@ impl App {
                 ]
             }
             NodeType::LightClient | NodeType::FullNode => {
+                let tip_label = if backend == NodeType::FullNode {
+                    "Local Tip"
+                } else {
+                    "Tip"
+                };
                 if active {
-                    [
-                        ("Block Height", block_height_text(self.node_status.tip_block)),
+                    vec![
+                        ("Sync", synced_value(backend, &self.node_status)),
+                        (tip_label, target_tip_value(backend, &self.node_status)),
                         ("Peers", peers_text(self.node_status.peer_count)),
                         ("RPC Port", port_text(self.node_status.rpc_port)),
                         ("DB Size", db_size_text(self.node_status.db_size_bytes)),
@@ -258,8 +282,9 @@ impl App {
                 } else {
                     let url =
                         NodeConfig::default_rpc_url_for(backend, self.qp_client.network());
-                    [
-                        ("Block Height", DASH.into()),
+                    vec![
+                        ("Sync", DASH.into()),
+                        (tip_label, DASH.into()),
                         ("Peers", DASH.into()),
                         ("RPC Port", default_port(url)),
                         ("DB Size", DASH.into()),
@@ -331,43 +356,45 @@ impl App {
     /// LightClient). Always rendered — even when the backend isn't
     /// active — so both cards stay equal height across the top row.
     ///
-    /// Progress is `synced / tip` for both backends: the bar stays
-    /// blank ("—") until both numbers are known. The wallet has no
-    /// independent network-tip oracle, so FullNode shares the same
-    /// blank-until-known behaviour as LightClient.
+    /// Progress source differs by backend:
+    /// - LightClient: `synced_block / tip_block`. LC has no IBD
+    ///   concept — sync is per-script, so we report the min cursor
+    ///   across registered scripts against the chain tip.
+    /// - FullNode: `tip_number / best_known_block_number` from the
+    ///   `sync_state` RPC.
+    ///
+    /// Inactive cards stay at 0% / "—". The bar is painted by hand
+    /// (4px) instead of `egui::ProgressBar` to keep the footer thin.
     ///
     /// LightClient adds a pencil at the end — clicking it swaps the
     /// row in-place for the rescan editor (input + Set / Cancel /
     /// Auto). FullNode and inactive cards omit the pencil.
-    ///
-    /// The bar is painted by hand instead of using `egui::ProgressBar`
-    /// to keep it thin (4px) so the footer doesn't inflate card
-    /// heights.
     fn draw_sync_section(&mut self, ui: &mut egui::Ui, backend: NodeType, active: bool) {
         let muted = self.colors.text_muted;
         let accent = self.colors.accent;
         let tip = self.node_status.tip_block;
         let synced = self.node_status.synced_block;
 
-        // Live data only flows for the active backend; inactive cards
-        // get a static 0% / "—" reading. For both LightClient and
-        // FullNode, progress is `synced / tip` — the bar stays blank
-        // until both numbers are known. (The wallet has no independent
-        // network-tip oracle, so a FullNode reading 100% simply because
-        // it answered `get_tip_header` would be misleading; the
-        // synced/tip pair is meaningful for both backends or for
-        // neither, but it should be the same rule.)
-        let (pct, percent_text) = if active && backend != NodeType::PublicRpc {
-            match (synced, tip) {
-                (Some(s), Some(t)) if t > 0 => {
-                    let p = (s as f64 / t as f64).clamp(0.0, 1.0) as f32;
-                    (p, format!("{:.1}%", p * 100.0))
+        // Per-backend progress. Inactive cards (and PublicRpc) stay at
+        // 0% / "—".
+        let (pct, percent_text): (f32, String) =
+            if !active || backend == NodeType::PublicRpc {
+                (0.0, "—".to_string())
+            } else {
+                match backend {
+                    NodeType::LightClient => match (synced, tip) {
+                        (Some(s), Some(t)) if t > 0 => {
+                            let p = (s as f64 / t as f64).clamp(0.0, 1.0) as f32;
+                            (p, format!("{:.1}%", p * 100.0))
+                        }
+                        _ => (0.0, "—".to_string()),
+                    },
+                    NodeType::FullNode => {
+                        full_node_sync_view(self.node_status.sync_state.as_ref())
+                    }
+                    NodeType::PublicRpc => unreachable!(),
                 }
-                _ => (0.0, "—".to_string()),
-            }
-        } else {
-            (0.0, "—".to_string())
-        };
+            };
 
         // Pencil only on the active LC — editing the sync cursor on a
         // non-running backend is a no-op and would be misleading.
@@ -520,6 +547,65 @@ impl App {
                     );
                 });
             });
+    }
+}
+
+/// Computes the Full Node sync bar state from a `sync_state` RPC
+/// reading: `(pct, percent_text)` driving the painted bar and its
+/// trailing percentage. `None` (no reading yet) maps to the same
+/// placeholder an inactive card would show.
+fn full_node_sync_view(
+    sync_state: Option<&ckb_jsonrpc_types::SyncState>,
+) -> (f32, String) {
+    let Some(s) = sync_state else {
+        return (0.0, "—".to_string());
+    };
+    let tip = s.tip_number.value();
+    let best = s.best_known_block_number.value();
+
+    if best > 0 {
+        let p = (tip as f64 / best as f64).clamp(0.0, 1.0) as f32;
+        (p, format!("{:.1}%", p * 100.0))
+    } else {
+        (0.0, "—".to_string())
+    }
+}
+
+/// Renders the "Sync" tile value — the **synced/validated** height
+/// (left side of the previous `X / Y` format).
+/// FullNode → `tip_number` from sync_state. LightClient → min cursor
+/// across registered scripts.
+fn synced_value(backend: NodeType, status: &crate::types::NodeStatus) -> String {
+    match backend {
+        NodeType::FullNode => match status.sync_state.as_ref() {
+            Some(s) => format!("#{}", format_int(s.tip_number.value())),
+            None => "—".into(),
+        },
+        NodeType::LightClient => match status.synced_block {
+            Some(s) => format!("#{}", format_int(s)),
+            None => "—".into(),
+        },
+        NodeType::PublicRpc => "—".into(),
+    }
+}
+
+/// Renders the "Local Tip" / "Tip" tile value — the backend's
+/// **moving target** (right side of the previous `X / Y` format).
+/// FullNode → `best_known_block_number` (the local node's view of
+/// the network's best chain head, advances during header sync as new
+/// headers stream in). LightClient → `tip_block` from
+/// `get_tip_header` (the chain tip the LC is talking to).
+fn target_tip_value(backend: NodeType, status: &crate::types::NodeStatus) -> String {
+    match backend {
+        NodeType::FullNode => match status.sync_state.as_ref() {
+            Some(s) => format!("#{}", format_int(s.best_known_block_number.value())),
+            None => "—".into(),
+        },
+        NodeType::LightClient => match status.tip_block {
+            Some(t) => format!("#{}", format_int(t)),
+            None => "—".into(),
+        },
+        NodeType::PublicRpc => "—".into(),
     }
 }
 
