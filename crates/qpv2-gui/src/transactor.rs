@@ -2,7 +2,7 @@
 
 use crate::types::{spx_witness_lock_size, TransactionKind, TransactionStatus, CKB_DECIMAL_PLACES};
 use crate::App;
-use ckb_node::{QpClient, NetworkType, NodeType};
+use ckb_node::{QpClient, NodeType};
 use qpv2_core::KeyVault;
 use std::sync::mpsc;
 
@@ -17,13 +17,12 @@ use std::sync::mpsc;
 /// store. Otherwise returns a user-facing message ready for `App.status`.
 fn check_qr_lock_dep_ready(
     qp_client: &QpClient,
-    network: NetworkType,
     node_type: NodeType,
 ) -> Result<(), String> {
     if node_type != NodeType::LightClient {
         return Ok(());
     }
-    match ckb_node::wallet_helpers::lc::fetch_qr_lock_dep(qp_client, network, node_type) {
+    match ckb_node::wallet_helpers::lc::fetch_qr_lock_dep(qp_client) {
         Ok(true) => Ok(()),
         Ok(false) => Err(
             "Light client hasn't fetched the lock-script cell dep yet. Try again in a moment."
@@ -45,7 +44,7 @@ impl App {
         let from_idx = self.transfer_from_account.min(self.accounts.len() - 1);
         let lock_args = self.accounts[from_idx].clone();
 
-        let is_mainnet = self.is_mainnet();
+        let is_mainnet = self.qp_client.is_mainnet();
         let from_addr_str = match crate::ckb::lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
             Err(e) => {
@@ -97,7 +96,6 @@ impl App {
 
         self.tx_status = TransactionStatus::Building;
         let qp_client = self.qp_client.clone();
-        let network = self.qp_client.network();
         let node_type = self.qp_client.config().node_type;
         let is_mainnet = self.qp_client.is_mainnet();
 
@@ -106,7 +104,7 @@ impl App {
 
         std::thread::spawn(move || {
             let result = (|| -> Result<_, String> {
-                check_qr_lock_dep_ready(&qp_client, network, node_type)?;
+                check_qr_lock_dep_ready(&qp_client, node_type)?;
 
                 // Parse addresses
                 let from_address: ckb_sdk::Address = from_addr_str
@@ -165,7 +163,7 @@ impl App {
         let from_idx = self.dao_deposit_from_account.min(self.accounts.len() - 1);
         let lock_args = self.accounts[from_idx].clone();
 
-        let is_mainnet = self.is_mainnet();
+        let is_mainnet = self.qp_client.is_mainnet();
         let from_addr_str = match crate::ckb::lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
             Err(e) => {
@@ -210,7 +208,6 @@ impl App {
 
         self.tx_status = TransactionStatus::Building;
         let qp_client = self.qp_client.clone();
-        let network = self.qp_client.network();
         let node_type = self.qp_client.config().node_type;
         let is_mainnet = self.qp_client.is_mainnet();
 
@@ -219,7 +216,7 @@ impl App {
 
         std::thread::spawn(move || {
             let result = (|| -> Result<_, String> {
-                check_qr_lock_dep_ready(&qp_client, network, node_type)?;
+                check_qr_lock_dep_ready(&qp_client, node_type)?;
 
                 let from_address: ckb_sdk::Address = from_addr_str
                     .parse()
@@ -258,7 +255,7 @@ impl App {
         deposit_out_point: ckb_types::packed::OutPoint,
         lock_args: String,
     ) {
-        let is_mainnet = self.is_mainnet();
+        let is_mainnet = self.qp_client.is_mainnet();
         let from_addr_str = match crate::ckb::lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
             Err(e) => {
@@ -281,7 +278,6 @@ impl App {
 
         self.tx_status = TransactionStatus::Building;
         let qp_client = self.qp_client.clone();
-        let network = self.qp_client.network();
         let node_type = self.qp_client.config().node_type;
         let is_mainnet = self.qp_client.is_mainnet();
 
@@ -290,7 +286,7 @@ impl App {
 
         std::thread::spawn(move || {
             let result = (|| -> Result<_, String> {
-                check_qr_lock_dep_ready(&qp_client, network, node_type)?;
+                check_qr_lock_dep_ready(&qp_client, node_type)?;
 
                 let from_address: ckb_sdk::Address = from_addr_str
                     .parse()
@@ -324,7 +320,7 @@ impl App {
         prepared_out_point: ckb_types::packed::OutPoint,
         lock_args: String,
     ) {
-        let is_mainnet = self.is_mainnet();
+        let is_mainnet = self.qp_client.is_mainnet();
         let from_addr_str = match crate::ckb::lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
             Err(e) => {
@@ -347,7 +343,6 @@ impl App {
 
         self.tx_status = TransactionStatus::Building;
         let qp_client = self.qp_client.clone();
-        let network = self.qp_client.network();
         let node_type = self.qp_client.config().node_type;
         let is_mainnet = self.qp_client.is_mainnet();
 
@@ -356,7 +351,7 @@ impl App {
 
         std::thread::spawn(move || {
             let result = (|| -> Result<_, String> {
-                check_qr_lock_dep_ready(&qp_client, network, node_type)?;
+                check_qr_lock_dep_ready(&qp_client, node_type)?;
 
                 let from_address: ckb_sdk::Address = from_addr_str
                     .parse()

@@ -248,12 +248,7 @@ impl App {
                                     // the first transfer doesn't race-fail.
                                     // Only the RPC error path is actionable;
                                     // a not-yet-Fetched response is expected.
-                                    let cfg = self.qp_client.config();
-                                    if let Err(e) = ckb_node::wallet_helpers::lc::fetch_qr_lock_dep(
-                                        &self.qp_client,
-                                        cfg.network,
-                                        cfg.node_type,
-                                    ) {
+                                    if let Err(e) = ckb_node::wallet_helpers::lc::fetch_qr_lock_dep(&self.qp_client) {
                                         self.status = Status::Error(format!(
                                             "Failed to request lock-script cell dep fetch: {}",
                                             e

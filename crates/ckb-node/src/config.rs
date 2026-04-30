@@ -67,6 +67,7 @@ impl fmt::Display for NetworkType {
 ///
 /// All fields are configurable. The wallet persists this to disk so user
 /// preferences survive restarts.
+/// TODO: currently shared between QpCliet and LocalNodeProcess.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeConfig {
     /// Which backend to use. Defaults to `PublicRpc`.

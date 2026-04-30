@@ -15,7 +15,7 @@
 use ckb_types::H256;
 
 use crate::client::{QpClient, LightClient};
-use crate::config::{NetworkType, NodeType};
+use crate::config::NetworkType;
 use crate::error::NodeManagerError;
 
 /// Asks the light client to pull the QR-lock-script deployment cell
@@ -26,17 +26,15 @@ use crate::error::NodeManagerError;
 /// Returns `true` once the dep is in the LC's store; `false` while the
 /// fetch is still pending. Idempotent.
 pub fn fetch_qr_lock_dep(
-    qp_client: &QpClient,
-    network: NetworkType,
-    node_type: NodeType,
+    qp_client: &QpClient
 ) -> Result<bool, NodeManagerError> {
     let Some(light) = qp_client.as_any().downcast_ref::<LightClient>() else {
         return Err(NodeManagerError::UnsupportedOperation {
-            node_type: node_type.to_string(),
+            node_type: qp_client.config().node_type.to_string(),
             reason: "fetch_qr_lock_dep is light-client-only.".to_string(),
         });
     };
-    let dep_tx_hash_hex = match network {
+    let dep_tx_hash_hex = match qp_client.config().network {
         NetworkType::Mainnet => qpv2_core::constants::CKB_MAINNET_CELL_DEP_TX_HASH,
         NetworkType::Testnet => qpv2_core::constants::CKB_TESTNET_CELL_DEP_TX_HASH,
     };
@@ -59,13 +57,11 @@ pub fn fetch_qr_lock_dep(
 /// [`register_all_lock_scripts`] instead.
 pub fn register_lock_scripts(
     qp_client: &QpClient,
-    network: NetworkType,
-    node_type: NodeType,
     lock_args_list: &[String],
 ) -> Result<(), NodeManagerError> {
     let Some(light) = qp_client.as_any().downcast_ref::<LightClient>() else {
         return Err(NodeManagerError::UnsupportedOperation {
-            node_type: node_type.to_string(),
+            node_type: qp_client.config().node_type.to_string(),
             reason: "register_lock_scripts is light-client-only.".to_string(),
         });
     };
@@ -83,7 +79,7 @@ pub fn register_lock_scripts(
         .iter()
         .map(|a| (a.as_str(), start_block))
         .collect();
-    light.register_lock_scripts(&scripts, network)
+    light.register_lock_scripts(&scripts, qp_client.network())
 }
 
 /// Forces every given lock script to `start_block` on the LC,
@@ -92,14 +88,12 @@ pub fn register_lock_scripts(
 /// for a rescan. Empty input is a no-op.
 pub fn register_all_lock_scripts(
     qp_client: &QpClient,
-    network: NetworkType,
-    node_type: NodeType,
     lock_args_list: &[String],
     start_block: u64,
 ) -> Result<(), NodeManagerError> {
     let Some(light) = qp_client.as_any().downcast_ref::<LightClient>() else {
         return Err(NodeManagerError::UnsupportedOperation {
-            node_type: node_type.to_string(),
+            node_type: qp_client.config().node_type.to_string(),
             reason: "register_all_lock_scripts is light-client-only.".to_string(),
         });
     };
@@ -110,5 +104,5 @@ pub fn register_all_lock_scripts(
         .iter()
         .map(|a| (a.as_str(), start_block))
         .collect();
-    light.register_all_lock_scripts(&scripts, network)
+    light.register_all_lock_scripts(&scripts, qp_client.network())
 }

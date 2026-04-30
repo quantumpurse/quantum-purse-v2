@@ -81,10 +81,9 @@ fn fetch_lock_script_balance(
 /// requested network, then delegates to `fetch_lock_script_balance`.
 pub fn fetch_quantum_lock_balance(
     qp_client: &QpClient,
-    lock_args_hex: &str,
-    network: NetworkType,
+    lock_args_hex: &str
 ) -> Result<u64, NodeManagerError> {
-    let (code_hash, hash_type) = match network {
+    let (code_hash, hash_type) = match qp_client.network() {
         NetworkType::Mainnet => (
             qpv2_core::constants::CKB_MAINNET_CODE_HASH,
             qpv2_core::constants::CKB_MAINNET_HASH_TYPE,

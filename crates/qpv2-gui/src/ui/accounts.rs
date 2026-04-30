@@ -171,7 +171,7 @@ impl App {
 
                     for (i, lock_args) in self.accounts.clone().iter().enumerate() {
                         let address_text =
-                            match crate::ckb::lock_args_to_address(lock_args, self.is_mainnet()) {
+                            match crate::ckb::lock_args_to_address(lock_args, self.qp_client.is_mainnet()) {
                                 Ok(addr) => addr,
                                 Err(_) => format!("0x{}", lock_args),
                             };

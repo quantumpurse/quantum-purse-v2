@@ -9,11 +9,6 @@ use crate::types::{PasskeyOp, Screen, Status, Tab, TransactionStatus};
 use crate::App;
 
 impl App {
-    /// Whether the app is configured for CKB mainnet (derived from node config).
-    pub(crate) fn is_mainnet(&self) -> bool {
-        self.qp_client.is_mainnet()
-    }
-
     /// Tells the running light client to start indexing the given
     /// accounts from the current tip onward, in a single `set_scripts`
     /// RPC call. No-op when the backend isn't LightClient, no local
@@ -31,11 +26,8 @@ impl App {
         {
             return;
         }
-        let cfg = self.qp_client.config();
         if let Err(e) = ckb_node::wallet_helpers::lc::register_lock_scripts(
             &self.qp_client,
-            cfg.network,
-            cfg.node_type,
             lock_args_list,
         ) {
             self.status = Status::Error(format!("Failed to register scripts: {}", e));
@@ -86,11 +78,8 @@ impl App {
             return;
         }
         let accounts = self.accounts.clone();
-        let cfg = self.qp_client.config();
         if let Err(e) = ckb_node::wallet_helpers::lc::register_all_lock_scripts(
             &self.qp_client,
-            cfg.network,
-            cfg.node_type,
             &accounts,
             start_block,
         ) {
@@ -425,7 +414,6 @@ impl App {
                 // Mark as loading and fetch balance in the background.
                 self.balances.insert(lock_args.clone(), None);
                 let qp_client = self.qp_client.clone();
-                let network = self.qp_client.network();
                 let args = lock_args.clone();
                 let (tx, rx) = std::sync::mpsc::channel();
                 self.balance_receiver = Some(rx);
@@ -433,8 +421,7 @@ impl App {
                 std::thread::spawn(move || {
                     let result = ckb_node::wallet_helpers::queries::fetch_quantum_lock_balance(
                         &qp_client,
-                        &args,
-                        network,
+                        &args
                     )
                     .map_err(|e| e.to_string());
                     let _ = tx.send((args, result));

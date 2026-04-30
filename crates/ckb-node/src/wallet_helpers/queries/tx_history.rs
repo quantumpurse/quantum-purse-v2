@@ -13,11 +13,10 @@ use ckb_sdk::rpc::ckb_indexer::{Order, ScriptType, SearchKey, SearchKeyFilter, T
 pub fn fetch_recent_transactions(
     qp_client: &QpClient,
     lock_args_hex: &str,
-    network: NetworkType,
     after_block: Option<u64>,
     limit: Option<usize>,
 ) -> Result<Vec<Tx>, NodeManagerError> {
-    let (code_hash_str, hash_type_str) = match network {
+    let (code_hash_str, hash_type_str) = match qp_client.network() {
         NetworkType::Mainnet => (
             qpv2_core::constants::CKB_MAINNET_CODE_HASH,
             qpv2_core::constants::CKB_MAINNET_HASH_TYPE,

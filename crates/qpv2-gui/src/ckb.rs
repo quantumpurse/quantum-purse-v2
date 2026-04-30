@@ -122,7 +122,7 @@ impl App {
         self.dao_deposited_staging.clear();
         self.dao_prepared_staging.clear();
 
-        let is_mainnet = self.is_mainnet();
+        let is_mainnet = self.qp_client.is_mainnet();
         let qp_client = self.qp_client.clone();
         let all_lock_args: Vec<String> = self.accounts.clone();
 
@@ -201,7 +201,7 @@ impl App {
         .min(self.accounts.len() - 1);
         let lock_args = self.accounts[from_idx].clone();
 
-        let is_mainnet = self.is_mainnet();
+        let is_mainnet = self.qp_client.is_mainnet();
         let from_addr_str = match lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
             Err(e) => {
@@ -251,7 +251,6 @@ impl App {
         };
 
         let qp_client = self.qp_client.clone();
-        let network = self.qp_client.network();
         let all_lock_args: Vec<String> = self.accounts.clone();
 
         let (sender, rx) = mpsc::channel();
@@ -262,7 +261,7 @@ impl App {
             let dao_type_hash = format!("{:#x}", ckb_sdk::constants::DAO_TYPE_HASH);
 
             // Wallet lock script code hash for filtering outputs that belong to us.
-            let wallet_code_hash = match network {
+            let wallet_code_hash = match qp_client.network() {
                 ckb_node::NetworkType::Mainnet => qpv2_core::constants::CKB_MAINNET_CODE_HASH,
                 ckb_node::NetworkType::Testnet => qpv2_core::constants::CKB_TESTNET_CODE_HASH,
             };
@@ -315,7 +314,6 @@ impl App {
                         ckb_node::wallet_helpers::queries::fetch_recent_transactions(
                             &qp_client,
                             lock_args,
-                            network,
                             after_block,
                             None,
                         )
@@ -505,7 +503,7 @@ impl App {
                                 .is_some_and(|t| format!("{:#x}", t.code_hash) == dao_type_hash);
                             if external_recipient.is_none() && !is_dao_output {
                                 let packed: ckb_types::packed::Script = out.lock.clone().into();
-                                let is_mainnet = matches!(network, ckb_node::NetworkType::Mainnet);
+                                let is_mainnet = matches!(qp_client.network(), ckb_node::NetworkType::Mainnet);
                                 external_recipient = Some(script_to_address(&packed, is_mainnet));
                             }
                         }
@@ -585,7 +583,6 @@ impl App {
         }
 
         let qp_client = self.qp_client.clone();
-        let network = self.qp_client.network();
         let (tx, rx) = mpsc::channel();
         self.balance_receiver = Some(rx);
 
@@ -594,7 +591,6 @@ impl App {
                 let result = ckb_node::wallet_helpers::queries::fetch_quantum_lock_balance(
                     &qp_client,
                     &lock_args,
-                    network,
                 )
                 .map_err(|e| e.to_string());
                 // If the receiver is dropped (e.g. wallet locked), stop.
