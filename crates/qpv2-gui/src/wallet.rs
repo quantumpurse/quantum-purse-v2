@@ -33,7 +33,7 @@ impl App {
         }
         let cfg = self.qp_client.config();
         if let Err(e) = ckb_node::wallet_helpers::lc::register_lock_scripts(
-            self.qp_client.client_ref(),
+            &self.qp_client,
             cfg.network,
             cfg.node_type,
             lock_args_list,
@@ -88,7 +88,7 @@ impl App {
         let accounts = self.accounts.clone();
         let cfg = self.qp_client.config();
         if let Err(e) = ckb_node::wallet_helpers::lc::register_all_lock_scripts(
-            self.qp_client.client_ref(),
+            &self.qp_client,
             cfg.network,
             cfg.node_type,
             &accounts,
@@ -424,7 +424,7 @@ impl App {
             Ok(lock_args) => {
                 // Mark as loading and fetch balance in the background.
                 self.balances.insert(lock_args.clone(), None);
-                let client = self.qp_client.ckb_client();
+                let qp_client = self.qp_client.clone();
                 let network = self.qp_client.network();
                 let args = lock_args.clone();
                 let (tx, rx) = std::sync::mpsc::channel();
@@ -432,7 +432,7 @@ impl App {
 
                 std::thread::spawn(move || {
                     let result = ckb_node::wallet_helpers::queries::fetch_quantum_lock_balance(
-                        client.as_ref(),
+                        &qp_client,
                         &args,
                         network,
                     )

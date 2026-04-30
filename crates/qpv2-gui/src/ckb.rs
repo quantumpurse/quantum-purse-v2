@@ -123,7 +123,7 @@ impl App {
         self.dao_prepared_staging.clear();
 
         let is_mainnet = self.is_mainnet();
-        let client = self.qp_client.ckb_client();
+        let qp_client = self.qp_client.clone();
         let all_lock_args: Vec<String> = self.accounts.clone();
 
         let (tx, rx) = mpsc::channel();
@@ -148,7 +148,7 @@ impl App {
 
                 let (deposited, prepared) =
                     match ckb_node::wallet_helpers::queries::categorize_dao_cells(
-                        client.as_ref(),
+                        &qp_client,
                         &address,
                     ) {
                         Ok(v) => v,
@@ -210,7 +210,7 @@ impl App {
             }
         };
 
-        let client = self.qp_client.ckb_client();
+        let qp_client = self.qp_client.clone();
         let (tx, rx) = mpsc::channel();
         self.spendable_capacity_rx = Some((target, rx));
 
@@ -221,7 +221,7 @@ impl App {
                     .map_err(|e| format!("Invalid sender address: {}", e))?;
 
                 ckb_node::wallet_helpers::queries::spendable_capacity(
-                    client.as_ref(),
+                    &qp_client,
                     &from_address,
                 )
                 .map_err(|e| format!("Failed to fetch spendable capacity: {}", e))
@@ -250,7 +250,7 @@ impl App {
             None
         };
 
-        let client = self.qp_client.ckb_client();
+        let qp_client = self.qp_client.clone();
         let network = self.qp_client.network();
         let all_lock_args: Vec<String> = self.accounts.clone();
 
@@ -313,7 +313,7 @@ impl App {
                     ),
                     || {
                         ckb_node::wallet_helpers::queries::fetch_recent_transactions(
-                            client.as_ref(),
+                            &qp_client,
                             lock_args,
                             network,
                             after_block,
@@ -393,7 +393,7 @@ impl App {
                 let tx_hash_key = tx_hash_bytes.clone();
                 let tx_status = retry_until_ready(
                     &format!("get_transaction tx_hash={:#x}", tx_hash_key),
-                    || client.get_transaction(tx_hash_bytes.clone()),
+                    || qp_client.get_transaction(tx_hash_bytes.clone()),
                 );
 
                 let is_pending = tx_status.status != "Committed" && tx_status.status != "committed";
@@ -407,7 +407,7 @@ impl App {
                     None => retry_until_ready(
                         &format!("get_transaction.tx_view tx_hash={:#x}", tx_hash_key),
                         || {
-                            client
+                            qp_client
                                 .get_transaction(tx_hash_bytes.clone())
                                 .map(|opt| opt.and_then(|s| s.transaction))
                         },
@@ -424,7 +424,7 @@ impl App {
                         let bh_clone = bh.clone();
                         let header = retry_until_ready(
                             &format!("get_header block_hash={:#x}", bh_clone),
-                            || client.get_header(bh_clone.clone()),
+                            || qp_client.get_header(bh_clone.clone()),
                         );
                         // CKB header timestamp is in milliseconds.
                         let ts = header.inner.timestamp.value() / 1000;
@@ -584,7 +584,7 @@ impl App {
             return;
         }
 
-        let client = self.qp_client.ckb_client();
+        let qp_client = self.qp_client.clone();
         let network = self.qp_client.network();
         let (tx, rx) = mpsc::channel();
         self.balance_receiver = Some(rx);
@@ -592,7 +592,7 @@ impl App {
         std::thread::spawn(move || {
             for lock_args in accounts {
                 let result = ckb_node::wallet_helpers::queries::fetch_quantum_lock_balance(
-                    client.as_ref(),
+                    &qp_client,
                     &lock_args,
                     network,
                 )
@@ -618,27 +618,27 @@ impl App {
         let is_local = cfg.requires_binary();
         let node_type = cfg.node_type;
         let has_process = self.local_node.has_local_process();
-        let client = self.qp_client.ckb_client();
+        let qp_client = self.qp_client.clone();
 
         let (tx, rx) = mpsc::channel();
         self.node_status_rx = Some(rx);
 
         std::thread::spawn(move || {
             // Tip header — the primary online-ness signal.
-            let tip_block = match client.get_tip_header() {
+            let tip_block = match qp_client.get_tip_header() {
                 Ok(h) => Some(h.inner.number.value()),
                 Err(_) => None,
             };
             let online = tip_block.is_some();
 
             // Peer count — None for PublicRpc by design.
-            let peer_count = ckb_node::client::peer_count(client.as_ref(), node_type)
+            let peer_count = qp_client.peer_count(node_type)
                 .ok()
                 .flatten();
 
             // Synced block — None for PublicRpc/FullNode and when no
             // scripts are registered yet (fresh light client).
-            let synced_block = ckb_node::client::synced_block(client.as_ref())
+            let synced_block = qp_client.synced_block()
                 .ok()
                 .flatten();
 

@@ -12,7 +12,7 @@ use std::any::Any;
 
 use ckb_jsonrpc_types::JsonBytes;
 use ckb_sdk::rpc::ckb_indexer::{
-    Cell, CellsCapacity, Order, Pagination, ScriptType, SearchKey, Tx,
+    CellsCapacity, Order, Pagination, ScriptType, SearchKey, Tx,
 };
 use ckb_sdk::rpc::{CkbRpcClient, ResponseFormatGetter};
 use ckb_sdk::traits::{
@@ -25,7 +25,7 @@ use ckb_types::H256;
 use crate::config::NetworkType;
 use crate::error::NodeManagerError;
 
-use super::{CkbClient, TransactionStatus};
+use super::{UnifiedClient, TransactionStatus};
 
 pub struct FullNodeClient {
     client: CkbRpcClient,
@@ -38,14 +38,6 @@ impl FullNodeClient {
             client: CkbRpcClient::new(rpc_url),
             rpc_url: rpc_url.to_string(),
         }
-    }
-
-    /// Number of peers the node is currently connected to.
-    pub fn get_peer_count(&self) -> Result<usize, NodeManagerError> {
-        self.client
-            .get_peers()
-            .map(|peers| peers.len())
-            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
     }
 
     /// Light-client utility: best-effort discovery of the earliest
@@ -144,7 +136,7 @@ impl FullNodeClient {
     }
 }
 
-impl CkbClient for FullNodeClient {
+impl UnifiedClient for FullNodeClient {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -155,6 +147,13 @@ impl CkbClient for FullNodeClient {
             .map_err(|e| NodeManagerError::RpcError(e.to_string()))
     }
 
+    fn get_peer_count(&self) -> Result<usize, NodeManagerError> {
+        self.client
+            .get_peers()
+            .map(|peers| peers.len())
+            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
+    }
+
     fn get_genesis_block(&self) -> Result<ckb_jsonrpc_types::BlockView, NodeManagerError> {
         self.client
             .get_block_by_number(0u64.into())
@@ -162,18 +161,6 @@ impl CkbClient for FullNodeClient {
                 NodeManagerError::RpcError(format!("Failed to fetch genesis block: {}", e))
             })?
             .ok_or_else(|| NodeManagerError::RpcError("Genesis block not found.".to_string()))
-    }
-
-    fn get_cells(
-        &self,
-        search_key: SearchKey,
-        order: Order,
-        limit: u32,
-        after: Option<JsonBytes>,
-    ) -> Result<Pagination<Cell>, NodeManagerError> {
-        self.client
-            .get_cells(search_key, order, limit.into(), after)
-            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
     }
 
     fn get_cells_capacity(
@@ -216,15 +203,6 @@ impl CkbClient for FullNodeClient {
             .map_err(|e| NodeManagerError::RpcError(e.to_string()))
     }
 
-    fn get_transaction_with_status(
-        &self,
-        hash: H256,
-    ) -> Result<Option<ckb_jsonrpc_types::TransactionWithStatusResponse>, NodeManagerError> {
-        self.client
-            .get_transaction(hash)
-            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
-    }
-
     fn get_transactions(
         &self,
         search_key: SearchKey,
@@ -255,9 +233,5 @@ impl CkbClient for FullNodeClient {
 
     fn tx_dep_provider(&self) -> Box<dyn TransactionDependencyProvider> {
         Box::new(DefaultTransactionDependencyProvider::new(&self.rpc_url, 10))
-    }
-
-    fn get_rpc_url(&self) -> String {
-        self.rpc_url.clone()
     }
 }

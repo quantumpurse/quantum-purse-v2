@@ -1,6 +1,6 @@
 //! Transaction history queries for QuantumPurse lock scripts.
 
-use crate::client::CkbClient;
+use crate::client::QpClient;
 use crate::config::NetworkType;
 use crate::error::NodeManagerError;
 use ckb_jsonrpc_types::JsonBytes;
@@ -11,7 +11,7 @@ use ckb_sdk::rpc::ckb_indexer::{Order, ScriptType, SearchKey, SearchKeyFilter, T
 /// Paginates through the full result set using `last_cursor`. Returns grouped
 /// `Tx` entries in descending order (newest first), one per unique transaction.
 pub fn fetch_recent_transactions(
-    ckb_client: &dyn CkbClient,
+    qp_client: &QpClient,
     lock_args_hex: &str,
     network: NetworkType,
     after_block: Option<u64>,
@@ -88,7 +88,7 @@ pub fn fetch_recent_transactions(
 
     loop {
         let page =
-            ckb_client.get_transactions(search_key.clone(), Order::Desc, page_size, cursor)?;
+            qp_client.get_transactions(search_key.clone(), Order::Desc, page_size, cursor)?;
         let is_last = page.objects.len() < page_size as usize;
         all_txs.extend(page.objects);
 

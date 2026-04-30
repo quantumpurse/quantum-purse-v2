@@ -5,7 +5,7 @@
 //! 2. Fill a signed witness into a transaction.
 //! 3. Send a signed transaction via RPC.
 
-use crate::client::CkbClient;
+use crate::client::QpClient;
 use crate::error::NodeManagerError;
 use ckb_types::{
     bytes::Bytes,
@@ -20,7 +20,7 @@ use ckb_types::{
 /// This data is required by `generate_ckb_tx_message_all` to compute the
 /// transaction message hash for quantum-resistant signing.
 pub fn fetch_input_cells(
-    ckb_client: &dyn CkbClient,
+    qp_client: &QpClient,
     tx: &TransactionView,
 ) -> Result<Vec<(CellOutput, Bytes)>, NodeManagerError> {
     let mut inputs = Vec::new();
@@ -30,7 +30,7 @@ pub fn fetch_input_cells(
         let tx_hash: H256 = out_point.tx_hash().unpack();
         let index: u32 = out_point.index().unpack();
 
-        let tx_status = ckb_client
+        let tx_status = qp_client
             .get_transaction(tx_hash.clone())?
             .ok_or_else(|| {
                 NodeManagerError::RpcError(format!("Input transaction {} not found.", tx_hash))
@@ -113,9 +113,9 @@ pub fn fill_witness(
 ///
 /// Returns the transaction hash on success.
 pub fn send_transaction(
-    ckb_client: &dyn CkbClient,
+    qp_client: &QpClient,
     tx: &TransactionView,
 ) -> Result<H256, NodeManagerError> {
     let json_tx: ckb_jsonrpc_types::Transaction = tx.data().into();
-    ckb_client.send_transaction(json_tx)
+    qp_client.send_transaction(json_tx)
 }

@@ -14,7 +14,7 @@ use std::any::Any;
 
 use ckb_jsonrpc_types::{JsonBytes, Uint64};
 use ckb_sdk::rpc::ckb_indexer::{
-    Cell, CellsCapacity, Order, Pagination, ScriptType, SearchKey, SearchKeyFilter, Tx,
+    CellsCapacity, Order, Pagination, ScriptType, SearchKey, SearchKeyFilter, Tx,
 };
 use ckb_sdk::rpc::ckb_light_client::{
     FetchStatus, LightClientRpcClient, ScriptStatus, SetScriptsCommand,
@@ -30,7 +30,7 @@ use ckb_types::H256;
 use crate::config::NetworkType;
 use crate::error::NodeManagerError;
 
-use super::{CkbClient, TransactionStatus};
+use super::{UnifiedClient, TransactionStatus};
 
 pub struct LightClient {
     client: LightClientRpcClient,
@@ -62,15 +62,6 @@ impl LightClient {
     pub fn get_scripts(&self) -> Result<Vec<ScriptStatus>, NodeManagerError> {
         self.client
             .get_scripts()
-            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
-    }
-
-    /// Number of peers the light client is currently connected to. Used by
-    /// the Node Manager UI as a liveness / connectivity indicator.
-    pub fn get_peer_count(&self) -> Result<usize, NodeManagerError> {
-        self.client
-            .get_peers()
-            .map(|peers| peers.len())
             .map_err(|e| NodeManagerError::RpcError(e.to_string()))
     }
 
@@ -235,7 +226,7 @@ fn build_lock_script_statuses(
     Ok(statuses)
 }
 
-impl CkbClient for LightClient {
+impl UnifiedClient for LightClient {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -246,22 +237,17 @@ impl CkbClient for LightClient {
             .map_err(|e| NodeManagerError::RpcError(e.to_string()))
     }
 
+    fn get_peer_count(&self) -> Result<usize, NodeManagerError> {
+        self.client
+            .get_peers()
+            .map(|peers| peers.len())
+            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
+    }
+
     fn get_genesis_block(&self) -> Result<ckb_jsonrpc_types::BlockView, NodeManagerError> {
         self.client.get_genesis_block().map_err(|e| {
             NodeManagerError::RpcError(format!("Failed to fetch genesis block: {}", e))
         })
-    }
-
-    fn get_cells(
-        &self,
-        search_key: SearchKey,
-        order: Order,
-        limit: u32,
-        after: Option<JsonBytes>,
-    ) -> Result<Pagination<Cell>, NodeManagerError> {
-        self.client
-            .get_cells(search_key, order, limit.into(), after)
-            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
     }
 
     fn get_cells_capacity(
@@ -323,23 +309,6 @@ impl CkbClient for LightClient {
         self.client
             .get_header(hash)
             .map_err(|e| NodeManagerError::RpcError(e.to_string()))
-    }
-
-    fn get_transaction_with_status(
-        &self,
-        hash: H256,
-    ) -> Result<Option<ckb_jsonrpc_types::TransactionWithStatusResponse>, NodeManagerError> {
-        // Light client returns a different type, we need to convert
-        let resp = self
-            .client
-            .get_transaction(hash)
-            .map_err(|e| NodeManagerError::RpcError(e.to_string()))?;
-
-        // Convert light client's TransactionWithStatus to the full node's format
-        Ok(resp.and_then(|r| {
-            let json_value = serde_json::to_value(&r).ok()?;
-            serde_json::from_value(json_value).ok()
-        }))
     }
 
     fn get_transactions(
@@ -482,9 +451,5 @@ impl CkbClient for LightClient {
 
     fn tx_dep_provider(&self) -> Box<dyn TransactionDependencyProvider> {
         Box::new(LightClientTransactionDependencyProvider::new(&self.rpc_url))
-    }
-
-    fn get_rpc_url(&self) -> String {
-        self.rpc_url.clone()
     }
 }

@@ -1,6 +1,6 @@
 //! Transfer transaction builder.
 
-use crate::client::CkbClient;
+use crate::client::QpClient;
 use crate::error::NodeManagerError;
 use ckb_sdk::{
     traits::CellDepResolver,
@@ -21,7 +21,7 @@ const DEFAULT_PLACEHOLDER_LOCK_SIZE: usize = 65;
 
 /// Builder for transfer transactions.
 pub struct QpTransferBuilder<'a> {
-    client: &'a dyn CkbClient,
+    qp_client: &'a QpClient,
     /// Whether the target network is mainnet (affects cell dep resolution).
     is_mainnet: bool,
     /// Size of the placeholder lock field in the witness.
@@ -31,9 +31,9 @@ pub struct QpTransferBuilder<'a> {
 
 impl<'a> QpTransferBuilder<'a> {
     /// Creates a new transfer builder with default secp256k1 placeholder size.
-    pub fn new(client: &'a dyn CkbClient, is_mainnet: bool) -> Self {
+    pub fn new(qp_client: &'a QpClient, is_mainnet: bool) -> Self {
         QpTransferBuilder {
-            client,
+            qp_client,
             is_mainnet,
             placeholder_lock_size: DEFAULT_PLACEHOLDER_LOCK_SIZE,
         }
@@ -103,11 +103,11 @@ impl<'a> QpTransferBuilder<'a> {
 
         // Create collectors and resolvers via the trait so the right
         // backend impl (full node vs light client) is used.
-        let mut cell_collector = self.client.cell_collector();
+        let mut cell_collector = self.qp_client.cell_collector();
         let cell_dep_resolver =
-            super::utils::cell_dep_resolver_from_rpc(self.client, self.is_mainnet)?;
-        let header_dep_resolver = self.client.header_dep_resolver();
-        let tx_dep_provider = self.client.tx_dep_provider();
+            super::utils::cell_dep_resolver_from_rpc(self.qp_client, self.is_mainnet)?;
+        let header_dep_resolver = self.qp_client.header_dep_resolver();
+        let tx_dep_provider = self.qp_client.tx_dep_provider();
 
         // Build the transaction
         let tx = transfer_builder
@@ -142,7 +142,7 @@ impl<'a> QpTransferBuilder<'a> {
         let output_data = Bytes::from(data.unwrap_or_default());
 
         let spendable_cells = crate::wallet_helpers::queries::spendable::collect_spendable_cells(
-            self.client,
+            self.qp_client,
             &from_lock_script,
         )?;
 
@@ -155,7 +155,7 @@ impl<'a> QpTransferBuilder<'a> {
             .sum();
 
         let cell_dep_resolver =
-            super::utils::cell_dep_resolver_from_rpc(self.client, self.is_mainnet)?;
+            super::utils::cell_dep_resolver_from_rpc(self.qp_client, self.is_mainnet)?;
         let sender_lock_dep = cell_dep_resolver
             .resolve(&from_lock_script)
             .ok_or_else(|| {

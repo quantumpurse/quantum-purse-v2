@@ -231,7 +231,7 @@ impl App {
                     // and the call would error `UnsupportedOperation`.
                     if node_config.node_type == NodeType::LightClient {
                         if let Err(e) = ckb_node::wallet_helpers::lc::fetch_qr_lock_dep(
-                            qp_client.client_ref(),
+                            &qp_client,
                             qp_client.network(),
                             qp_client.node_type(),
                         ) {

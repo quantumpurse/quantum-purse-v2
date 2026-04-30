@@ -14,7 +14,7 @@
 
 use ckb_types::H256;
 
-use crate::client::{CkbClient, LightClient};
+use crate::client::{QpClient, LightClient};
 use crate::config::{NetworkType, NodeType};
 use crate::error::NodeManagerError;
 
@@ -26,11 +26,11 @@ use crate::error::NodeManagerError;
 /// Returns `true` once the dep is in the LC's store; `false` while the
 /// fetch is still pending. Idempotent.
 pub fn fetch_qr_lock_dep(
-    ckb_client: &dyn CkbClient,
+    qp_client: &QpClient,
     network: NetworkType,
     node_type: NodeType,
 ) -> Result<bool, NodeManagerError> {
-    let Some(light) = ckb_client.as_any().downcast_ref::<LightClient>() else {
+    let Some(light) = qp_client.as_any().downcast_ref::<LightClient>() else {
         return Err(NodeManagerError::UnsupportedOperation {
             node_type: node_type.to_string(),
             reason: "fetch_qr_lock_dep is light-client-only.".to_string(),
@@ -58,12 +58,12 @@ pub fn fetch_qr_lock_dep(
 /// For deliberate cursor reset (manual rescan), call
 /// [`register_all_lock_scripts`] instead.
 pub fn register_lock_scripts(
-    ckb_client: &dyn CkbClient,
+    qp_client: &QpClient,
     network: NetworkType,
     node_type: NodeType,
     lock_args_list: &[String],
 ) -> Result<(), NodeManagerError> {
-    let Some(light) = ckb_client.as_any().downcast_ref::<LightClient>() else {
+    let Some(light) = qp_client.as_any().downcast_ref::<LightClient>() else {
         return Err(NodeManagerError::UnsupportedOperation {
             node_type: node_type.to_string(),
             reason: "register_lock_scripts is light-client-only.".to_string(),
@@ -76,7 +76,7 @@ pub fn register_lock_scripts(
     let start_block = if light.get_scripts()?.is_empty() {
         0
     } else {
-        light.get_tip_header()?.inner.number.value()
+        qp_client.get_tip_header()?.inner.number.value()
     };
 
     let scripts: Vec<(&str, u64)> = lock_args_list
@@ -91,13 +91,13 @@ pub fn register_lock_scripts(
 /// "set scan from block" UI control where the user explicitly asked
 /// for a rescan. Empty input is a no-op.
 pub fn register_all_lock_scripts(
-    ckb_client: &dyn CkbClient,
+    qp_client: &QpClient,
     network: NetworkType,
     node_type: NodeType,
     lock_args_list: &[String],
     start_block: u64,
 ) -> Result<(), NodeManagerError> {
-    let Some(light) = ckb_client.as_any().downcast_ref::<LightClient>() else {
+    let Some(light) = qp_client.as_any().downcast_ref::<LightClient>() else {
         return Err(NodeManagerError::UnsupportedOperation {
             node_type: node_type.to_string(),
             reason: "register_all_lock_scripts is light-client-only.".to_string(),

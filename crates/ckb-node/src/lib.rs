@@ -5,7 +5,7 @@ pub mod process;
 pub mod wallet_helpers;
 
 pub use ckb_sdk::rpc::ckb_indexer::{CellType, Tx};
-pub use client::{CkbClient, QpClient};
+pub use client::QpClient;
 pub use config::{NetworkType, NodeConfig, NodeType};
 
 use error::NodeManagerError;

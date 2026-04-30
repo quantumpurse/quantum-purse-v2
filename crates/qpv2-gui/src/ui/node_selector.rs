@@ -250,7 +250,7 @@ impl App {
                                     // a not-yet-Fetched response is expected.
                                     let cfg = self.qp_client.config();
                                     if let Err(e) = ckb_node::wallet_helpers::lc::fetch_qr_lock_dep(
-                                        self.qp_client.client_ref(),
+                                        &self.qp_client,
                                         cfg.network,
                                         cfg.node_type,
                                     ) {
