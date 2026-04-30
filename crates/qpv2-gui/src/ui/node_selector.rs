@@ -231,7 +231,7 @@ impl App {
                                 // config. Must happen before `spawn()` so
                                 // the new manager is the one that owns the
                                 // new child handle.
-                                self.save_node_config();
+                                self.apply_node_config();
 
                                 // Spawn the new local node (no-op for
                                 // PublicRpc, unsupported-op for FullNode).

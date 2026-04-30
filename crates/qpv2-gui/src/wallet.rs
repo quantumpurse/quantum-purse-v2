@@ -155,14 +155,21 @@ impl App {
                 .to_string();
     }
 
-    /// Apply settings edits, persist to disk, and rebuild `LocalNodeProcess`.
+    /// Commit the staged settings edits as the active node config:
     ///
-    /// Builds the new config from the settings-buffer fields
-    /// (`settings_*`, `temp_*`) on top of the current
-    /// `local_node.config()` snapshot — there is no separate mutable
-    /// `node_config` on `App`, so this is the only place where an edit
-    /// becomes committed state.
-    pub(crate) fn save_node_config(&mut self) {
+    /// 1. Build the new `NodeConfig` from the settings-buffer fields
+    ///    (`settings_*`, `temp_*`) on top of the current
+    ///    `qp_client.config()` snapshot. There is no separate mutable
+    ///    `node_config` on `App`, so this is the only place where an
+    ///    edit becomes committed state.
+    /// 2. Persist the config to disk.
+    /// 3. Replace `qp_client` and `local_node` with fresh instances
+    ///    bound to it.
+    /// 4. Wipe cached metrics (`node_status`) and drop any in-flight
+    ///    poll receiver from the previous backend so its result can't
+    ///    land after the swap and resurrect stale values.
+    /// 5. Kick off fresh balance + node-status fetches.
+    pub(crate) fn apply_node_config(&mut self) {
         let mut new_cfg = self.qp_client.config().clone();
         new_cfg.node_type = self.temp_node_type;
         new_cfg.network = self.temp_network;
@@ -190,10 +197,22 @@ impl App {
         // thread finishes its unit of work.
         self.qp_client = ckb_node::QpClient::new(new_cfg.clone());
         self.local_node = ckb_node::LocalNodeProcess::new(new_cfg);
+
+        // Cached node-status metrics — tip block, peer count, RPC
+        // port, DB size, synced block — are all backend-specific and
+        // instantly stale on switch. Drop any in-flight poll from the
+        // previous backend at the same time so its result can't land
+        // *after* the reset and resurrect old values.
+        self.node_status = crate::types::NodeStatus::default();
+        self.node_status_rx = None;
+
         self.status = Status::Info("Configuration saved. RPC reconnected.".to_string());
 
-        // Refresh balances with new connection.
+        // Refresh balances + node status against the new connection so
+        // the card repopulates promptly instead of waiting for the
+        // next ~10s tick.
         self.fetch_all_balances();
+        self.fetch_node_status();
     }
 
     /// Kick off async passkey registration.
