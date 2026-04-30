@@ -15,7 +15,7 @@ use ckb_sdk::rpc::ckb_indexer::{ScriptType, SearchKey, SearchKeyFilter};
 /// - `code_hash_hex`: hex-encoded code hash (with or without `0x` prefix).
 /// - `hash_type_str`: one of `"type"`, `"data1"`, or `"data"`.
 /// - `lock_args_hex`: hex-encoded lock args (with or without `0x` prefix).
-pub fn fetch_lock_script_balance(
+fn fetch_lock_script_balance(
     qp_client: &QpClient,
     code_hash_hex: &str,
     hash_type_str: &str,

@@ -38,7 +38,7 @@ mod full;
 mod light;
 
 pub use full::FullNodeClient;
-pub use light::LightClient;
+pub(crate) use light::LightClient;
 
 /// Unified RPC interface for wallet operations.
 ///
@@ -168,34 +168,32 @@ impl QpClient {
         Self { unified_client, config }
     }
 
-    // /// Returns a cloned `Arc` handle to the rpc client. Use when moving
-    // /// the client into a background thread independent of `self`.
-    // pub fn unified_client(&self) -> Arc<dyn UnifiedClient> {
-    //     self.unified_client.clone()
-    // }
-
+    /// Returns a reference to the `NodeConfig` snapshot this handle was built from.
     pub fn config(&self) -> &NodeConfig {
         &self.config
     }
 
+    /// Returns the network (Mainnet/Testnet) the active backend is bound to.
     pub fn network(&self) -> NetworkType {
         self.config.network
     }
 
+    /// Returns the backend kind (`PublicRpc`, `FullNode`, or `LightClient`).
     pub fn node_type(&self) -> NodeType {
         self.config.node_type
     }
 
+    /// True if this handle is bound to the mainnet network.
     pub fn is_mainnet(&self) -> bool {
         self.config.network == NetworkType::Mainnet
     }
 
-    /// get tip header
+    /// Returns the tip (latest) block header from the active backend.
     pub fn get_tip_header(&self) -> Result<ckb_jsonrpc_types::HeaderView, NodeManagerError> {
         self.unified_client.get_tip_header()
     }
 
-    /// get transaction by hash
+    /// Retrieves a transaction by hash, returning its normalized status.
     pub fn get_transaction(
         &self,
         hash: H256,
@@ -203,10 +201,13 @@ impl QpClient {
         self.unified_client.get_transaction(hash)
     }
 
+    /// Collects live cells matching `options`, using whichever strategy the
+    /// active backend prefers (see [`UnifiedClient::collect_cells`]).
     pub fn collect_cells(&self, options: &CellQueryOptions) -> Result<Vec<LiveCell>, NodeManagerError> {
         self.unified_client.collect_cells(options)
     }
 
+    /// Returns the total capacity of live cells matching `search_key`.
     pub fn get_cells_capacity(
         &self,
         search_key: SearchKey,
@@ -214,6 +215,7 @@ impl QpClient {
         self.unified_client.get_cells_capacity(search_key)
     }
 
+    /// Gets a header by its block hash.
     pub fn get_header(
         &self,
         hash: H256,
@@ -221,6 +223,7 @@ impl QpClient {
         self.unified_client.get_header(hash)
     }
 
+    /// Queries indexer-side transactions matching `search_key`, paginated.
     pub fn get_transactions(
         &self,
         search_key: SearchKey,
@@ -231,22 +234,32 @@ impl QpClient {
         self.unified_client.get_transactions(search_key, order, limit, after)
     }
 
+    /// Returns a fresh ckb-sdk `CellCollector` bound to the active backend,
+    /// for tx builders that consume `&mut dyn CellCollector`.
     pub fn cell_collector(&self) -> Box<dyn CellCollector> {
         self.unified_client.cell_collector()
     }
 
+    /// Returns a fresh ckb-sdk `HeaderDepResolver` bound to the active backend,
+    /// for tx builders that consume `&dyn HeaderDepResolver`.
     pub fn header_dep_resolver(&self) -> Box<dyn HeaderDepResolver> {
         self.unified_client.header_dep_resolver()
     }
 
+    /// Returns a fresh ckb-sdk `TransactionDependencyProvider` bound to the
+    /// active backend, for tx builders that consume
+    /// `&dyn TransactionDependencyProvider`.
     pub fn tx_dep_provider(&self) -> Box<dyn TransactionDependencyProvider> {
         self.unified_client.tx_dep_provider()
     }
 
+    /// Returns the genesis block. Used to bootstrap the system-script
+    /// `CellDepResolver` for transaction building.
     pub fn get_genesis_block(&self) -> Result<ckb_jsonrpc_types::BlockView, NodeManagerError> {
         self.unified_client.get_genesis_block()
     }
 
+    /// Submits a transaction to the network and returns its hash.
     pub fn send_transaction(
         &self,
         tx: ckb_jsonrpc_types::Transaction,
@@ -254,6 +267,9 @@ impl QpClient {
         self.unified_client.send_transaction(tx)
     }
 
+    /// Concrete-type access for downcast — e.g.
+    /// `client.as_any().downcast_ref::<LightClient>()` to reach
+    /// backend-specific methods like `LightClient::set_scripts`.
     pub fn as_any(&self) -> &dyn Any {
         self.unified_client.as_any()
     }

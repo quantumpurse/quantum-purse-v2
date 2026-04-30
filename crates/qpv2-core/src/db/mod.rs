@@ -1,7 +1,7 @@
 pub mod errors;
 
 use super::types::{CipherPayload, SphincsPlusAccount, WalletInfo};
-pub use errors::KeyVaultDBError;
+use errors::KeyVaultDBError;
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{Read, Write};

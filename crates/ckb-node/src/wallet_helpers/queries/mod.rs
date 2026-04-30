@@ -15,7 +15,7 @@ pub mod dao_cells;
 pub mod spendable;
 pub mod tx_history;
 
-pub use balance::{fetch_lock_script_balance, fetch_quantum_lock_balance};
+pub use balance::fetch_quantum_lock_balance;
 pub use dao_cells::{categorize_dao_cells, DepositedCell, PreparedCell};
 pub use spendable::spendable_capacity;
 pub use tx_history::fetch_recent_transactions;

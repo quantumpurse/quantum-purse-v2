@@ -45,10 +45,10 @@ impl LightClient {
         }
     }
 
-    /// Registers lock/type scripts with the light client so it indexes matching cells.
-    ///
-    /// Must be called after creating a new account so the light client tracks its cells.
-    pub fn set_scripts(
+    /// Registers lock/type scripts with the light client so it indexes
+    /// matching cells. Internal helper for the `register_*` methods —
+    /// not part of the public LightClient surface.
+    fn set_scripts(
         &self,
         scripts: Vec<ScriptStatus>,
         command: Option<SetScriptsCommand>,
