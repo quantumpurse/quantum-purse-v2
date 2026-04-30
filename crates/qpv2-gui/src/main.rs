@@ -122,10 +122,6 @@ pub(crate) struct App {
     // Transient UI state; not persisted across sessions.
     pub(crate) set_block_input: String,
     pub(crate) set_block_editing: bool,
-    // Two-click confirmation gate for switching to FullNode (~100GB
-    // sync, multi-day). Reset when the popup closes or the user
-    // navigates away from the FullNode option.
-    pub(crate) confirm_full_node_pending: bool,
     // In-flight async lookup for the "Auto" button — uses a one-shot
     // FullNodeClient against a public endpoint to discover the earliest
     // funding block across all accounts. Some(_) means a detection is
@@ -317,7 +313,6 @@ impl App {
             node_status_rx: None,
             set_block_input: String::new(),
             set_block_editing: false,
-            confirm_full_node_pending: false,
             earliest_funding_block_rx: None,
             last_poll_time: std::time::Instant::now(),
             status_seen: Status::None,

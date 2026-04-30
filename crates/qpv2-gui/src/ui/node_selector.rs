@@ -166,22 +166,13 @@ impl App {
 
                         ui.add_space(10.0);
 
-                        // Apply button
-                        // Reset the FullNode confirmation flag if the
-                        // user navigated away from FullNode while the
-                        // warning was showing — keeps state honest.
-                        if self.confirm_full_node_pending
-                            && self.temp_node_type != NodeType::FullNode
-                        {
-                            self.confirm_full_node_pending = false;
-                        }
-
-                        let mut commit_apply = false;
-
-                        if self.confirm_full_node_pending {
-                            // Warning state: replaces the Apply button
-                            // with a "Full node will sync ~100GB / days"
-                            // notice + Confirm / Cancel.
+                        // Inline warning shown the moment the user picks
+                        // FullNode while not already on FullNode. The
+                        // disclosure is the *selection* itself — no
+                        // separate Confirm step. Apply commits as usual.
+                        let switching_to_full_node = self.temp_node_type == NodeType::FullNode
+                            && self.qp_client.config().node_type != NodeType::FullNode;
+                        if switching_to_full_node {
                             ui.label(
                                 egui::RichText::new(
                                     "\u{26A0} Full node will sync ~100 GB and may take \
@@ -191,39 +182,17 @@ impl App {
                                 .color(self.colors.warn),
                             );
                             ui.add_space(8.0);
-                            ui.horizontal(|ui| {
-                                let confirm_btn = egui::Button::new(
-                                    egui::RichText::new("Confirm").color(self.colors.bg),
-                                )
-                                .fill(self.colors.warn);
-                                if ui.add(confirm_btn).clicked() {
-                                    self.confirm_full_node_pending = false;
-                                    commit_apply = true;
-                                }
-                                if ui.button("Cancel").clicked() {
-                                    self.confirm_full_node_pending = false;
-                                }
-                            });
-                        } else {
-                            let apply_btn = egui::Button::new(
-                                egui::RichText::new("Apply").color(self.colors.bg),
-                            )
-                            .fill(self.colors.accent)
-                            .min_size(egui::vec2(ui.available_width(), 28.0));
+                        }
 
-                            if ui.add(apply_btn).clicked() {
-                                // Switching to FullNode from any other
-                                // backend triggers the warning gate.
-                                let current = self.qp_client.config();
-                                let switching_to_full_node = self.temp_node_type
-                                    == NodeType::FullNode
-                                    && current.node_type != NodeType::FullNode;
-                                if switching_to_full_node {
-                                    self.confirm_full_node_pending = true;
-                                } else {
-                                    commit_apply = true;
-                                }
-                            }
+                        let mut commit_apply = false;
+
+                        let apply_btn =
+                            egui::Button::new(egui::RichText::new("Apply").color(self.colors.bg))
+                                .fill(self.colors.accent)
+                                .min_size(egui::vec2(ui.available_width(), 28.0));
+
+                        if ui.add(apply_btn).clicked() {
+                            commit_apply = true;
                         }
 
                         if commit_apply {
@@ -315,22 +284,19 @@ impl App {
                             }
 
                             self.node_selector_open = false;
-                            self.confirm_full_node_pending = false;
                         }
                     });
             });
 
         // Click outside to close. Use the popup's actual rendered rect
         // (not a hardcoded estimate) so clicks on the bottom-most
-        // controls — Apply, or Confirm/Cancel in the FullNode warning
-        // state — are correctly classified as inside.
+        // Apply button are correctly classified as inside.
         if ctx.input(|i| i.pointer.any_click()) {
             let pointer_pos = ctx.input(|i| i.pointer.hover_pos());
             if let Some(pos) = pointer_pos {
                 let dropdown_rect = area_response.response.rect;
                 if !dropdown_rect.contains(pos) && !selector_rect.contains(pos) {
                     self.node_selector_open = false;
-                    self.confirm_full_node_pending = false;
                 }
             }
         }
