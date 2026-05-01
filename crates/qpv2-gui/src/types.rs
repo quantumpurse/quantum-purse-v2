@@ -115,9 +115,6 @@ pub(crate) struct NodeStatus {
     pub tip_block: Option<u64>,
     /// Peer count; `None` for PublicRpc backends.
     pub peer_count: Option<usize>,
-    /// Aggregate size (bytes) of the local node's data directory. `None`
-    /// for PublicRpc.
-    pub db_size_bytes: Option<u64>,
     /// RPC port parsed from `config.rpc_url`.
     pub rpc_port: Option<u16>,
     /// Min synced block across all registered scripts (light client only).

@@ -140,37 +140,21 @@ impl App {
 
                 ui.add_space(18.0);
 
-                // Metric grid. PublicRpc is 2×2 (4 tiles). Local-node
-                // cards (FullNode + LightClient) are 3+2 — three tiles
-                // on top (Sync, Local Tip / Tip, Peers), two on the
-                // bottom (RPC Port, DB Size) — so users see both the
-                // synced height and the moving target side by side
-                // without parsing an `X / Y` formatted single tile.
-                // Backend-specific affordances (e.g. the LC's editable
-                // Synced widget) live BELOW this grid as a full-width
-                // section.
+                // 2×2 metric grid — same shape for every backend so cards
+                // line up at equal heights across the row. Compute the
+                // four `(label, value)` cells first, then render
+                // uniformly. Backend-specific affordances (e.g. the LC's
+                // editable Synced widget) live BELOW this grid as a
+                // full-width section.
                 let metrics = self.metric_cells(backend, active);
-                if metrics.len() == 5 {
-                    ui.columns(3, |cols| {
-                        self.draw_metric(&mut cols[0], metrics[0].0, metrics[0].1.clone());
-                        self.draw_metric(&mut cols[1], metrics[1].0, metrics[1].1.clone());
-                        self.draw_metric(&mut cols[2], metrics[2].0, metrics[2].1.clone());
-                    });
-                    ui.add_space(METRIC_ROW_GAP);
-                    ui.columns(2, |cols| {
-                        self.draw_metric(&mut cols[0], metrics[3].0, metrics[3].1.clone());
-                        self.draw_metric(&mut cols[1], metrics[4].0, metrics[4].1.clone());
-                    });
-                } else {
-                    ui.columns(2, |cols| {
-                        self.draw_metric(&mut cols[0], metrics[0].0, metrics[0].1.clone());
-                        self.draw_metric(&mut cols[1], metrics[1].0, metrics[1].1.clone());
-                        cols[0].add_space(METRIC_ROW_GAP);
-                        cols[1].add_space(METRIC_ROW_GAP);
-                        self.draw_metric(&mut cols[0], metrics[2].0, metrics[2].1.clone());
-                        self.draw_metric(&mut cols[1], metrics[3].0, metrics[3].1.clone());
-                    });
-                }
+                ui.columns(2, |cols| {
+                    self.draw_metric(&mut cols[0], metrics[0].0, metrics[0].1.clone());
+                    self.draw_metric(&mut cols[1], metrics[1].0, metrics[1].1.clone());
+                    cols[0].add_space(METRIC_ROW_GAP);
+                    cols[1].add_space(METRIC_ROW_GAP);
+                    self.draw_metric(&mut cols[0], metrics[2].0, metrics[2].1.clone());
+                    self.draw_metric(&mut cols[1], metrics[3].0, metrics[3].1.clone());
+                });
 
                 // Sync-bar footer for both local-node backends. Always
                 // rendered (even when the backend isn't active) so the
@@ -227,14 +211,14 @@ impl App {
         );
     }
 
-    /// Returns the metric tiles for a card. PublicRpc returns 4 tiles
-    /// (rendered 2×2). FullNode and LightClient return 5 tiles
-    /// (rendered 3+2): the second tile is the backend's "moving
-    /// target" (LOCAL TIP for FullNode = `best_known_block_number`,
-    /// TIP for LightClient = chain tip from `get_tip_header`) so the
-    /// user sees both the synced height and the goalpost side by side.
-    /// Inactive cards fall back to a "—" placeholder, except where a
-    /// purely-static value (RPC URL hostname, default port) makes sense.
+    /// Returns the metric tiles for a card. Every backend returns 4
+    /// tiles (rendered 2×2). For FullNode and LightClient the second
+    /// tile is the backend's "moving target" (LOCAL TIP for FullNode
+    /// = `best_known_block_number`, TIP for LightClient = chain tip
+    /// from `get_tip_header`) so the user sees both the synced height
+    /// and the goalpost side by side. Inactive cards fall back to a
+    /// "—" placeholder, except where a purely-static value (RPC URL
+    /// hostname, default port) makes sense.
     fn metric_cells(&self, backend: NodeType, active: bool) -> Vec<(&'static str, String)> {
         const DASH: &str = "—";
         match backend {
@@ -256,7 +240,7 @@ impl App {
                 let port = if active {
                     port_text(self.node_status.rpc_port)
                 } else {
-                    default_port(url)
+                    port_text(crate::ckb::parse_rpc_port(url))
                 };
                 let peers = if active {
                     peers_text(self.node_status.peer_count)
@@ -266,8 +250,8 @@ impl App {
                 vec![
                     ("Block Height", block_height),
                     ("Endpoint", hostname_of(url)),
-                    ("Port", port),
                     ("Peers", peers),
+                    ("Port", port),
                 ]
             }
             NodeType::LightClient | NodeType::FullNode => {
@@ -282,7 +266,6 @@ impl App {
                         (tip_label, target_tip_value(backend, &self.node_status)),
                         ("Peers", peers_text(self.node_status.peer_count)),
                         ("RPC Port", port_text(self.node_status.rpc_port)),
-                        ("DB Size", db_size_text(self.node_status.db_size_bytes)),
                     ]
                 } else {
                     let url =
@@ -291,8 +274,7 @@ impl App {
                         ("Sync", DASH.into()),
                         (tip_label, DASH.into()),
                         ("Peers", DASH.into()),
-                        ("RPC Port", default_port(url)),
-                        ("DB Size", DASH.into()),
+                        ("RPC Port", port_text(crate::ckb::parse_rpc_port(url))),
                     ]
                 }
             }
@@ -630,10 +612,6 @@ fn port_text(port: Option<u16>) -> String {
         .unwrap_or_else(|| "—".to_string())
 }
 
-fn db_size_text(bytes: Option<u64>) -> String {
-    bytes.map(format_bytes).unwrap_or_else(|| "—".to_string())
-}
-
 /// Strips scheme + path to return just the hostname of an RPC URL.
 fn hostname_of(url: &str) -> String {
     let stripped = url
@@ -648,23 +626,6 @@ fn hostname_of(url: &str) -> String {
         .next()
         .unwrap_or(stripped)
         .to_string()
-}
-
-/// Returns the port portion of an RPC URL, or a scheme-default fallback
-/// (`443` / `80`) when the URL has no explicit port.
-fn default_port(url: &str) -> String {
-    let scheme_stripped = url
-        .strip_prefix("https://")
-        .or_else(|| url.strip_prefix("http://"))
-        .unwrap_or(url);
-    let host_port = scheme_stripped.split('/').next().unwrap_or(scheme_stripped);
-    if let Some((_, port)) = host_port.rsplit_once(':') {
-        port.to_string()
-    } else if url.starts_with("https://") {
-        "443".to_string()
-    } else {
-        "80".to_string()
-    }
 }
 
 fn format_int(n: u64) -> String {
@@ -695,18 +656,3 @@ fn lerp_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
     )
 }
 
-fn format_bytes(bytes: u64) -> String {
-    const KB: f64 = 1024.0;
-    const MB: f64 = KB * 1024.0;
-    const GB: f64 = MB * 1024.0;
-    let b = bytes as f64;
-    if b >= GB {
-        format!("{:.1} GB", b / GB)
-    } else if b >= MB {
-        format!("{:.1} MB", b / MB)
-    } else if b >= KB {
-        format!("{:.1} KB", b / KB)
-    } else {
-        format!("{} B", bytes)
-    }
-}

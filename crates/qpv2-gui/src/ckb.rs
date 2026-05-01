@@ -626,9 +626,6 @@ impl App {
 
         let cfg = self.qp_client.config();
         let rpc_port = parse_rpc_port(&cfg.rpc_url);
-        let data_dir = cfg.node_data_dir();
-        let is_local = cfg.requires_binary();
-        let has_process = self.local_node.has_local_process();
         let qp_client = self.qp_client.clone();
         let cached = self.node_status.clone();
 
@@ -665,19 +662,9 @@ impl App {
                 Err(_) => cached.sync_state,
             };
 
-            // DB size — only meaningful for local backends. Walk
-            // failures fall back to cached (the directory may briefly
-            // disappear during process restart).
-            let db_size_bytes = if is_local && has_process {
-                directory_size(&data_dir).ok().or(cached.db_size_bytes)
-            } else {
-                None
-            };
-
             let status = NodeStatus {
                 tip_block,
                 peer_count,
-                db_size_bytes,
                 rpc_port,
                 synced_block,
                 sync_state,
@@ -689,8 +676,11 @@ impl App {
 }
 
 /// Parses the port out of an RPC URL (`http://host:port` or
-/// `https://host:port`). Returns `None` on malformed input.
-fn parse_rpc_port(url: &str) -> Option<u16> {
+/// `https://host:port`). Returns `None` on malformed input or when
+/// the URL has no explicit port (we deliberately don't fall back to
+/// scheme defaults — those would be hardcoded protocol artifacts,
+/// not data from the endpoint).
+pub(crate) fn parse_rpc_port(url: &str) -> Option<u16> {
     let stripped = url
         .strip_prefix("https://")
         .or_else(|| url.strip_prefix("http://"))
@@ -700,27 +690,3 @@ fn parse_rpc_port(url: &str) -> Option<u16> {
     port.parse().ok()
 }
 
-/// Recursively sums the size of every regular file under `path`.
-/// Symlinks are followed via `metadata()` just like `du` would; cycles
-/// aren't a concern for the node's own data directory.
-fn directory_size(path: &std::path::Path) -> std::io::Result<u64> {
-    let mut total = 0u64;
-    let mut stack = vec![path.to_path_buf()];
-    while let Some(dir) = stack.pop() {
-        let entries = match std::fs::read_dir(&dir) {
-            Ok(entries) => entries,
-            Err(_) if !dir.exists() => return Ok(0),
-            Err(e) => return Err(e),
-        };
-        for entry in entries {
-            let entry = entry?;
-            let meta = entry.metadata()?;
-            if meta.is_dir() {
-                stack.push(entry.path());
-            } else if meta.is_file() {
-                total = total.saturating_add(meta.len());
-            }
-        }
-    }
-    Ok(total)
-}
