@@ -195,6 +195,12 @@ impl App {
         self.node_status = crate::types::NodeStatus::default();
         self.node_status_rx = None;
 
+        // The QR-lock-script cell-dep warmup is per-LC-instance.
+        // Reset the latch so the poller refires `fetch_qr_lock_dep`
+        // against the new backend (and skips it altogether for
+        // FullNode / PublicRpc).
+        self.lc_qr_dep_warmup_done = false;
+
         self.status = Status::Info("Configuration saved. RPC reconnected.".to_string());
 
         // Refresh balances + node status against the new connection so

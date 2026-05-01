@@ -234,33 +234,19 @@ impl App {
                                 self.apply_node_config();
 
                                 // Spawn the new local node (no-op for
-                                // PublicRpc, unsupported-op for FullNode).
-                                // Failure surfaces as a status error and
-                                // leaves the process slot empty — user can
-                                // retry via Apply.
+                                // PublicRpc). `spawn()` is fire-and-forget:
+                                // it returns as soon as `Command::spawn`
+                                // hands back the child handle, without
+                                // waiting for the RPC port. The LC
+                                // warmup (`fetch_qr_lock_dep` + lock-
+                                // script registration) runs from the
+                                // poller once the RPC actually answers,
+                                // so it can't race ahead of the LC's
+                                // `bind()` and surface a "connection
+                                // refused" error to the user.
                                 if let Err(e) = self.local_node.spawn() {
                                     self.status =
                                         Status::Error(format!("Failed to start local node: {}", e));
-                                } else if self.local_node.has_local_process()
-                                    && self.temp_node_type == NodeType::LightClient
-                                {
-                                    // Warmup the QR-lock-script cell dep so
-                                    // the first transfer doesn't race-fail.
-                                    // Only the RPC error path is actionable;
-                                    // a not-yet-Fetched response is expected.
-                                    if let Err(e) = ckb_node::wallet_helpers::lc::fetch_qr_lock_dep(&self.qp_client) {
-                                        self.status = Status::Error(format!(
-                                            "Failed to request lock-script cell dep fetch: {}",
-                                            e
-                                        ));
-                                    }
-                                    // Re-register every account on the
-                                    // freshly-spawned LC. Anchored at tip
-                                    // — historical txs below tip aren't
-                                    // recovered (Phase A's per-account
-                                    // start-block work covers that).
-                                    let accounts = self.accounts.clone();
-                                    self.register_lock_scripts_with_light_client(&accounts);
                                 }
 
                                 // Swap the tx-history cache to the new

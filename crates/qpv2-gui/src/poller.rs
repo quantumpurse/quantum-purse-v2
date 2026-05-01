@@ -486,6 +486,30 @@ impl App {
                 self.node_status_rx = None;
             }
         }
+
+        // QR-lock-script cell-dep warmup. Used to run synchronously
+        // right after `LocalNodeProcess::spawn()` in App::new and the
+        // node-selector apply handler — but with `wait_for_rpc` gone,
+        // those calls raced ahead of the LC's `bind()` and surfaced as
+        // "Failed to request lock-script cell dep fetch" on the lock
+        // screen. Doing it here gates the call on `online == true`,
+        // which is exactly the signal we needed.
+        //
+        // Idempotent locally (`fetch_transaction` is a memoized
+        // localhost roundtrip after the first hit), so the worst case
+        // is one cheap RPC per ~10 s tick until `Ok(true)` latches the
+        // flag. Errors are logged, not banner'd — by definition we'll
+        // try again next tick.
+        if !self.lc_qr_dep_warmup_done
+            && self.node_status.online
+            && self.qp_client.config().node_type == ckb_node::NodeType::LightClient
+        {
+            match ckb_node::wallet_helpers::lc::fetch_qr_lock_dep(&self.qp_client) {
+                Ok(true) => self.lc_qr_dep_warmup_done = true,
+                Ok(false) => {} // pending — retry next tick
+                Err(e) => eprintln!("lc warmup: fetch_qr_lock_dep: {}", e),
+            }
+        }
     }
 
     /// Pick up the result of a `detect_earliest_funding_block_async`

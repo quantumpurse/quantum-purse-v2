@@ -128,6 +128,13 @@ pub(crate) struct App {
     // running; the poller swaps the result into `set_block_input`.
     pub(crate) earliest_funding_block_rx: Option<mpsc::Receiver<Result<Option<u64>, String>>>,
 
+    // Latched: `true` once `fetch_qr_lock_dep` has confirmed the
+    // QR-lock-script cell dep is in the LC's local store. The poller
+    // retries the warmup on every status tick where this is still
+    // false and the LC is reachable, so the post-spawn race against
+    // RPC readiness is invisible to the user. Reset on backend switch.
+    pub(crate) lc_qr_dep_warmup_done: bool,
+
     // Periodic polling timer for balances, tx history, and DAO cells.
     pub(crate) last_poll_time: std::time::Instant,
 
@@ -224,23 +231,11 @@ impl App {
         let startup_status = match local_node.spawn() {
             Ok(()) => {
                 if local_node.has_local_process() {
-                    // LC-only: warmup the QR-lock-script cell dep so
-                    // the first transfer doesn't race-fail. Surface RPC
-                    // transport errors; not-yet-Fetched is expected.
-                    // Full node indexes everything — no warmup needed,
-                    // and the call would error `UnsupportedOperation`.
-                    if node_config.node_type == NodeType::LightClient {
-                        if let Err(e) = ckb_node::wallet_helpers::lc::fetch_qr_lock_dep(&qp_client) {
-                            Status::Error(format!(
-                                "Failed to request lock-script cell dep fetch: {}",
-                                e
-                            ))
-                        } else {
-                            Status::Info("Local node started.".to_string())
-                        }
-                    } else {
-                        Status::Info("Local node started.".to_string())
-                    }
+                    // For LC, the QR-lock-script cell dep warmup runs
+                    // from the poller (see `poll_node_status`) so it
+                    // can wait for the LC's RPC port to come up
+                    // without racing this synchronous boot path.
+                    Status::Info("Local node started.".to_string())
                 } else {
                     // `spawn()` returns Ok(()) on PublicRpc even though
                     // no process is started — it's a no-op backend. Emit
@@ -310,6 +305,7 @@ impl App {
             set_block_input: String::new(),
             set_block_editing: false,
             earliest_funding_block_rx: None,
+            lc_qr_dep_warmup_done: false,
             last_poll_time: std::time::Instant::now(),
             status_seen: Status::None,
             status_set_at: None,
