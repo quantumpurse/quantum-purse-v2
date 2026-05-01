@@ -77,4 +77,14 @@ impl LocalNodeProcess {
     pub fn has_local_process(&self) -> bool {
         self.process.is_some()
     }
+
+    /// `true` when the slot is occupied **and** the child process is
+    /// still running. The GUI's poll watchdog uses
+    /// `has_local_process() && !is_alive()` to detect a binary that
+    /// crashed on its own after `spawn()` returned — the
+    /// "started but died" case `wait_for_rpc` used to catch
+    /// synchronously.
+    pub fn is_alive(&mut self) -> bool {
+        self.process.as_mut().is_some_and(|p| p.is_running())
+    }
 }

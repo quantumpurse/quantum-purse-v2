@@ -450,7 +450,23 @@ impl App {
 
     /// Drain the node-status channel into `self.node_status`. A status
     /// refresh is scheduled every `POLL_INTERVAL` by `update()`.
+    ///
+    /// Also acts as the local-node watchdog: when the slot is occupied
+    /// (`has_local_process()`) but the child has exited on its own
+    /// (`!is_alive()`), surface the failure as a `Status::Error`
+    /// banner. Replaces the synchronous early-exit check that used to
+    /// live in `wait_for_rpc` — same coverage, just one tick of poll
+    /// latency.
     pub(crate) fn poll_node_status(&mut self) {
+        if self.local_node.has_local_process() && !self.local_node.is_alive() {
+            self.status = Status::Error(
+                "Local node exited unexpectedly. See node.log in the data dir.".to_string(),
+            );
+            // Clear the slot so the status pill reflects reality and
+            // the user can retry the spawn from the node selector.
+            self.local_node.stop();
+        }
+
         let rx = match &self.node_status_rx {
             Some(rx) => rx,
             None => return,
