@@ -2,7 +2,7 @@
 
 use crate::types::{spx_witness_lock_size, TransactionKind, TransactionStatus, CKB_DECIMAL_PLACES};
 use crate::App;
-use ckb_node::{QpClient, NodeType};
+use ckb_node::{NodeType, QpClient};
 use qpv2_core::KeyVault;
 use std::sync::mpsc;
 
@@ -15,10 +15,7 @@ use std::sync::mpsc;
 /// `Ok(())` for non-LightClient backends (full nodes / public RPC have
 /// every cell); `Ok(())` for LightClient when the dep is already in the
 /// store. Otherwise returns a user-facing message ready for `App.status`.
-fn check_qr_lock_dep_ready(
-    qp_client: &QpClient,
-    node_type: NodeType,
-) -> Result<(), String> {
+fn check_qr_lock_dep_ready(qp_client: &QpClient, node_type: NodeType) -> Result<(), String> {
     if node_type != NodeType::LightClient {
         return Ok(());
     }

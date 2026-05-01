@@ -40,7 +40,12 @@ impl App {
                             ui.vertical_centered(|ui| {
                                 ui.label(egui::RichText::new("\u{2726}").size(30.0));
                                 ui.add_space(8.0);
-                                ui.label(egui::RichText::new("New Account").size(14.0).strong().color(self.colors.text_muted));
+                                ui.label(
+                                    egui::RichText::new("New Account")
+                                        .size(14.0)
+                                        .strong()
+                                        .color(self.colors.text_muted),
+                                );
                                 ui.add_space(4.0);
                                 ui.label(
                                     egui::RichText::new(
@@ -67,7 +72,12 @@ impl App {
                             ui.vertical_centered(|ui| {
                                 ui.label(egui::RichText::new("\u{2b07}").size(30.0));
                                 ui.add_space(8.0);
-                                ui.label(egui::RichText::new("Import Seed").size(14.0).strong().color(self.colors.text_muted));
+                                ui.label(
+                                    egui::RichText::new("Import Seed")
+                                        .size(14.0)
+                                        .strong()
+                                        .color(self.colors.text_muted),
+                                );
                                 ui.add_space(4.0);
                                 ui.label(
                                     egui::RichText::new("CLI only: qpv2 import-seed")
@@ -87,7 +97,12 @@ impl App {
                             ui.vertical_centered(|ui| {
                                 ui.label(egui::RichText::new("\u{2b06}").size(30.0));
                                 ui.add_space(8.0);
-                                ui.label(egui::RichText::new("Export Seed").size(14.0).strong().color(self.colors.text_muted));
+                                ui.label(
+                                    egui::RichText::new("Export Seed")
+                                        .size(14.0)
+                                        .strong()
+                                        .color(self.colors.text_muted),
+                                );
                                 ui.add_space(4.0);
                                 ui.label(
                                     egui::RichText::new("CLI only: qpv2 export-seed")
@@ -170,11 +185,13 @@ impl App {
                     ];
 
                     for (i, lock_args) in self.accounts.clone().iter().enumerate() {
-                        let address_text =
-                            match crate::ckb::lock_args_to_address(lock_args, self.qp_client.is_mainnet()) {
-                                Ok(addr) => addr,
-                                Err(_) => format!("0x{}", lock_args),
-                            };
+                        let address_text = match crate::ckb::lock_args_to_address(
+                            lock_args,
+                            self.qp_client.is_mainnet(),
+                        ) {
+                            Ok(addr) => addr,
+                            Err(_) => format!("0x{}", lock_args),
+                        };
 
                         let balance_text = match self.balances.get(lock_args) {
                             Some(Some(shannons)) => format_ckb_balance(*shannons),

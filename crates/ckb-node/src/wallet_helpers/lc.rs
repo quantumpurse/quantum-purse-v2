@@ -14,7 +14,7 @@
 
 use ckb_types::H256;
 
-use crate::client::{QpClient, LightClient};
+use crate::client::{LightClient, QpClient};
 use crate::config::NetworkType;
 use crate::error::NodeManagerError;
 
@@ -25,9 +25,7 @@ use crate::error::NodeManagerError;
 ///
 /// Returns `true` once the dep is in the LC's store; `false` while the
 /// fetch is still pending. Idempotent.
-pub fn fetch_qr_lock_dep(
-    qp_client: &QpClient
-) -> Result<bool, NodeManagerError> {
+pub fn fetch_qr_lock_dep(qp_client: &QpClient) -> Result<bool, NodeManagerError> {
     let Some(light) = qp_client.as_any().downcast_ref::<LightClient>() else {
         return Err(NodeManagerError::UnsupportedOperation {
             node_type: qp_client.config().node_type.to_string(),

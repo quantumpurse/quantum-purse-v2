@@ -148,8 +148,7 @@ impl App {
 
                 let (deposited, prepared) =
                     match ckb_node::wallet_helpers::queries::categorize_dao_cells(
-                        &qp_client,
-                        &address,
+                        &qp_client, &address,
                     ) {
                         Ok(v) => v,
                         Err(e) => {
@@ -220,11 +219,8 @@ impl App {
                     .parse()
                     .map_err(|e| format!("Invalid sender address: {}", e))?;
 
-                ckb_node::wallet_helpers::queries::spendable_capacity(
-                    &qp_client,
-                    &from_address,
-                )
-                .map_err(|e| format!("Failed to fetch spendable capacity: {}", e))
+                ckb_node::wallet_helpers::queries::spendable_capacity(&qp_client, &from_address)
+                    .map_err(|e| format!("Failed to fetch spendable capacity: {}", e))
             })();
 
             let _ = tx.send(result);
@@ -503,7 +499,8 @@ impl App {
                                 .is_some_and(|t| format!("{:#x}", t.code_hash) == dao_type_hash);
                             if external_recipient.is_none() && !is_dao_output {
                                 let packed: ckb_types::packed::Script = out.lock.clone().into();
-                                let is_mainnet = matches!(qp_client.network(), ckb_node::NetworkType::Mainnet);
+                                let is_mainnet =
+                                    matches!(qp_client.network(), ckb_node::NetworkType::Mainnet);
                                 external_recipient = Some(script_to_address(&packed, is_mainnet));
                             }
                         }
@@ -589,8 +586,7 @@ impl App {
         std::thread::spawn(move || {
             for lock_args in accounts {
                 let result = ckb_node::wallet_helpers::queries::fetch_quantum_lock_balance(
-                    &qp_client,
-                    &lock_args,
+                    &qp_client, &lock_args,
                 )
                 .map_err(|e| e.to_string());
                 // If the receiver is dropped (e.g. wallet locked), stop.
@@ -689,4 +685,3 @@ pub(crate) fn parse_rpc_port(url: &str) -> Option<u16> {
     let (_, port) = host_port.rsplit_once(':')?;
     port.parse().ok()
 }
-

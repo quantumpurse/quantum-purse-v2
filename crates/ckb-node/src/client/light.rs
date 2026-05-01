@@ -30,7 +30,7 @@ use ckb_types::H256;
 use crate::config::NetworkType;
 use crate::error::NodeManagerError;
 
-use super::{UnifiedClient, TransactionStatus};
+use super::{TransactionStatus, UnifiedClient};
 
 pub(crate) struct LightClient {
     client: LightClientRpcClient,

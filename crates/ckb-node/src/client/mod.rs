@@ -165,7 +165,10 @@ impl QpClient {
     /// [`build`].
     pub fn new(config: NodeConfig) -> Self {
         let unified_client = build(&config);
-        Self { unified_client, config }
+        Self {
+            unified_client,
+            config,
+        }
     }
 
     /// Returns a reference to the `NodeConfig` snapshot this handle was built from.
@@ -203,7 +206,10 @@ impl QpClient {
 
     /// Collects live cells matching `options`, using whichever strategy the
     /// active backend prefers (see [`UnifiedClient::collect_cells`]).
-    pub fn collect_cells(&self, options: &CellQueryOptions) -> Result<Vec<LiveCell>, NodeManagerError> {
+    pub fn collect_cells(
+        &self,
+        options: &CellQueryOptions,
+    ) -> Result<Vec<LiveCell>, NodeManagerError> {
         self.unified_client.collect_cells(options)
     }
 
@@ -231,7 +237,8 @@ impl QpClient {
         limit: u32,
         after: Option<JsonBytes>,
     ) -> Result<Pagination<Tx>, NodeManagerError> {
-        self.unified_client.get_transactions(search_key, order, limit, after)
+        self.unified_client
+            .get_transactions(search_key, order, limit, after)
     }
 
     /// Returns a fresh ckb-sdk `CellCollector` bound to the active backend,
@@ -277,9 +284,7 @@ impl QpClient {
     /// Number of peers for local-node backends. `Ok(None)` for `PublicRpc`
     /// (peer count of a remote endpoint isn't meaningful wallet-side).
     /// `Err` when the local node is unreachable.
-    pub fn peer_count(
-        &self
-    ) -> Result<Option<usize>, NodeManagerError> {
+    pub fn peer_count(&self) -> Result<Option<usize>, NodeManagerError> {
         self.unified_client.get_peer_count().map(Some)
     }
 
@@ -297,13 +302,15 @@ impl QpClient {
     /// verifying / synced). `Ok(None)` for `LightClient` (no analogue)
     /// and `PublicRpc` (remote endpoint's sync isn't *our* sync, same
     /// policy as `peer_count`). `Some(_)` only for `FullNode`.
-    pub fn sync_state(
-        &self,
-    ) -> Result<Option<ckb_jsonrpc_types::SyncState>, NodeManagerError> {
+    pub fn sync_state(&self) -> Result<Option<ckb_jsonrpc_types::SyncState>, NodeManagerError> {
         if self.config.node_type != NodeType::FullNode {
             return Ok(None);
         }
-        let Some(full) = self.unified_client.as_any().downcast_ref::<FullNodeClient>() else {
+        let Some(full) = self
+            .unified_client
+            .as_any()
+            .downcast_ref::<FullNodeClient>()
+        else {
             return Ok(None);
         };
         full.sync_state().map(Some)
@@ -319,4 +326,3 @@ fn build(config: &NodeConfig) -> Arc<dyn UnifiedClient> {
         NodeType::LightClient => Arc::new(LightClient::new(&config.rpc_url)),
     }
 }
-

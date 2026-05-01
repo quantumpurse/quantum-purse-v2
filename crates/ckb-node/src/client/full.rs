@@ -11,9 +11,7 @@
 use std::any::Any;
 
 use ckb_jsonrpc_types::JsonBytes;
-use ckb_sdk::rpc::ckb_indexer::{
-    CellsCapacity, Order, Pagination, ScriptType, SearchKey, Tx,
-};
+use ckb_sdk::rpc::ckb_indexer::{CellsCapacity, Order, Pagination, ScriptType, SearchKey, Tx};
 use ckb_sdk::rpc::{CkbRpcClient, ResponseFormatGetter};
 use ckb_sdk::traits::{
     CellCollector, CellQueryOptions, DefaultCellCollector, DefaultHeaderDepResolver,
@@ -25,7 +23,7 @@ use ckb_types::H256;
 use crate::config::NetworkType;
 use crate::error::NodeManagerError;
 
-use super::{UnifiedClient, TransactionStatus};
+use super::{TransactionStatus, UnifiedClient};
 
 pub struct FullNodeClient {
     client: CkbRpcClient,

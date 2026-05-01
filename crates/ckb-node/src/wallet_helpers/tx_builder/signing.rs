@@ -30,11 +30,9 @@ pub fn fetch_input_cells(
         let tx_hash: H256 = out_point.tx_hash().unpack();
         let index: u32 = out_point.index().unpack();
 
-        let tx_status = qp_client
-            .get_transaction(tx_hash.clone())?
-            .ok_or_else(|| {
-                NodeManagerError::RpcError(format!("Input transaction {} not found.", tx_hash))
-            })?;
+        let tx_status = qp_client.get_transaction(tx_hash.clone())?.ok_or_else(|| {
+            NodeManagerError::RpcError(format!("Input transaction {} not found.", tx_hash))
+        })?;
 
         let prev_tx_view = tx_status.transaction.ok_or_else(|| {
             NodeManagerError::RpcError(format!("Input transaction {} has no data.", tx_hash))

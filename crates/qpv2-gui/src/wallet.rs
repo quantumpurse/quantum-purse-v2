@@ -26,10 +26,9 @@ impl App {
         {
             return;
         }
-        if let Err(e) = ckb_node::wallet_helpers::lc::register_lock_scripts(
-            &self.qp_client,
-            lock_args_list,
-        ) {
+        if let Err(e) =
+            ckb_node::wallet_helpers::lc::register_lock_scripts(&self.qp_client, lock_args_list)
+        {
             self.status = Status::Error(format!("Failed to register scripts: {}", e));
         }
     }
@@ -426,8 +425,7 @@ impl App {
 
                 std::thread::spawn(move || {
                     let result = ckb_node::wallet_helpers::queries::fetch_quantum_lock_balance(
-                        &qp_client,
-                        &args
+                        &qp_client, &args,
                     )
                     .map_err(|e| e.to_string());
                     let _ = tx.send((args, result));

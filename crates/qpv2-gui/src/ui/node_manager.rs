@@ -87,9 +87,7 @@ impl App {
         let prev_hovered = ui
             .ctx()
             .memory(|m| m.data.get_temp::<bool>(card_id).unwrap_or(false));
-        let lift_factor = ui
-            .ctx()
-            .animate_bool_with_time(card_id, prev_hovered, 0.2);
+        let lift_factor = ui.ctx().animate_bool_with_time(card_id, prev_hovered, 0.2);
         let y_offset = -2.0 * lift_factor;
 
         // Render the frame at the shifted position by allocating a child
@@ -97,19 +95,15 @@ impl App {
         // and senses hover on that rect.
         let natural_min = ui.cursor().min;
         let avail = ui.available_size_before_wrap();
-        let max_rect = egui::Rect::from_min_size(
-            egui::pos2(natural_min.x, natural_min.y + y_offset),
-            avail,
-        );
+        let max_rect =
+            egui::Rect::from_min_size(egui::pos2(natural_min.x, natural_min.y + y_offset), avail);
         let inner = ui.scope_builder(egui::UiBuilder::new().max_rect(max_rect), |ui| {
             egui::Frame::new()
                 .fill(self.colors.surface)
                 .corner_radius(18.0)
                 .inner_margin(egui::Margin::symmetric(22, 22))
                 .show(ui, |ui| {
-                ui.with_layout(
-                    egui::Layout::left_to_right(egui::Align::Center),
-                    |ui| {
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                         // Icon in a rounded tile — gives the emoji
                         // structural weight and lets the title/subtitle
                         // stack align cleanly to its right edge.
@@ -129,44 +123,40 @@ impl App {
                             );
                         });
 
-                        ui.with_layout(
-                            egui::Layout::right_to_left(egui::Align::Center),
-                            |ui| {
-                                self.draw_status_pill(ui, backend, active);
-                            },
-                        );
-                    },
-                );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            self.draw_status_pill(ui, backend, active);
+                        });
+                    });
 
-                ui.add_space(18.0);
+                    ui.add_space(18.0);
 
-                // 2×2 metric grid — same shape for every backend so cards
-                // line up at equal heights across the row. Compute the
-                // four `(label, value)` cells first, then render
-                // uniformly. Backend-specific affordances (e.g. the LC's
-                // editable Synced widget) live BELOW this grid as a
-                // full-width section.
-                let metrics = self.metric_cells(backend, active);
-                ui.columns(2, |cols| {
-                    self.draw_metric(&mut cols[0], metrics[0].0, metrics[0].1.clone());
-                    self.draw_metric(&mut cols[1], metrics[1].0, metrics[1].1.clone());
-                    cols[0].add_space(METRIC_ROW_GAP);
-                    cols[1].add_space(METRIC_ROW_GAP);
-                    self.draw_metric(&mut cols[0], metrics[2].0, metrics[2].1.clone());
-                    self.draw_metric(&mut cols[1], metrics[3].0, metrics[3].1.clone());
-                });
+                    // 2×2 metric grid — same shape for every backend so cards
+                    // line up at equal heights across the row. Compute the
+                    // four `(label, value)` cells first, then render
+                    // uniformly. Backend-specific affordances (e.g. the LC's
+                    // editable Synced widget) live BELOW this grid as a
+                    // full-width section.
+                    let metrics = self.metric_cells(backend, active);
+                    ui.columns(2, |cols| {
+                        self.draw_metric(&mut cols[0], metrics[0].0, metrics[0].1.clone());
+                        self.draw_metric(&mut cols[1], metrics[1].0, metrics[1].1.clone());
+                        cols[0].add_space(METRIC_ROW_GAP);
+                        cols[1].add_space(METRIC_ROW_GAP);
+                        self.draw_metric(&mut cols[0], metrics[2].0, metrics[2].1.clone());
+                        self.draw_metric(&mut cols[1], metrics[3].0, metrics[3].1.clone());
+                    });
 
-                // Sync-bar footer for both local-node backends. Always
-                // rendered (even when the backend isn't active) so the
-                // two cards in the top row stay equal height. Inactive
-                // cards render the bar at 0% with a "—" percentage.
-                // PublicRpc skips it: there's nothing wallet-side to
-                // indicate about a remote endpoint's catch-up state.
-                if backend != NodeType::PublicRpc {
-                    ui.add_space(14.0);
-                    self.draw_sync_section(ui, backend, active);
-                }
-            })
+                    // Sync-bar footer for both local-node backends. Always
+                    // rendered (even when the backend isn't active) so the
+                    // two cards in the top row stay equal height. Inactive
+                    // cards render the bar at 0% with a "—" percentage.
+                    // PublicRpc skips it: there's nothing wallet-side to
+                    // indicate about a remote endpoint's catch-up state.
+                    if backend != NodeType::PublicRpc {
+                        ui.add_space(14.0);
+                        self.draw_sync_section(ui, backend, active);
+                    }
+                })
         });
 
         // The Frame's response is at the *lifted* (visual) rect.
@@ -203,12 +193,8 @@ impl App {
         } else {
             egui::Stroke::new(1.0, self.colors.border)
         };
-        ui.painter().rect_stroke(
-            lifted_rect,
-            18.0,
-            stroke,
-            egui::StrokeKind::Inside,
-        );
+        ui.painter()
+            .rect_stroke(lifted_rect, 18.0, stroke, egui::StrokeKind::Inside);
     }
 
     /// Returns the metric tiles for a card. Every backend returns 4
@@ -268,8 +254,7 @@ impl App {
                         ("RPC Port", port_text(self.node_status.rpc_port)),
                     ]
                 } else {
-                    let url =
-                        NodeConfig::default_rpc_url_for(backend, self.qp_client.network());
+                    let url = NodeConfig::default_rpc_url_for(backend, self.qp_client.network());
                     vec![
                         ("Sync", DASH.into()),
                         (tip_label, DASH.into()),
@@ -364,24 +349,21 @@ impl App {
 
         // Per-backend progress. Inactive cards (and PublicRpc) stay at
         // 0% / "—".
-        let (pct, percent_text): (f32, String) =
-            if !active || backend == NodeType::PublicRpc {
-                (0.0, "—".to_string())
-            } else {
-                match backend {
-                    NodeType::LightClient => match (synced, tip) {
-                        (Some(s), Some(t)) if t > 0 => {
-                            let p = (s as f64 / t as f64).clamp(0.0, 1.0) as f32;
-                            (p, format!("{:.1}%", p * 100.0))
-                        }
-                        _ => (0.0, "—".to_string()),
-                    },
-                    NodeType::FullNode => {
-                        full_node_sync_view(self.node_status.sync_state.as_ref())
+        let (pct, percent_text): (f32, String) = if !active || backend == NodeType::PublicRpc {
+            (0.0, "—".to_string())
+        } else {
+            match backend {
+                NodeType::LightClient => match (synced, tip) {
+                    (Some(s), Some(t)) if t > 0 => {
+                        let p = (s as f64 / t as f64).clamp(0.0, 1.0) as f32;
+                        (p, format!("{:.1}%", p * 100.0))
                     }
-                    NodeType::PublicRpc => unreachable!(),
-                }
-            };
+                    _ => (0.0, "—".to_string()),
+                },
+                NodeType::FullNode => full_node_sync_view(self.node_status.sync_state.as_ref()),
+                NodeType::PublicRpc => unreachable!(),
+            }
+        };
 
         // Pencil only on the active LC — editing the sync cursor on a
         // non-running backend is a no-op and would be misleading.
@@ -409,10 +391,8 @@ impl App {
                 let trailing_reserve = if show_pencil { 70.0 } else { 50.0 };
                 let bar_width = (ui.available_width() - trailing_reserve).max(40.0);
                 let bar_height = 4.0;
-                let (rect, _) = ui.allocate_exact_size(
-                    egui::vec2(bar_width, bar_height),
-                    egui::Sense::hover(),
-                );
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(bar_width, bar_height), egui::Sense::hover());
                 let radius = bar_height * 0.5;
                 let painter = ui.painter();
                 painter.rect_filled(rect, radius, self.colors.surface2);
@@ -443,17 +423,15 @@ impl App {
                 );
 
                 if show_pencil {
-                    let pencil = egui::Label::new(
-                        egui::RichText::new("\u{270E}").size(12.0).color(muted),
-                    )
-                    .sense(egui::Sense::click());
+                    let pencil =
+                        egui::Label::new(egui::RichText::new("\u{270E}").size(12.0).color(muted))
+                            .sense(egui::Sense::click());
                     let resp = ui
                         .add(pencil)
                         .on_hover_cursor(egui::CursorIcon::PointingHand);
                     if resp.clicked() {
                         self.set_block_editing = true;
-                        self.set_block_input =
-                            synced.map(|b| b.to_string()).unwrap_or_default();
+                        self.set_block_input = synced.map(|b| b.to_string()).unwrap_or_default();
                     }
                 }
             });
@@ -541,9 +519,7 @@ impl App {
 /// reading: `(pct, percent_text)` driving the painted bar and its
 /// trailing percentage. `None` (no reading yet) maps to the same
 /// placeholder an inactive card would show.
-fn full_node_sync_view(
-    sync_state: Option<&ckb_jsonrpc_types::SyncState>,
-) -> (f32, String) {
+fn full_node_sync_view(sync_state: Option<&ckb_jsonrpc_types::SyncState>) -> (f32, String) {
     let Some(s) = sync_state else {
         return (0.0, "—".to_string());
     };
@@ -655,4 +631,3 @@ fn lerp_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
         mix(a.a(), b.a()),
     )
 }
-
