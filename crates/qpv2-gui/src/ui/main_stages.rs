@@ -106,14 +106,17 @@ impl App {
 
     pub(crate) fn show_unlocked(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         // Left sidebar matching the mockup layout.
+        // The SidePanel's built-in right-edge separator is disabled
+        // (`show_separator_line(false)`) — its sub-pixel anti-aliasing
+        // makes a 1 px low-alpha stroke read as bright white against
+        // the dark bg. We paint our own vline at the bottom of the
+        // closure using the same `Stroke::new(1.0, colors.border)`
+        // every in-sidebar divider uses, so they all look identical.
         egui::SidePanel::left("sidebar")
             .resizable(false)
+            .show_separator_line(false)
             .exact_width(236.0)
-            .frame(
-                egui::Frame::new()
-                    .fill(self.colors.surface)
-                    .stroke(egui::Stroke::new(1.0, self.colors.border)),
-            )
+            .frame(egui::Frame::new().fill(self.colors.surface))
             .show(ctx, |ui| {
                 // ── Logo section ──
                 ui.add_space(20.0);
@@ -417,6 +420,18 @@ impl App {
                         ui.add_space(1.0);
                     });
                 });
+
+                // Hand-painted right-edge separator. Same stroke as
+                // every in-sidebar divider so the boundary tone
+                // matches the "QPV2 / NERVOS NETWORK" line. See the
+                // top of this fn for why the SidePanel's auto
+                // separator is disabled.
+                let panel_rect = ui.clip_rect();
+                ui.painter().vline(
+                    panel_rect.right() - 0.5,
+                    panel_rect.y_range(),
+                    egui::Stroke::new(1.0, self.colors.border),
+                );
             });
 
         // ── Main content area ──
