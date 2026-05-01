@@ -33,8 +33,23 @@ impl App {
         ui.add_space(22.0);
 
         // ── Balance hero card (full width) ──
-        egui::Frame::new()
-            .fill(egui::Color32::from_rgb(10, 24, 24))
+        // Base fill is `colors.surface` — the mockup paints a subtle
+        // 3-stop diagonal gradient on top (accent → accent2 →
+        // accent3) plus a top-right corner glow.
+        //
+        // Index trick: inside the Frame closure we don't yet know the
+        // card's final rect (Frame sizes itself after content lays
+        // out), so we *reserve* shape indices for the gradient and
+        // glow and fill them in after `Frame::show` returns — at
+        // which point `frame_response.response.rect` is the real
+        // card outline. Rendering order is preserved by the indices,
+        // so the gradient + glow stay underneath the labels even
+        // though we set them later.
+        let mut gradient_idx = None;
+        let mut spotlight_idx = None;
+        let mut glow_idx = None;
+        let frame_response = egui::Frame::new()
+            .fill(self.colors.surface)
             .corner_radius(20.0)
             .outer_margin(egui::Margin::symmetric(30, 0))
             .inner_margin(egui::Margin::symmetric(34, 30))
@@ -42,22 +57,14 @@ impl App {
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
 
-                // Inner accent glow — four concentric low-alpha discs
-                // anchored near the top-left corner of the card.
-                // Painted before content so the balance numbers land on
-                // top, and clipped naturally by egui to the card's
-                // rounded bounds.
-                let card_rect = ui.clip_rect();
-                let glow_center = egui::pos2(card_rect.left() + 80.0, card_rect.top() + 40.0);
-                let glow_base = card_rect.width().min(card_rect.height()) * 0.55;
-                let painter = ui.painter();
-                for (scale, alpha) in [(1.00, 3), (0.70, 4), (0.45, 5), (0.22, 7)] {
-                    painter.circle_filled(
-                        glow_center,
-                        glow_base * scale,
-                        egui::Color32::from_rgba_unmultiplied(0, 255, 180, alpha),
-                    );
-                }
+                // Reserve slots for gradient + spotlight + glow
+                // before any label shapes are added, so they paint
+                // underneath. Order: gradient (deepest layer) →
+                // top-left spotlight (lights the balance number) →
+                // top-right corner bloom.
+                gradient_idx = Some(ui.painter().add(egui::Shape::Noop));
+                spotlight_idx = Some(ui.painter().add(egui::Shape::Noop));
+                glow_idx = Some(ui.painter().add(egui::Shape::Noop));
 
                 ui.label(
                     egui::RichText::new("TOTAL BALANCE")
@@ -189,6 +196,72 @@ impl App {
                     });
                 });
             });
+
+        // With the Frame finalized, `response.rect` includes the
+        // outer_margin (30 px horizontal). Shrink it by that margin
+        // to land on the actual painted card outline; otherwise the
+        // gradient mesh and clip rect end up 30 px wider on each
+        // side and bleed past the card horizontally. (egui can't do
+        // rounded clipping; at the four rounded corners the mesh /
+        // glow alpha is already near zero, so the sliver of leakage
+        // past `corner_radius` is imperceptible.)
+        let card_rect = frame_response.response.rect.shrink2(egui::vec2(30.0, 0.0));
+        let painter = ui.painter_at(card_rect);
+
+        if let Some(idx) = gradient_idx {
+            // 135deg gradient: TL accent .07 → BR accent3 .05, with
+            // accent2 .04 on the off-diagonal to bend the sweep.
+            // Built as a rounded-rect mesh so it follows the card's
+            // 20-px corner outline instead of leaving sharp corners
+            // bleeding past the rounded fill.
+            let tl = egui::Color32::from_rgba_unmultiplied(0, 255, 180, 18);
+            let tr = egui::Color32::from_rgba_unmultiplied(0, 200, 255, 10);
+            let brc = egui::Color32::from_rgba_unmultiplied(123, 94, 167, 13);
+            let bl = egui::Color32::from_rgba_unmultiplied(0, 200, 255, 10);
+            let mesh = crate::ui::common::rounded_rect_gradient_mesh(
+                card_rect, 20.0, tl, tr, brc, bl,
+            );
+            painter.set(idx, egui::Shape::mesh(mesh));
+        }
+
+        if let Some(idx) = spotlight_idx {
+            // Top-left spotlight — lights the balance number from
+            // behind. Not part of the mockup CSS strictly (the
+            // mockup only has the top-right ::after bloom), but the
+            // reference screenshot shows a clear accent halo around
+            // the balance, which gives the panel its sense of
+            // depth. Centered roughly behind the start of the
+            // balance digits, broader than the corner glow so it
+            // reads as ambient illumination rather than a localized
+            // highlight.
+            let spot_center =
+                egui::pos2(card_rect.left() + 120.0, card_rect.top() + 80.0);
+            let mesh = crate::ui::common::smooth_glow_mesh(
+                spot_center,
+                170.0,
+                self.colors.accent,
+                26,
+            );
+            painter.set(idx, egui::Shape::mesh(mesh));
+        }
+
+        if let Some(idx) = glow_idx {
+            // Top-right corner glow — `.balance-hero::after`:
+            // 200×200 box at top:-40, right:-40, radial-gradient
+            // peaking at accent .08 and going transparent at 70%.
+            // Decoded geometry: glow center sits at
+            // `(card.right - 60, card.top + 60)` *inside* the card,
+            // visible radius ≈100 px, peak alpha 0.08 ≈ 20/255.
+            let glow_center =
+                egui::pos2(card_rect.right() - 60.0, card_rect.top() + 60.0);
+            let mesh = crate::ui::common::smooth_glow_mesh(
+                glow_center,
+                100.0,
+                self.colors.accent,
+                20,
+            );
+            painter.set(idx, egui::Shape::mesh(mesh));
+        }
 
         ui.add_space(16.0);
 

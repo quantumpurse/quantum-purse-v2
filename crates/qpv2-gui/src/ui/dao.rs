@@ -240,12 +240,23 @@ impl App {
 
         ui.add_space(12.0);
 
-        egui::Frame::new()
+        // Aurora panel: same composition as the dashboard hero and
+        // Transfer card. Reserve indices for gradient + spotlight +
+        // corner bloom under the form widgets, fill them after
+        // `Frame::show` returns when the card's rect is known.
+        let mut gradient_idx = None;
+        let mut spotlight_idx = None;
+        let mut glow_idx = None;
+        let frame_response = egui::Frame::new()
             .fill(self.colors.surface)
             .corner_radius(18.0)
             .inner_margin(egui::Margin::symmetric(28, 26))
             .stroke(egui::Stroke::new(1.0, self.colors.border))
             .show(ui, |ui| {
+                gradient_idx = Some(ui.painter().add(egui::Shape::Noop));
+                spotlight_idx = Some(ui.painter().add(egui::Shape::Noop));
+                glow_idx = Some(ui.painter().add(egui::Shape::Noop));
+
                 ui.label(egui::RichText::new("DAO Deposit").size(20.0).strong().color(self.colors.text));
                 ui.label(
                     egui::RichText::new("Lock CKB to earn compensation against inflation")
@@ -470,6 +481,47 @@ impl App {
                     _ => {}
                 }
             });
+
+        // Aurora layers, painted under the form via the indices we
+        // reserved above. No `outer_margin` on this Frame, so
+        // `response.rect` is the actual card outline.
+        let card_rect = frame_response.response.rect;
+        let painter = ui.painter_at(card_rect);
+
+        if let Some(idx) = gradient_idx {
+            let tl = egui::Color32::from_rgba_unmultiplied(0, 255, 180, 18);
+            let tr = egui::Color32::from_rgba_unmultiplied(0, 200, 255, 10);
+            let brc = egui::Color32::from_rgba_unmultiplied(123, 94, 167, 13);
+            let bl = egui::Color32::from_rgba_unmultiplied(0, 200, 255, 10);
+            let mesh = crate::ui::common::rounded_rect_gradient_mesh(
+                card_rect, 18.0, tl, tr, brc, bl,
+            );
+            painter.set(idx, egui::Shape::mesh(mesh));
+        }
+
+        if let Some(idx) = spotlight_idx {
+            let spot_center =
+                egui::pos2(card_rect.left() + 120.0, card_rect.top() + 80.0);
+            let mesh = crate::ui::common::smooth_glow_mesh(
+                spot_center,
+                170.0,
+                self.colors.accent,
+                26,
+            );
+            painter.set(idx, egui::Shape::mesh(mesh));
+        }
+
+        if let Some(idx) = glow_idx {
+            let glow_center =
+                egui::pos2(card_rect.right() - 60.0, card_rect.top() + 60.0);
+            let mesh = crate::ui::common::smooth_glow_mesh(
+                glow_center,
+                100.0,
+                self.colors.accent,
+                20,
+            );
+            painter.set(idx, egui::Shape::mesh(mesh));
+        }
     }
 
     /// Renders the Active Positions table.

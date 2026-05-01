@@ -6,6 +6,73 @@ use crate::types::{Status, Tab, TransactionStatus};
 use crate::App;
 
 impl App {
+    /// Mockup-faithful background for the Unlocked screen: solid
+    /// `colors.bg` plus three soft radial tints (accent / accent2 /
+    /// accent3) — matches `body::before` in `mockup-ui.html`. Stripped
+    /// of the lattice, constellation, and edge graph used by the lock
+    /// screen so the dashboard reads as a calm dark canvas instead of
+    /// a busy puzzle.
+    pub(crate) fn draw_unlocked_bg(&self, ui: &mut egui::Ui) {
+        let rect = ui.clip_rect();
+        let painter = ui.painter();
+
+        // Solid base.
+        painter.rect_filled(rect, 0.0, self.colors.bg);
+
+        // Three soft radials. Positions and relative sizes mirror the
+        // mockup's CSS `body::before`:
+        //   12% / 18% — accent  (top-left)
+        //   88% / 78% — accent2 (bottom-right)
+        //   50% / 50% — accent3 (center, smaller)
+        //
+        // The mockup's `radial-gradient(... 0%, transparent 60%)`
+        // truncates each gradient at 60% of its ellipse extent —
+        // roughly 30% of the viewport's smallest dimension. Our
+        // earlier 0.50 / 0.35 spread the tails into the center and
+        // across each other, lifting the average bg tint to ~10% and
+        // flattening contrast against the hero. 0.30 / 0.20 keep the
+        // glows tucked at their anchors so most of the bg stays the
+        // solid `colors.bg` the mockup intends.
+        let corner_radius = rect.width().min(rect.height()) * 0.30;
+        let center_radius = rect.width().min(rect.height()) * 0.20;
+
+        // Peak alphas mirror the mockup's CSS exactly — 5%, 5%, 3%.
+        // Earlier values (26/26/16) were almost 2× the spec, lifting
+        // the bg close to the hero's brightness and flattening the
+        // contrast. The hero is the focal point; the bg is supposed
+        // to be barely-there atmosphere.
+        draw_smooth_glow(
+            painter,
+            egui::pos2(
+                rect.left() + rect.width() * 0.12,
+                rect.top() + rect.height() * 0.18,
+            ),
+            corner_radius,
+            self.colors.accent,
+            13,
+        );
+        draw_smooth_glow(
+            painter,
+            egui::pos2(
+                rect.left() + rect.width() * 0.88,
+                rect.bottom() - rect.height() * 0.22,
+            ),
+            corner_radius,
+            self.colors.accent2,
+            13,
+        );
+        draw_smooth_glow(
+            painter,
+            egui::pos2(
+                rect.left() + rect.width() * 0.5,
+                rect.top() + rect.height() * 0.5,
+            ),
+            center_radius,
+            self.colors.accent3,
+            8,
+        );
+    }
+
     pub(crate) fn draw_gradient_bg(&self, ui: &mut egui::Ui) {
         let rect = ui.clip_rect();
         let painter = ui.painter();
@@ -199,6 +266,169 @@ impl App {
             }
         }
     }
+}
+
+/// Builds a radial-glow triangle-fan mesh (center at `peak_alpha`, 48
+/// transparent edge vertices on a circle of `max_radius`) and returns
+/// it. Callers either pass it to `Painter::add` directly via
+/// [`draw_smooth_glow`], or stash it in a reserved shape index via
+/// `Painter::set` when the destination rect isn't known until after
+/// content layout completes (see the dashboard hero, where the card's
+/// final size is only known after `Frame::show` returns).
+///
+/// 48 segments give a smooth circle outline; egui's per-triangle
+/// linear color interpolation does the rest, producing a continuous
+/// alpha falloff with no banding rings.
+pub(crate) fn smooth_glow_mesh(
+    center: egui::Pos2,
+    max_radius: f32,
+    base: egui::Color32,
+    peak_alpha: u8,
+) -> egui::Mesh {
+    const SEGMENTS: usize = 48;
+
+    let mut mesh = egui::Mesh::default();
+    mesh.colored_vertex(
+        center,
+        egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), peak_alpha),
+    );
+    let edge = egui::Color32::TRANSPARENT;
+    for i in 0..SEGMENTS {
+        let theta = (i as f32 / SEGMENTS as f32) * std::f32::consts::TAU;
+        mesh.colored_vertex(
+            egui::pos2(
+                center.x + max_radius * theta.cos(),
+                center.y + max_radius * theta.sin(),
+            ),
+            edge,
+        );
+    }
+    for i in 0..SEGMENTS {
+        let v1 = (i + 1) as u32;
+        let v2 = ((i + 1) % SEGMENTS + 1) as u32;
+        mesh.add_triangle(0, v1, v2);
+    }
+    mesh
+}
+
+/// Convenience wrapper: build the mesh and add it to the painter
+/// immediately. For the unlocked-bg radials and any other call site
+/// where the rect is known before painting.
+pub(crate) fn draw_smooth_glow(
+    painter: &egui::Painter,
+    center: egui::Pos2,
+    max_radius: f32,
+    base: egui::Color32,
+    peak_alpha: u8,
+) {
+    painter.add(egui::Shape::mesh(smooth_glow_mesh(
+        center, max_radius, base, peak_alpha,
+    )));
+}
+
+/// Builds a rounded-rectangle mesh with bilinear color interpolation
+/// across `(tl, tr, br, bl)`. Use to paint a gradient that *follows*
+/// the rounded outline — egui can't clip a regular mesh to rounded
+/// corners, so a rectangular gradient mesh leaks past the curve into
+/// the panel bg. This mesh's perimeter traces the actual rounded
+/// shape (8 segments per corner arc), so there's nothing to leak.
+///
+/// Triangulation: a single fan from the center vertex out to each
+/// consecutive pair of perimeter vertices. Per-vertex color comes
+/// from bilinear interpolation across the bounding rect.
+pub(crate) fn rounded_rect_gradient_mesh(
+    rect: egui::Rect,
+    radius: f32,
+    tl: egui::Color32,
+    tr: egui::Color32,
+    br: egui::Color32,
+    bl: egui::Color32,
+) -> egui::Mesh {
+    const ARC_SEGS: usize = 8;
+
+    let mut mesh = egui::Mesh::default();
+
+    // Center vertex — averaged corner color.
+    let center = rect.center();
+    let center_color = avg4(tl, tr, br, bl);
+    let center_idx = mesh.vertices.len() as u32;
+    mesh.colored_vertex(center, center_color);
+
+    // Perimeter vertices, clockwise. Each corner arc sweeps a
+    // quarter circle around its inset center; arc start angles are
+    // chosen so vertices land on the rounded outline going clockwise
+    // from the TL corner.
+    let mut perim: Vec<u32> = Vec::new();
+    let corners = [
+        (egui::pos2(rect.left() + radius, rect.top() + radius), std::f32::consts::PI),
+        (egui::pos2(rect.right() - radius, rect.top() + radius), 1.5 * std::f32::consts::PI),
+        (egui::pos2(rect.right() - radius, rect.bottom() - radius), 0.0),
+        (egui::pos2(rect.left() + radius, rect.bottom() - radius), 0.5 * std::f32::consts::PI),
+    ];
+    for (arc_center, start_angle) in &corners {
+        for i in 0..=ARC_SEGS {
+            let t = i as f32 / ARC_SEGS as f32;
+            let angle = start_angle + t * std::f32::consts::FRAC_PI_2;
+            let p = egui::pos2(
+                arc_center.x + radius * angle.cos(),
+                arc_center.y + radius * angle.sin(),
+            );
+            let color = bilinear(p, rect, tl, tr, br, bl);
+            let idx = mesh.vertices.len() as u32;
+            mesh.colored_vertex(p, color);
+            perim.push(idx);
+        }
+    }
+
+    // Fan triangles.
+    let n = perim.len();
+    for i in 0..n {
+        let v1 = perim[i];
+        let v2 = perim[(i + 1) % n];
+        mesh.add_triangle(center_idx, v1, v2);
+    }
+
+    mesh
+}
+
+fn avg4(a: egui::Color32, b: egui::Color32, c: egui::Color32, d: egui::Color32) -> egui::Color32 {
+    let avg =
+        |w: u8, x: u8, y: u8, z: u8| ((w as u16 + x as u16 + y as u16 + z as u16) / 4) as u8;
+    egui::Color32::from_rgba_unmultiplied(
+        avg(a.r(), b.r(), c.r(), d.r()),
+        avg(a.g(), b.g(), c.g(), d.g()),
+        avg(a.b(), b.b(), c.b(), d.b()),
+        avg(a.a(), b.a(), c.a(), d.a()),
+    )
+}
+
+fn bilinear(
+    p: egui::Pos2,
+    rect: egui::Rect,
+    tl: egui::Color32,
+    tr: egui::Color32,
+    br: egui::Color32,
+    bl: egui::Color32,
+) -> egui::Color32 {
+    let u = ((p.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
+    let v = ((p.y - rect.top()) / rect.height()).clamp(0.0, 1.0);
+    let top = lerp_color(tl, tr, u);
+    let bot = lerp_color(bl, br, u);
+    lerp_color(top, bot, v)
+}
+
+/// Linearly interpolates between two RGBA colours at fraction `t`
+/// (clamped to `[0, 1]`). Used by the gradient mesh builders here and
+/// by the node-manager sync-bar gradient.
+pub(crate) fn lerp_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let mix = |x: u8, y: u8| (x as f32 * (1.0 - t) + y as f32 * t).round() as u8;
+    egui::Color32::from_rgba_unmultiplied(
+        mix(a.r(), b.r()),
+        mix(a.g(), b.g()),
+        mix(a.b(), b.b()),
+        mix(a.a(), b.a()),
+    )
 }
 
 /// Paints a radial glow as seven concentric discs whose per-disc alpha

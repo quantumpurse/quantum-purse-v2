@@ -423,7 +423,7 @@ impl App {
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(self.colors.bg))
             .show(ctx, |ui| {
-                self.draw_gradient_bg(ui);
+                self.draw_unlocked_bg(ui);
 
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.add_space(24.0);
