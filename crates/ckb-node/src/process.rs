@@ -1,17 +1,10 @@
 use crate::config::{NetworkType, NodeConfig, NodeType};
 use crate::error::NodeManagerError;
 use std::fs::File;
-use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
-
-/// How long to wait for the node RPC to become reachable after starting.
-const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// How long to wait between RPC health-check polls during startup.
-const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 /// How long to wait for the node to exit gracefully before sending SIGKILL.
 const SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(5);
@@ -29,9 +22,15 @@ const MAINNET_TEMPLATE: &str = include_str!("../../../vendor/ckb-light-client/co
 /// supported backends. Construction is per-impl via `start(&NodeConfig)`;
 /// the post-construction surface is what `dyn NodeProcess` exposes.
 pub trait NodeProcess: Send {
-    /// Spawn the binary, materialize any required on-disk config, and
-    /// wait until the RPC port is reachable. Each impl picks its own
-    /// binary discovery + config-prep strategy.
+    /// Spawn the binary and materialize any required on-disk config.
+    /// Returns as soon as `Command::spawn` hands back the child handle —
+    /// this is fire-and-forget; RPC readiness is *not* awaited. Each
+    /// impl picks its own binary-discovery + config-prep strategy.
+    ///
+    /// The caller is responsible for discovering when the node is
+    /// actually serving RPC (the GUI does this via `fetch_node_status`
+    /// polling the `online` flag) and for surfacing early-exit failures
+    /// (via the poller's `is_running` watchdog).
     ///
     /// `where Self: Sized` keeps the trait object-safe — `start` is part
     /// of the contract every impl must satisfy, but cannot be dispatched
@@ -82,8 +81,7 @@ impl NodeProcess for LightClientProcess {
         let mut command = Command::new(&binary);
         command.arg("run").arg("--config-file").arg(&config_path);
 
-        let mut child = execute(command, &log_path)?;
-        wait_for_rpc(&mut child, &config.rpc_url)?;
+        let child = execute(command, &log_path)?;
 
         Ok(Self { child })
     }
@@ -140,8 +138,7 @@ impl NodeProcess for FullNodeProcess {
         let mut command = Command::new(&binary);
         command.arg("run").arg("-C").arg(&data_dir);
 
-        let mut child = execute(command, &log_path)?;
-        wait_for_rpc(&mut child, &config.rpc_url)?;
+        let child = execute(command, &log_path)?;
 
         Ok(Self { child })
     }
@@ -239,56 +236,6 @@ fn send_terminate_signal(child: &Child) {
     {
         let _ = child;
     }
-}
-
-/// Polls a TCP connect against the RPC's host:port until it opens or
-/// `STARTUP_TIMEOUT` elapses. Aborts (kills the child) and returns an
-/// error on timeout.
-fn wait_for_rpc(child: &mut Child, rpc_url: &str) -> Result<(), NodeManagerError> {
-    let addr = parse_host_port(rpc_url)?;
-    let deadline = Instant::now() + STARTUP_TIMEOUT;
-
-    while Instant::now() < deadline {
-        if let Ok(Some(status)) = child.try_wait() {
-            return Err(NodeManagerError::ProcessError(format!(
-                "Node process exited during startup with status: {status}"
-            )));
-        }
-        if TcpStream::connect_timeout(&addr, Duration::from_secs(1)).is_ok() {
-            return Ok(());
-        }
-        thread::sleep(POLL_INTERVAL);
-    }
-
-    let _ = child.kill();
-    let _ = child.wait();
-    Err(NodeManagerError::ProcessError(format!(
-        "Node RPC at {rpc_url} did not become reachable within {} seconds.",
-        STARTUP_TIMEOUT.as_secs()
-    )))
-}
-
-fn parse_host_port(rpc_url: &str) -> Result<std::net::SocketAddr, NodeManagerError> {
-    let without_scheme = rpc_url
-        .strip_prefix("https://")
-        .or_else(|| rpc_url.strip_prefix("http://"))
-        .unwrap_or(rpc_url);
-
-    let host_port = without_scheme.split('/').next().unwrap_or(without_scheme);
-
-    let addr_str = if host_port.contains(':') {
-        host_port.to_string()
-    } else if rpc_url.starts_with("https://") {
-        format!("{host_port}:443")
-    } else {
-        format!("{host_port}:80")
-    };
-
-    addr_str.parse().map_err(|e| {
-        NodeManagerError::ConfigError(format!(
-            "Cannot parse RPC URL '{rpc_url}' as socket address: {e}"
-        ))
-    })
 }
 
 // ── Light-client config helpers ──────────────────────────────────────────
