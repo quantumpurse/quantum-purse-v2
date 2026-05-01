@@ -258,11 +258,16 @@ impl App {
                 } else {
                     default_port(url)
                 };
+                let peers = if active {
+                    peers_text(self.node_status.peer_count)
+                } else {
+                    DASH.into()
+                };
                 vec![
                     ("Block Height", block_height),
                     ("Endpoint", hostname_of(url)),
                     ("Port", port),
-                    ("Peers", DASH.into()),
+                    ("Peers", peers),
                 ]
             }
             NodeType::LightClient | NodeType::FullNode => {

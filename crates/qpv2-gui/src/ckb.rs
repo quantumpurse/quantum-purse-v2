@@ -603,6 +603,22 @@ impl App {
 
     /// Refresh the Node Manager card's cached status in a background
     /// thread. One in-flight poll at a time (`node_status_rx` guards).
+    ///
+    /// Each field falls back to the previous reading on RPC error so
+    /// transient failures (RPC server warming up after a backend
+    /// switch, brief network blip) don't wipe the displayed values to
+    /// "—" only to repopulate on the next tick. The `Result<Option<T>, _>`
+    /// returned by each `qp_client` method is matched here at the
+    /// boundary, before `.ok().flatten()` would collapse "RPC errored"
+    /// and "legitimately empty" into the same `None` — preserving that
+    /// distinction is what lets the merge be honest:
+    ///
+    /// - `Ok(Some(v))` / `Ok(None)` → trust the RPC's answer.
+    /// - `Err(_)` → keep the last-known value.
+    ///
+    /// `online` reflects *this poll's* reachability via `get_tip_header`,
+    /// so the status pill flips correctly during a blip even though the
+    /// metric tiles hold their values.
     pub(crate) fn fetch_node_status(&mut self) {
         if self.node_status_rx.is_some() {
             return;
@@ -612,41 +628,48 @@ impl App {
         let rpc_port = parse_rpc_port(&cfg.rpc_url);
         let data_dir = cfg.node_data_dir();
         let is_local = cfg.requires_binary();
-        let node_type = cfg.node_type;
         let has_process = self.local_node.has_local_process();
         let qp_client = self.qp_client.clone();
+        let cached = self.node_status.clone();
 
         let (tx, rx) = mpsc::channel();
         self.node_status_rx = Some(rx);
 
         std::thread::spawn(move || {
-            // Tip header — the primary online-ness signal.
-            let tip_block = match qp_client.get_tip_header() {
+            // Tip header — drives the `online` flag. The flag tracks
+            // *this poll's* reachability, but the displayed `tip_block`
+            // falls back to cached so transient errors don't flicker.
+            let tip_result = qp_client.get_tip_header();
+            let online = tip_result.is_ok();
+            let tip_block = match tip_result {
                 Ok(h) => Some(h.inner.number.value()),
-                Err(_) => None,
+                Err(_) => cached.tip_block,
             };
-            let online = tip_block.is_some();
 
-            // Peer count — None for PublicRpc by design.
-            let peer_count = qp_client.peer_count(node_type)
-                .ok()
-                .flatten();
+            // Peer count — `Ok(None)` only for PublicRpc (policy).
+            let peer_count = match qp_client.peer_count() {
+                Ok(v) => v,
+                Err(_) => cached.peer_count,
+            };
 
-            // Synced block — None for PublicRpc/FullNode and when no
-            // scripts are registered yet (fresh light client).
-            let synced_block = qp_client.synced_block()
-                .ok()
-                .flatten();
+            // Synced block — `Ok(None)` when LC has no scripts
+            // registered (legit) or on non-LC backends.
+            let synced_block = match qp_client.synced_block() {
+                Ok(v) => v,
+                Err(_) => cached.synced_block,
+            };
 
-            // Sync state — None outside FullNode. Drives the IBD phase
-            // label + bar fill on the Full Node card.
-            let sync_state = qp_client.sync_state().ok().flatten();
+            // Sync state — `Ok(None)` outside FullNode (legit).
+            let sync_state = match qp_client.sync_state() {
+                Ok(v) => v,
+                Err(_) => cached.sync_state,
+            };
 
-            // DB size — only meaningful for local backends. Treat walk
-            // failures as "not available" rather than propagating; the
-            // directory may not exist yet on a fresh spawn.
+            // DB size — only meaningful for local backends. Walk
+            // failures fall back to cached (the directory may briefly
+            // disappear during process restart).
             let db_size_bytes = if is_local && has_process {
-                directory_size(&data_dir).ok()
+                directory_size(&data_dir).ok().or(cached.db_size_bytes)
             } else {
                 None
             };

@@ -278,18 +278,9 @@ impl QpClient {
     /// (peer count of a remote endpoint isn't meaningful wallet-side).
     /// `Err` when the local node is unreachable.
     pub fn peer_count(
-        &self,
-        node_type: NodeType,
+        &self
     ) -> Result<Option<usize>, NodeManagerError> {
-        // FullNodeClient backs both `FullNode` and `PublicRpc`; for the
-        // remote-endpoint case, peer count of a service we don't run isn't
-        // meaningful wallet-side, so suppress it.
-        match node_type {
-            NodeType::PublicRpc => Ok(None),
-            NodeType::FullNode | NodeType::LightClient => {
-                self.unified_client.get_peer_count().map(Some)
-            }
-        }
+        self.unified_client.get_peer_count().map(Some)
     }
 
     /// Min synced block across all scripts the LC is tracking. `Ok(None)`
