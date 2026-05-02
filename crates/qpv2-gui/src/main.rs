@@ -1,6 +1,6 @@
 //! GUI for SPHINCS+ key vault with Passkey PRF / Touch ID support.
 
-mod auth;
+mod pinentry;
 mod ckb;
 #[cfg(target_os = "macos")]
 mod passkey;
@@ -144,7 +144,7 @@ pub(crate) struct App {
     pub(crate) auth_method: Option<qpv2_core::types::AuthMethod>,
     // True when App::new put us into `Screen::Unlocked` directly
     // (password-mode wallet at startup) and the first frame still
-    // needs to run the same fetches `unlock_finish` does. Cleared
+    // needs to run the same fetches `unlock_with_passkey_finish` does. Cleared
     // on the first `update()` after consumption.
     pub(crate) pending_unlocked_session_setup: bool,
 
@@ -375,7 +375,7 @@ impl eframe::App for App {
 
         // First-frame setup for password-mode wallets that App::new
         // dropped straight into Screen::Unlocked. Mirrors what
-        // `unlock_finish` does for Touch ID wallets after a
+        // `unlock_with_passkey_finish` does for Touch ID wallets after a
         // successful unlock.
         if self.pending_unlocked_session_setup {
             self.pending_unlocked_session_setup = false;

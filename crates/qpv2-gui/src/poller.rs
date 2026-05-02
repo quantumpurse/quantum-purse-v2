@@ -81,7 +81,7 @@ impl App {
                     });
                 }
                 Some(Ok(Some(prf_output))) => {
-                    self.create_wallet_finish(variant, &credential_id, &prf_output);
+                    self.create_wallet_with_passkey_finish(variant, &credential_id, &prf_output);
                 }
                 Some(Ok(None)) => {
                     self.status = Status::Error(
@@ -100,7 +100,7 @@ impl App {
                     self.passkey_op = Some(PasskeyOp::UnlockAssert { op });
                 }
                 Some(Ok(_)) => {
-                    self.unlock_finish();
+                    self.unlock_with_passkey_finish();
                 }
                 Some(Err(passkey_prf::PrfError::Cancelled)) => {
                     self.status = Status::Info("Cancelled.".to_string());
@@ -145,7 +145,7 @@ impl App {
                     });
                 }
                 Some(Ok(Some(prf_output))) => {
-                    self.sign_and_send(kind, &prf_output, unsigned_tx, input_cells, lock_args);
+                    self.sign_and_send_with_passkey(kind, &prf_output, unsigned_tx, input_cells, lock_args);
                 }
                 Some(Ok(None)) => {
                     self.tx_status = TransactionStatus::Error(

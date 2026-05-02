@@ -1,4 +1,4 @@
-use super::constants::{ENC_SCRYPT, IV_LENGTH, PRF_HKDF_DOMAIN, SALT_LENGTH};
+use super::constants::{ENC_SCRYPT, IV_LENGTH, VAULT_ENC_KEY_HKDF_INFO, SALT_LENGTH};
 use super::types::{AuthKey, CipherPayload, ScryptParam};
 use crate::containers::{SecureString, SecureVec};
 use aes_gcm::{
@@ -190,8 +190,8 @@ pub fn decrypt_with_password(password: &[u8], payload: CipherPayload) -> Result<
 ///
 /// **Returns**:
 /// - `Result<SecureVec, String>` - The derived 32-byte AES key on success, or an error on failure.
-pub fn derive_key_from_prf(prf_output: &[u8]) -> Result<SecureVec, String> {
-    derive_hkdf_key(prf_output, PRF_HKDF_DOMAIN, 32)
+pub fn derive_vault_enc_key(prf_output: &[u8]) -> Result<SecureVec, String> {
+    derive_hkdf_key(prf_output, VAULT_ENC_KEY_HKDF_INFO, 32)
 }
 
 /// Encrypts data using the appropriate method based on the authentication key.

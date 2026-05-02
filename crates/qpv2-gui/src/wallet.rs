@@ -210,7 +210,7 @@ impl App {
     }
 
     /// Kick off async passkey registration.
-    pub(crate) fn create_wallet_start(&mut self, frame: &mut eframe::Frame) {
+    pub(crate) fn create_wallet_with_passkey_start(&mut self, frame: &mut eframe::Frame) {
         let window = match crate::window_handle::get_ns_window(frame) {
             Ok(w) => w,
             Err(e) => {
@@ -238,19 +238,20 @@ impl App {
     }
 
     /// Complete wallet creation after receiving the PRF output.
-    pub(crate) fn create_wallet_finish(
+    pub(crate) fn create_wallet_with_passkey_finish(
         &mut self,
         variant: SpxVariant,
         credential_id: &[u8],
         prf_output: &qpv2_core::SecureVec,
     ) {
-        let key = match qpv2_core::utilities::derive_key_from_prf(prf_output) {
+        let key = match qpv2_core::utilities::derive_vault_enc_key(prf_output) {
             Ok(k) => k,
             Err(e) => {
                 self.status = Status::Error(format!("Key derivation failed: {}", e));
                 return;
             }
         };
+        let cloned_key = key.clone();
 
         let vault = KeyVault::new(variant);
         let auth_method = AuthMethod::PasskeyPrf {
@@ -261,16 +262,7 @@ impl App {
             return;
         }
 
-        // Re-derive key to generate the first account.
-        let key = match qpv2_core::utilities::derive_key_from_prf(prf_output) {
-            Ok(k) => k,
-            Err(e) => {
-                self.status = Status::Error(format!("Key derivation failed: {}", e));
-                self.screen = Screen::Locked;
-                return;
-            }
-        };
-        if let Err(e) = vault.gen_new_account(AuthKey::CryptoKey(key)) {
+        if let Err(e) = vault.gen_new_account(AuthKey::CryptoKey(cloned_key)) {
             self.status = Status::Error(format!("Failed to create first account: {}", e));
             self.screen = Screen::Locked;
             return;
@@ -321,7 +313,7 @@ impl App {
     }
 
     /// Kick off async credential-only assertion (no PRF) for unlock.
-    pub(crate) fn unlock_start(&mut self, frame: &mut eframe::Frame) {
+    pub(crate) fn unlock_with_passkey_start(&mut self, frame: &mut eframe::Frame) {
         let window = match crate::window_handle::get_ns_window(frame) {
             Ok(w) => w,
             Err(e) => {
@@ -348,7 +340,7 @@ impl App {
     }
 
     /// Complete wallet unlock after credential assertion succeeds.
-    pub(crate) fn unlock_finish(&mut self) {
+    pub(crate) fn unlock_with_passkey_finish(&mut self) {
         match KeyVault::get_all_sphincs_lock_args() {
             Ok(lock_args) => {
                 self.accounts = lock_args;
@@ -405,7 +397,7 @@ impl App {
 
     /// Complete new account creation after receiving the PRF output.
     pub(crate) fn create_new_account_finish(&mut self, prf_output: &qpv2_core::SecureVec) {
-        let key = match qpv2_core::utilities::derive_key_from_prf(prf_output) {
+        let key = match qpv2_core::utilities::derive_vault_enc_key(prf_output) {
             Ok(k) => k,
             Err(e) => {
                 self.status = Status::Error(format!("Key derivation failed: {}", e));
@@ -462,7 +454,7 @@ impl App {
     /// `Screen::Unlocked`. Cancellation surfaces as a quiet info
     /// banner; nothing else changes.
     pub(crate) fn create_wallet_with_password(&mut self, variant: SpxVariant) {
-        let pw = match crate::auth::prompt_password_with_confirmation(
+        let pw = match crate::pinentry::prompt_password_with_confirmation(
             "Choose a password for your wallet. You'll be prompted for it \
              again on every signing operation.",
             "Password:",
@@ -489,7 +481,7 @@ impl App {
         // path (one Touch ID → PRF used twice) and the CLI path (one
         // input → reused) by cloning the SecureString once instead of
         // re-prompting. Both copies zeroize-on-drop.
-        let pw_for_account = qpv2_core::SecureString::from_string(pw.to_string());
+        let pw_for_account = pw.clone();
         let vault = KeyVault::new(variant);
         if let Err(e) =
             vault.generate_master_seed(AuthKey::Password(pw), AuthMethod::Password)
@@ -500,7 +492,6 @@ impl App {
 
         if let Err(e) = vault.gen_new_account(AuthKey::Password(pw_for_account)) {
             self.status = Status::Error(format!("Failed to create first account: {}", e));
-            self.screen = Screen::Locked;
             self.auth_method = Some(AuthMethod::Password);
             return;
         }
@@ -524,7 +515,6 @@ impl App {
             }
             Err(e) => {
                 self.status = Status::Error(format!("Failed to read accounts: {}", e));
-                self.screen = Screen::Locked;
                 self.auth_method = Some(AuthMethod::Password);
             }
         }
@@ -534,7 +524,7 @@ impl App {
     /// Synchronous: blocks the egui update loop while the pinentry
     /// dialog is up.
     pub(crate) fn create_new_account_with_password(&mut self) {
-        let pw = match crate::auth::prompt_password(
+        let pw = match crate::pinentry::prompt_password(
             "Enter your wallet password to create a new account.",
             "Password:",
         ) {
@@ -576,32 +566,4 @@ impl App {
             }
         }
     }
-
-    /// Prompt for the wallet password and hand the resulting
-    /// `AuthKey::Password` to the sign-and-send core. Synchronous;
-    /// blocks the egui update loop while the dialog is up.
-    pub(crate) fn sign_and_send_with_password(
-        &mut self,
-        kind: crate::types::TransactionKind,
-        unsigned_tx: ckb_types::core::TransactionView,
-        input_cells: Vec<(
-            ckb_types::packed::CellOutput,
-            ckb_types::bytes::Bytes,
-        )>,
-        lock_args: String,
-    ) {
-        let pw = match crate::auth::prompt_password(
-            "Enter your wallet password to authorize this transaction.",
-            "Password:",
-        ) {
-            Ok(s) => s,
-            Err(e) => {
-                self.tx_status = TransactionStatus::Idle;
-                self.status = Status::Error(e);
-                return;
-            }
-        };
-        self.sign_and_send_with_auth(kind, AuthKey::Password(pw), unsigned_tx, input_cells, lock_args);
-    }
-
 }
