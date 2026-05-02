@@ -372,7 +372,8 @@ impl App {
         });
     }
 
-    /// After Touch ID returns the PRF output, sign and send the transaction.
+    /// After Touch ID returns the PRF output, derive the encryption
+    /// key and hand it to the auth-agnostic signing core.
     pub(crate) fn sign_and_send(
         &mut self,
         kind: TransactionKind,
@@ -381,7 +382,6 @@ impl App {
         input_cells: Vec<(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)>,
         lock_args: String,
     ) {
-        use ckb_types::prelude::*;
         use qpv2_core::types::AuthKey;
 
         let key = match qpv2_core::utilities::derive_key_from_prf(prf_output) {
@@ -391,6 +391,29 @@ impl App {
                 return;
             }
         };
+        self.sign_and_send_with_auth(
+            kind,
+            AuthKey::CryptoKey(key),
+            unsigned_tx,
+            input_cells,
+            lock_args,
+        );
+    }
+
+    /// Auth-mechanism-agnostic signing core. Used by both the PRF
+    /// flow (`sign_and_send`) and the password flow
+    /// (`sign_and_send_with_password` in `wallet.rs`). Builds the CKB
+    /// tx-message hash, signs via SPHINCS+, fills the witness, and
+    /// kicks off the send-tx background thread.
+    pub(crate) fn sign_and_send_with_auth(
+        &mut self,
+        kind: TransactionKind,
+        auth: qpv2_core::types::AuthKey,
+        unsigned_tx: ckb_types::core::TransactionView,
+        input_cells: Vec<(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)>,
+        lock_args: String,
+    ) {
+        use ckb_types::prelude::*;
 
         let variant = match KeyVault::get_spx_variant() {
             Ok(v) => v,
@@ -437,7 +460,7 @@ impl App {
         let message = hasher.hash().to_vec();
 
         let vault = KeyVault::new(variant);
-        let signature_bytes = match vault.ckb_sign(AuthKey::CryptoKey(key), lock_args, message) {
+        let signature_bytes = match vault.ckb_sign(auth, lock_args, message) {
             Ok(sig) => sig,
             Err(e) => {
                 self.tx_status = TransactionStatus::Error(format!("Signing failed: {}", e));

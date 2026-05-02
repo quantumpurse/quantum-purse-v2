@@ -226,11 +226,22 @@ impl App {
         });
 
         // Check if a wallet already exists by trying to read wallet info.
-        let screen = if KeyVault::wallet_exists() {
-            Screen::Locked
-        } else {
-            Screen::Setup
-        };
+        // Password-mode wallets skip the Locked screen entirely —
+        // there's no per-session unlock barrier; every privileged op
+        // re-prompts the password individually. Touch ID wallets keep
+        // the existing Locked → unlock flow.
+        let (screen, auth_method, accounts, pending_unlocked_session_setup) =
+            if KeyVault::wallet_exists() {
+                let am = KeyVault::read_wallet_info().ok().map(|w| w.auth_method);
+                if matches!(am, Some(qpv2_core::types::AuthMethod::Password)) {
+                    let accs = KeyVault::get_all_sphincs_lock_args().unwrap_or_default();
+                    (Screen::Unlocked, am, accs, true)
+                } else {
+                    (Screen::Locked, am, Vec::new(), false)
+                }
+            } else {
+                (Screen::Setup, None, Vec::new(), false)
+            };
 
         // Restore the last-known node configuration (network + backend +
         // RPC URL) so reopening the app preserves the user's previous
@@ -277,7 +288,7 @@ impl App {
             colors,
             selected_variant: SpxVariant::Sha2128S,
             active_tab: Tab::Dashboard,
-            accounts: Vec::new(),
+            accounts,
             confirm_remove: false,
             balances: HashMap::new(),
             local_node,
@@ -361,6 +372,20 @@ impl eframe::App for App {
         // Poll passkey operations each frame.
         #[cfg(target_os = "macos")]
         self.poll_passkey_ops();
+
+        // First-frame setup for password-mode wallets that App::new
+        // dropped straight into Screen::Unlocked. Mirrors what
+        // `unlock_finish` does for Touch ID wallets after a
+        // successful unlock.
+        if self.pending_unlocked_session_setup {
+            self.pending_unlocked_session_setup = false;
+            self.last_poll_time = std::time::Instant::now();
+            self.load_tx_history_from_disk();
+            self.fetch_all_balances();
+            self.fetch_tx_history(true);
+            self.fetch_dao_cells();
+            self.fetch_node_status();
+        }
 
         if self.screen == Screen::Unlocked {
             self.tick_status(ctx);
