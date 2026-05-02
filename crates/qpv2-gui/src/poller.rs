@@ -207,6 +207,22 @@ impl App {
         match rx.try_recv() {
             Ok(Ok((kind, unsigned_tx, input_cells, lock_args))) => {
                 self.transaction_build_rx = None;
+
+                // Route based on the wallet's auth method.
+                // - Password: synchronous pinentry prompt → sign + send.
+                // - PasskeyPrf (or unknown): existing Touch ID path.
+                use qpv2_core::types::AuthMethod;
+                if matches!(self.auth_method, Some(AuthMethod::Password)) {
+                    self.tx_status = TransactionStatus::AwaitingSignature;
+                    self.sign_and_send_with_password(
+                        kind,
+                        unsigned_tx,
+                        input_cells,
+                        lock_args,
+                    );
+                    return;
+                }
+
                 #[cfg(target_os = "macos")]
                 {
                     let window = match crate::window_handle::get_ns_window(frame) {

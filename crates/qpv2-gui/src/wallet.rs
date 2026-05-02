@@ -367,8 +367,16 @@ impl App {
         }
     }
 
-    /// Kick off async PRF assertion to create a new account (requires seed decryption).
+    /// Kick off the appropriate auth flow to create a new account.
+    /// Branches on the wallet's recorded `auth_method`:
+    /// - `Password` → synchronous pinentry prompt + derive.
+    /// - `PasskeyPrf` (or unknown) → async PRF assertion via Touch ID.
     pub(crate) fn create_new_account_start(&mut self, frame: &mut eframe::Frame) {
+        if matches!(self.auth_method, Some(AuthMethod::Password)) {
+            self.create_new_account_with_password();
+            return;
+        }
+
         let window = match crate::window_handle::get_ns_window(frame) {
             Ok(w) => w,
             Err(e) => {
@@ -443,4 +451,157 @@ impl App {
             }
         }
     }
+
+    // ── Password auth flows ────────────────────────────────────────
+
+    /// Create a password-mode wallet. Opens the pinentry dialog with
+    /// a confirmation field — the dialog itself enforces the match
+    /// (the user can't submit until both fields agree). On submit,
+    /// validates strength via `password_checker`, generates the
+    /// master seed, derives the first account, and transitions to
+    /// `Screen::Unlocked`. Cancellation surfaces as a quiet info
+    /// banner; nothing else changes.
+    pub(crate) fn create_wallet_with_password(&mut self, variant: SpxVariant) {
+        let pw = match crate::auth::prompt_password_with_confirmation(
+            "Choose a password for your wallet. You'll be prompted for it \
+             again on every signing operation.",
+            "Password:",
+            "Confirm:",
+            "Passwords do not match.",
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+
+        let strength_str = match qpv2_core::utilities::password_checker(&pw) {
+            Ok(bits) => format!(" Password strength: {} bits.", bits),
+            Err(e) => {
+                self.status = Status::Error(format!("Weak password: {}", e));
+                return;
+            }
+        };
+
+        // `generate_master_seed` and `gen_new_account` each consume an
+        // owned `AuthKey::Password(SecureString)`. Mirror the passkey
+        // path (one Touch ID → PRF used twice) and the CLI path (one
+        // input → reused) by cloning the SecureString once instead of
+        // re-prompting. Both copies zeroize-on-drop.
+        let pw_for_account = qpv2_core::SecureString::from_string(pw.to_string());
+        let vault = KeyVault::new(variant);
+        if let Err(e) =
+            vault.generate_master_seed(AuthKey::Password(pw), AuthMethod::Password)
+        {
+            self.status = Status::Error(format!("Failed to create wallet: {}", e));
+            return;
+        }
+
+        if let Err(e) = vault.gen_new_account(AuthKey::Password(pw_for_account)) {
+            self.status = Status::Error(format!("Failed to create first account: {}", e));
+            self.screen = Screen::Locked;
+            self.auth_method = Some(AuthMethod::Password);
+            return;
+        }
+
+        match KeyVault::get_all_sphincs_lock_args() {
+            Ok(lock_args) => {
+                self.accounts = lock_args;
+                self.auth_method = Some(AuthMethod::Password);
+                self.register_lock_scripts_with_light_client(&self.accounts.clone());
+                self.screen = Screen::Unlocked;
+                self.status = Status::Info(format!(
+                    "Wallet created successfully!{}",
+                    strength_str
+                ));
+                self.last_poll_time = std::time::Instant::now();
+                self.load_tx_history_from_disk();
+                self.fetch_all_balances();
+                self.fetch_tx_history(true);
+                self.fetch_dao_cells();
+                self.fetch_node_status();
+            }
+            Err(e) => {
+                self.status = Status::Error(format!("Failed to read accounts: {}", e));
+                self.screen = Screen::Locked;
+                self.auth_method = Some(AuthMethod::Password);
+            }
+        }
+    }
+
+    /// Prompt for the wallet password and derive a new account.
+    /// Synchronous: blocks the egui update loop while the pinentry
+    /// dialog is up.
+    pub(crate) fn create_new_account_with_password(&mut self) {
+        let pw = match crate::auth::prompt_password(
+            "Enter your wallet password to create a new account.",
+            "Password:",
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+
+        let variant = match KeyVault::get_spx_variant() {
+            Ok(v) => v,
+            Err(e) => {
+                self.status = Status::Error(format!("Failed to read wallet variant: {}", e));
+                return;
+            }
+        };
+        let vault = KeyVault::new(variant);
+        match vault.gen_new_account(AuthKey::Password(pw)) {
+            Ok(lock_args) => {
+                self.balances.insert(lock_args.clone(), None);
+                let qp_client = self.qp_client.clone();
+                let args = lock_args.clone();
+                let (tx, rx) = std::sync::mpsc::channel();
+                self.balance_receiver = Some(rx);
+                std::thread::spawn(move || {
+                    let result = ckb_node::wallet_helpers::queries::fetch_quantum_lock_balance(
+                        &qp_client, &args,
+                    )
+                    .map_err(|e| e.to_string());
+                    let _ = tx.send((args, result));
+                });
+                self.accounts.push(lock_args.clone());
+                self.register_lock_scripts_with_light_client(std::slice::from_ref(&lock_args));
+                self.status = Status::Info("New account created!".to_string());
+            }
+            Err(e) => {
+                self.status = Status::Error(format!("Failed to create account: {}", e));
+            }
+        }
+    }
+
+    /// Prompt for the wallet password and hand the resulting
+    /// `AuthKey::Password` to the sign-and-send core. Synchronous;
+    /// blocks the egui update loop while the dialog is up.
+    pub(crate) fn sign_and_send_with_password(
+        &mut self,
+        kind: crate::types::TransactionKind,
+        unsigned_tx: ckb_types::core::TransactionView,
+        input_cells: Vec<(
+            ckb_types::packed::CellOutput,
+            ckb_types::bytes::Bytes,
+        )>,
+        lock_args: String,
+    ) {
+        let pw = match crate::auth::prompt_password(
+            "Enter your wallet password to authorize this transaction.",
+            "Password:",
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                self.tx_status = TransactionStatus::Idle;
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+        self.sign_and_send_with_auth(kind, AuthKey::Password(pw), unsigned_tx, input_cells, lock_args);
+    }
+
 }

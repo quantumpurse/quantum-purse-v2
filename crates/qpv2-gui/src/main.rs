@@ -1,5 +1,6 @@
 //! GUI for SPHINCS+ key vault with Passkey PRF / Touch ID support.
 
+mod auth;
 mod ckb;
 #[cfg(target_os = "macos")]
 mod passkey;
@@ -134,6 +135,18 @@ pub(crate) struct App {
     // false and the LC is reachable, so the post-spawn race against
     // RPC readiness is invisible to the user. Reset on backend switch.
     pub(crate) lc_qr_dep_warmup_done: bool,
+
+    // ── Auth state ──
+    // The auth method recorded in `wallet_info.json`, populated at
+    // startup and after wallet creation. Drives Locked-screen rendering
+    // (Touch ID button vs none) and per-op routing (Touch ID async
+    // flow vs synchronous pinentry prompt).
+    pub(crate) auth_method: Option<qpv2_core::types::AuthMethod>,
+    // True when App::new put us into `Screen::Unlocked` directly
+    // (password-mode wallet at startup) and the first frame still
+    // needs to run the same fetches `unlock_finish` does. Cleared
+    // on the first `update()` after consumption.
+    pub(crate) pending_unlocked_session_setup: bool,
 
     // Periodic polling timer for balances, tx history, and DAO cells.
     pub(crate) last_poll_time: std::time::Instant,
@@ -306,6 +319,11 @@ impl App {
             set_block_editing: false,
             earliest_funding_block_rx: None,
             lc_qr_dep_warmup_done: false,
+            // Auth method is read from wallet_info.json on demand by
+            // each flow that needs it; cached `None` here. Setup screen
+            // doesn't need it; Locked screen reads it before rendering.
+            auth_method,
+            pending_unlocked_session_setup,
             last_poll_time: std::time::Instant::now(),
             status_seen: Status::None,
             status_set_at: None,

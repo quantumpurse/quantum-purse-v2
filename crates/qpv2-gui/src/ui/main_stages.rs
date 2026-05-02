@@ -96,6 +96,24 @@ impl App {
                     if ui.add_enabled(!is_busy, button).clicked() {
                         self.create_wallet_start(frame);
                     }
+
+                    ui.add_space(10.0);
+
+                    // Password button — opens the pinentry dialog
+                    // synchronously (with a confirm field). Blocks
+                    // the egui frame for the duration of the dialog;
+                    // see `auth::prompt_password_with_confirmation`.
+                    let pw_btn = egui::Button::new(
+                        egui::RichText::new("Create with Password")
+                            .size(16.0)
+                            .color(self.colors.text),
+                    )
+                    .fill(self.colors.surface)
+                    .stroke(egui::Stroke::new(1.0, self.colors.border2))
+                    .min_size(egui::vec2(field_width, 48.0));
+                    if ui.add_enabled(!is_busy, pw_btn).clicked() {
+                        self.create_wallet_with_password(self.selected_variant);
+                    }
                 });
 
             ui.add_space(24.0);

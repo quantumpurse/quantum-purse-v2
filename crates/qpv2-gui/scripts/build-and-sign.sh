@@ -25,6 +25,11 @@ APP_NAME="qpv2"
 SIGNING_IDENTITY="Developer ID Application: Pham Tung (KPSL53752R)"
 TEAM_ID="KPSL53752R"
 ENTITLEMENTS="$GUI_DIR/entitlements.plist"
+# Toggle: when "false", the pinentry-mac.app sub-bundle is NOT
+# copied/signed into qpv2.app. The password flow will surface a
+# runtime error pointing at the missing path; Touch ID is unaffected.
+# Useful for testing the bundle's behavior in pinentry's absence.
+BUNDLE_PINENTRY="true"
 
 # Parse arguments.
 BUILD_TYPE="debug"
@@ -84,6 +89,39 @@ if [ ! -f "$FULL_NODE_BIN" ]; then
     exit 1
 fi
 
+if [ "$BUNDLE_PINENTRY" = "true" ]; then
+    # Locate the brew-installed pinentry-mac.app. The file at
+    # /opt/homebrew/bin/pinentry-mac is a 111-byte shell wrapper that
+    # exec's into a Cellar-versioned .app — bundling the wrapper alone
+    # gives end users a binary that fails to find its hardcoded path.
+    # We resolve the wrapper to the Cellar version dir and copy the full
+    # .app, which carries the Mach-O plus its Resources (nibs, etc.).
+    PINENTRY_NAME="pinentry-mac"
+    PINENTRY_APP_NAME="pinentry-mac.app"
+    if [ -x "/opt/homebrew/bin/$PINENTRY_NAME" ]; then
+        PINENTRY_WRAPPER="/opt/homebrew/bin/$PINENTRY_NAME"
+    elif [ -x "/usr/local/bin/$PINENTRY_NAME" ]; then
+        PINENTRY_WRAPPER="/usr/local/bin/$PINENTRY_NAME"
+    else
+        echo "ERROR: $PINENTRY_NAME not found in /opt/homebrew/bin or /usr/local/bin."
+        echo "       Run: brew install pinentry-mac"
+        exit 1
+    fi
+    # `realpath`/`readlink -f` follows the symlink chain into the Cellar
+    # version directory, where the .app sits as a sibling of bin/.
+    PINENTRY_REAL="$(/usr/bin/python3 -c "import os,sys; print(os.path.realpath(sys.argv[1]))" "$PINENTRY_WRAPPER")"
+    PINENTRY_VERSION_DIR="$(dirname "$(dirname "$PINENTRY_REAL")")"
+    PINENTRY_APP_SRC="$PINENTRY_VERSION_DIR/$PINENTRY_APP_NAME"
+    if [ ! -d "$PINENTRY_APP_SRC" ]; then
+        echo "ERROR: $PINENTRY_APP_NAME not found at $PINENTRY_APP_SRC"
+        echo "       Reinstall: brew reinstall pinentry-mac"
+        exit 1
+    fi
+    echo "==> Using $PINENTRY_APP_NAME from $PINENTRY_APP_SRC"
+else
+    echo "==> Skipping pinentry-mac.app bundling (BUNDLE_PINENTRY=false)"
+fi
+
 echo "==> Creating app bundle at $APP_BUNDLE..."
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
@@ -93,6 +131,69 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 cp "$TARGET_DIR/$BINARY_NAME" "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME"
 cp "$LIGHT_CLIENT_BIN" "$APP_BUNDLE/Contents/MacOS/$LIGHT_CLIENT_NAME"
 cp "$FULL_NODE_BIN" "$APP_BUNDLE/Contents/MacOS/$FULL_NODE_NAME"
+if [ "$BUNDLE_PINENTRY" = "true" ]; then
+    # Copy the full .app tree. brew installs read-only (0555); use -R to
+    # preserve the structure, then chmod -R u+w so codesign can rewrite
+    # the signature in place.
+    cp -R "$PINENTRY_APP_SRC" "$APP_BUNDLE/Contents/MacOS/$PINENTRY_APP_NAME"
+    chmod -R u+w "$APP_BUNDLE/Contents/MacOS/$PINENTRY_APP_NAME"
+
+    # pinentry-mac links against three brew dylibs (libassuan,
+    # libgpg-error, libintl). Hardened-runtime + library validation
+    # rejects them at load time when the loading binary is re-signed
+    # under a different Team ID — they're brew-signed, we sign with our
+    # Developer ID. Bundle them inside the .app's Contents/Frameworks/,
+    # rewrite the install names to @executable_path-relative paths, and
+    # codesign the chain bottom-up so all members share our Team ID.
+    PINENTRY_APP_DST="$APP_BUNDLE/Contents/MacOS/$PINENTRY_APP_NAME"
+    PINENTRY_FRAMEWORKS="$PINENTRY_APP_DST/Contents/Frameworks"
+    PINENTRY_BIN="$PINENTRY_APP_DST/Contents/MacOS/$PINENTRY_NAME"
+    mkdir -p "$PINENTRY_FRAMEWORKS"
+
+    DYLIB_ASSUAN_SRC="/opt/homebrew/opt/libassuan/lib/libassuan.9.dylib"
+    DYLIB_GPGERR_SRC="/opt/homebrew/opt/libgpg-error/lib/libgpg-error.0.dylib"
+    DYLIB_INTL_SRC="/opt/homebrew/opt/gettext/lib/libintl.8.dylib"
+    for src in "$DYLIB_ASSUAN_SRC" "$DYLIB_GPGERR_SRC" "$DYLIB_INTL_SRC"; do
+        if [ ! -f "$src" ]; then
+            echo "ERROR: required dylib missing: $src"
+            echo "       Reinstall brew deps: brew reinstall libassuan libgpg-error gettext"
+            exit 1
+        fi
+        cp "$src" "$PINENTRY_FRAMEWORKS/$(basename "$src")"
+    done
+    chmod -R u+w "$PINENTRY_FRAMEWORKS"
+
+    DYLIB_ASSUAN="$PINENTRY_FRAMEWORKS/libassuan.9.dylib"
+    DYLIB_GPGERR="$PINENTRY_FRAMEWORKS/libgpg-error.0.dylib"
+    DYLIB_INTL="$PINENTRY_FRAMEWORKS/libintl.8.dylib"
+
+    # Rewrite LC_ID on each dylib so subsequent dyld lookups follow the
+    # new @executable_path path rather than the original brew install path.
+    install_name_tool -id "@executable_path/../Frameworks/libassuan.9.dylib" "$DYLIB_ASSUAN"
+    install_name_tool -id "@executable_path/../Frameworks/libgpg-error.0.dylib" "$DYLIB_GPGERR"
+    install_name_tool -id "@executable_path/../Frameworks/libintl.8.dylib" "$DYLIB_INTL"
+
+    # Rewrite LC_LOAD_DYLIB entries through the chain.
+    # libassuan → libgpg-error
+    install_name_tool -change \
+        "$DYLIB_GPGERR_SRC" \
+        "@executable_path/../Frameworks/libgpg-error.0.dylib" \
+        "$DYLIB_ASSUAN"
+    # libgpg-error → libintl
+    install_name_tool -change \
+        "$DYLIB_INTL_SRC" \
+        "@executable_path/../Frameworks/libintl.8.dylib" \
+        "$DYLIB_GPGERR"
+    # pinentry-mac → libassuan + libgpg-error
+    install_name_tool -change \
+        "$DYLIB_ASSUAN_SRC" \
+        "@executable_path/../Frameworks/libassuan.9.dylib" \
+        "$PINENTRY_BIN"
+    install_name_tool -change \
+        "$DYLIB_GPGERR_SRC" \
+        "@executable_path/../Frameworks/libgpg-error.0.dylib" \
+        "$PINENTRY_BIN"
+fi
 
 # Create Info.plist.
 cat > "$APP_BUNDLE/Contents/Info.plist" << PLIST
@@ -151,6 +252,30 @@ codesign --force --sign "$SIGNING_IDENTITY" \
 codesign --force --sign "$SIGNING_IDENTITY" \
 	--options runtime \
 	"$APP_BUNDLE/Contents/MacOS/$FULL_NODE_NAME"
+if [ "$BUNDLE_PINENTRY" = "true" ]; then
+    # Sign the bundled dylibs leaf-first (libintl has no bundled deps;
+    # libgpg-error depends on libintl; libassuan depends on libgpg-error),
+    # then the inner Mach-O, then the .app bundle. Library validation now
+    # passes because every member shares our Team ID. No entitlements
+    # anywhere: the dialog binary and its deps need nothing beyond
+    # standard Cocoa + pipe I/O. Hardened runtime is required for
+    # notarization eligibility of every nested binary.
+    codesign --force --sign "$SIGNING_IDENTITY" \
+        --options runtime \
+        "$DYLIB_INTL"
+    codesign --force --sign "$SIGNING_IDENTITY" \
+        --options runtime \
+        "$DYLIB_GPGERR"
+    codesign --force --sign "$SIGNING_IDENTITY" \
+        --options runtime \
+        "$DYLIB_ASSUAN"
+    codesign --force --sign "$SIGNING_IDENTITY" \
+        --options runtime \
+        "$PINENTRY_BIN"
+    codesign --force --sign "$SIGNING_IDENTITY" \
+        --options runtime \
+        "$PINENTRY_APP_DST"
+fi
 codesign --force --sign "$SIGNING_IDENTITY" \
 	--entitlements "$ENTITLEMENTS" \
 	--options runtime \
