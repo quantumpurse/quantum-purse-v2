@@ -4,3 +4,15 @@
 [submodule "vendor/ckb"]
 	path = vendor/ckb
 	url = https://github.com/nervosnetwork/ckb.git
+[submodule "vendor/pinentry"]
+	path = vendor/pinentry
+	url = https://github.com/GPGTools/pinentry.git
+	ignore = dirty
+[submodule "vendor/libgpg-error"]
+	path = vendor/libgpg-error
+	url = https://github.com/gpg/libgpg-error.git
+	ignore = dirty
+[submodule "vendor/libassuan"]
+	path = vendor/libassuan
+	url = https://github.com/gpg/libassuan.git
+	ignore = dirty

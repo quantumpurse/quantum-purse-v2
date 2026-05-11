@@ -10,7 +10,7 @@ pub static ZEROIZED: AtomicBool = AtomicBool::new(false);
 /// A secure string type for custom BIP39 menmonic seed words
 /// Used in containing BIP39 component/elemental mnemonic word string
 /// facilitating custom BIP39 for quantumPurse Keyvault
-#[derive(Debug, Default, PartialEq)]
+#[derive(Clone, Default, PartialEq)]
 pub struct SecureString(String);
 
 impl SecureString {
@@ -69,7 +69,7 @@ impl Deref for SecureString {
 
 /// A secure vector that zeroizes its contents when dropped.
 /// Used in containing sensitive bytes like passwords or master seed.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct SecureVec(Vec<u8>);
 
 impl SecureVec {

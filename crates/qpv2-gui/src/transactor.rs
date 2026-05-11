@@ -1,9 +1,9 @@
 //! Transaction building, signing, and sending.
 
-use crate::types::{spx_witness_lock_size, TransactionKind, TransactionStatus, CKB_DECIMAL_PLACES};
+use crate::types::{spx_witness_lock_size, TransactionKind, TransactionStatus, Status, CKB_DECIMAL_PLACES};
 use crate::App;
 use ckb_node::{NodeType, QpClient};
-use qpv2_core::KeyVault;
+use qpv2_core::{KeyVault, types::AuthKey};
 use std::sync::mpsc;
 
 /// Pre-flight check before building any tx that uses the QR-lock-script
@@ -372,25 +372,48 @@ impl App {
         });
     }
 
-    /// After Touch ID returns the PRF output, sign and send the transaction.
+
+    /// Prompt for the wallet password and hand the resulting
+    /// `AuthKey::Password` to the sign-and-send core. Synchronous;
+    /// blocks the egui update loop while the dialog is up.
+    pub(crate) fn sign_and_send_with_password(
+        &mut self,
+        kind: crate::types::TransactionKind,
+        unsigned_tx: ckb_types::core::TransactionView,
+        input_cells: Vec<(
+            ckb_types::packed::CellOutput,
+            ckb_types::bytes::Bytes,
+        )>,
+        lock_args: String,
+    ) {
+        let pw = match crate::pinentry::prompt_password(
+            "Enter your wallet password to authorize this transaction.",
+            "Password:",
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                self.tx_status = TransactionStatus::Idle;
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+        self.sign_and_send(kind, AuthKey::Password(pw), unsigned_tx, input_cells, lock_args);
+    }
+
+    /// Auth-mechanism-agnostic signing core. Used by both the PRF
+    /// flow (`sign_with_passkey_finish`) and the password flow
+    /// (`sign_and_send_with_password` in `wallet.rs`). Builds the CKB
+    /// tx-message hash, signs via SPHINCS+, fills the witness, and
+    /// kicks off the send-tx background thread.
     pub(crate) fn sign_and_send(
         &mut self,
         kind: TransactionKind,
-        prf_output: &qpv2_core::SecureVec,
+        auth: qpv2_core::types::AuthKey,
         unsigned_tx: ckb_types::core::TransactionView,
         input_cells: Vec<(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)>,
         lock_args: String,
     ) {
         use ckb_types::prelude::*;
-        use qpv2_core::types::AuthKey;
-
-        let key = match qpv2_core::utilities::derive_key_from_prf(prf_output) {
-            Ok(k) => k,
-            Err(e) => {
-                self.tx_status = TransactionStatus::Error(format!("Key derivation failed: {}", e));
-                return;
-            }
-        };
 
         let variant = match KeyVault::get_spx_variant() {
             Ok(v) => v,
@@ -437,7 +460,7 @@ impl App {
         let message = hasher.hash().to_vec();
 
         let vault = KeyVault::new(variant);
-        let signature_bytes = match vault.ckb_sign(AuthKey::CryptoKey(key), lock_args, message) {
+        let signature_bytes = match vault.ckb_sign(auth, lock_args, message) {
             Ok(sig) => sig,
             Err(e) => {
                 self.tx_status = TransactionStatus::Error(format!("Signing failed: {}", e));

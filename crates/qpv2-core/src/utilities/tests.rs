@@ -36,7 +36,7 @@ fn test_zeroize_on_drop_decrypt_output() {
 #[test]
 fn test_encrypt_decrypt_with_key() {
     let prf_output = vec![0x42u8; 32]; // Simulated 32-byte PRF output
-    let key = derive_key_from_prf(&prf_output).unwrap();
+    let key = derive_vault_enc_key(&prf_output).unwrap();
     let data = b"test key-based encryption";
     let payload = encrypt_with_key(&key, data).unwrap();
     assert!(
@@ -51,8 +51,8 @@ fn test_encrypt_decrypt_with_key() {
 fn test_fail_decrypt_with_wrong_key() {
     let prf_output_1 = vec![0x42u8; 32];
     let prf_output_2 = vec![0x43u8; 32];
-    let key_1 = derive_key_from_prf(&prf_output_1).unwrap();
-    let key_2 = derive_key_from_prf(&prf_output_2).unwrap();
+    let key_1 = derive_vault_enc_key(&prf_output_1).unwrap();
+    let key_2 = derive_vault_enc_key(&prf_output_2).unwrap();
     let data = b"test";
     let payload = encrypt_with_key(&key_1, data).unwrap();
     let result = decrypt_with_key(&key_2, payload);
@@ -62,8 +62,8 @@ fn test_fail_decrypt_with_wrong_key() {
 #[test]
 fn test_derive_key_from_prf_deterministic() {
     let prf_output = vec![0xABu8; 32];
-    let key_1 = derive_key_from_prf(&prf_output).unwrap();
-    let key_2 = derive_key_from_prf(&prf_output).unwrap();
+    let key_1 = derive_vault_enc_key(&prf_output).unwrap();
+    let key_2 = derive_vault_enc_key(&prf_output).unwrap();
     assert_eq!(
         key_1.as_ref(),
         key_2.as_ref(),

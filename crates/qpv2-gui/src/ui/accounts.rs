@@ -8,7 +8,7 @@ use crate::types::{format_ckb_balance, Status};
 use crate::App;
 
 impl App {
-    pub(crate) fn show_accounts_tab(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+    pub(crate) fn show_accounts_tab(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         ui.horizontal(|ui| {
             ui.add_space(30.0);
             ui.vertical(|ui| {
@@ -59,7 +59,12 @@ impl App {
                         .response;
 
                     if new_card.interact(egui::Sense::click()).clicked() {
-                        self.create_new_account_start(frame);
+                        if matches!(self.auth_method, Some(AuthMethod::Password)) {
+                            self.create_new_account_with_password();
+                        } else {
+                            #[cfg(target_os = "macos")]
+                            self.create_new_account_with_passkey_start(_frame);
+                        }
                     }
 
                     // Import (CLI only)

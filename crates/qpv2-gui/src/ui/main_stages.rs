@@ -4,10 +4,13 @@ use crate::types::{Screen, Status, Tab};
 use crate::App;
 use ckb_node::NodeType;
 use eframe::egui;
-use qpv2_core::{types::SpxVariant, KeyVault};
+use qpv2_core::{
+    types::{AuthMethod, SpxVariant},
+    KeyVault,
+};
 
 impl App {
-    pub(crate) fn show_welcome(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+    pub(crate) fn show_welcome(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         ui.vertical_centered(|ui| {
             ui.add_space(60.0);
 
@@ -81,20 +84,37 @@ impl App {
                     #[cfg(not(target_os = "macos"))]
                     let is_busy = false;
 
-                    let button = egui::Button::new(
-                        egui::RichText::new(if is_busy {
-                            "Creating wallet..."
-                        } else {
-                            "Create with Touch ID"
-                        })
-                        .size(16.0)
-                        .color(self.colors.bg),
-                    )
-                    .fill(self.colors.accent)
-                    .min_size(egui::vec2(field_width, 48.0));
+                    #[cfg(target_os = "macos")]
+                    {
+                        let pk_button = egui::Button::new(
+                            egui::RichText::new(if is_busy {
+                                "Creating wallet..."
+                            } else {
+                                "Create with Touch ID"
+                            })
+                            .size(16.0)
+                            .color(self.colors.bg),
+                        )
+                        .fill(self.colors.accent)
+                        .min_size(egui::vec2(field_width, 48.0));
 
-                    if ui.add_enabled(!is_busy, button).clicked() {
-                        self.create_wallet_start(frame);
+                        if ui.add_enabled(!is_busy, pk_button).clicked() {
+                            self.create_wallet_with_passkey_start(_frame);
+                        }
+
+                        ui.add_space(10.0);
+                    }
+
+                    let pw_btn = egui::Button::new(
+                        egui::RichText::new("Create with Password")
+                            .size(16.0)
+                            .color(self.colors.text),
+                    )
+                    .fill(self.colors.surface)
+                    .stroke(egui::Stroke::new(1.0, self.colors.border2))
+                    .min_size(egui::vec2(field_width, 48.0));
+                    if ui.add_enabled(!is_busy, pw_btn).clicked() {
+                        self.create_wallet_with_password(self.selected_variant);
                     }
                 });
 
@@ -393,20 +413,27 @@ impl App {
 
                     ui.add_space(12.0);
 
-                    // Lock Wallet button
-                    ui.horizontal(|ui| {
-                        ui.add_space(14.0);
-                        let lock_btn = egui::Button::new(
-                            egui::RichText::new("\u{1f512} Lock Wallet").size(12.0),
-                        )
-                        .fill(egui::Color32::TRANSPARENT)
-                        .stroke(egui::Stroke::new(1.0, self.colors.border))
-                        .min_size(egui::vec2(194.0, 32.0));
+                    // Lock Wallet button — only meaningful for wallets
+                    // with a per-session unlock barrier (Touch ID).
+                    // Password-mode wallets have no unlock barrier;
+                    // every privileged op re-prompts. Locking would
+                    // kick them to a Locked screen with only a
+                    // Touch ID button they can't satisfy.
+                    if !matches!(self.auth_method, Some(AuthMethod::Password)) {
+                        ui.horizontal(|ui| {
+                            ui.add_space(14.0);
+                            let lock_btn = egui::Button::new(
+                                egui::RichText::new("\u{1f512} Lock Wallet").size(12.0),
+                            )
+                            .fill(egui::Color32::TRANSPARENT)
+                            .stroke(egui::Stroke::new(1.0, self.colors.border))
+                            .min_size(egui::vec2(194.0, 32.0));
 
-                        if ui.add(lock_btn).clicked() {
-                            self.lock_wallet();
-                        }
-                    });
+                            if ui.add(lock_btn).clicked() {
+                                self.lock_wallet();
+                            }
+                        });
+                    }
 
                     ui.add_space(4.0);
 
@@ -454,7 +481,7 @@ impl App {
             });
     }
 
-    pub(crate) fn show_locked(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+    pub(crate) fn show_locked(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         ui.vertical_centered(|ui| {
             ui.add_space(80.0);
 
@@ -479,24 +506,24 @@ impl App {
             ui.add_space(40.0);
 
             #[cfg(target_os = "macos")]
-            let is_busy = self.passkey_op.is_some();
-            #[cfg(not(target_os = "macos"))]
-            let is_busy = false;
+            {
+                let is_busy = self.passkey_op.is_some();
 
-            let button = egui::Button::new(
-                egui::RichText::new(if is_busy {
-                    "Waiting for Touch ID..."
-                } else {
-                    "Unlock with Touch ID"
-                })
-                .size(16.0)
-                .color(self.colors.bg),
-            )
-            .fill(self.colors.accent2)
-            .min_size(egui::vec2(280.0, 48.0));
+                let button = egui::Button::new(
+                    egui::RichText::new(if is_busy {
+                        "Waiting for Touch ID..."
+                    } else {
+                        "Unlock with Touch ID"
+                    })
+                    .size(16.0)
+                    .color(self.colors.bg),
+                )
+                .fill(self.colors.accent2)
+                .min_size(egui::vec2(280.0, 48.0));
 
-            if ui.add_enabled(!is_busy, button).clicked() {
-                self.unlock_start(frame);
+                if ui.add_enabled(!is_busy, button).clicked() {
+                    self.unlock_with_passkey_start(_frame);
+                }
             }
 
             ui.add_space(24.0);

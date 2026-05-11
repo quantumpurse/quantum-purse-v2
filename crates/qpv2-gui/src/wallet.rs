@@ -3,9 +3,8 @@
 use qpv2_core::types::{AuthKey, AuthMethod, SpxVariant};
 use qpv2_core::KeyVault;
 
-use crate::passkey::{PRF_SALT, RP_ID};
 use crate::tx_history_store::TxHistoryStore;
-use crate::types::{PasskeyOp, Screen, Status, Tab, TransactionStatus};
+use crate::types::{Screen, Status, Tab, TransactionStatus};
 use crate::App;
 
 impl App {
@@ -209,96 +208,6 @@ impl App {
         self.fetch_node_status();
     }
 
-    /// Kick off async passkey registration.
-    pub(crate) fn create_wallet_start(&mut self, frame: &mut eframe::Frame) {
-        let window = match crate::window_handle::get_ns_window(frame) {
-            Ok(w) => w,
-            Err(e) => {
-                self.status = Status::Error(format!("Failed to get window: {}", e));
-                return;
-            }
-        };
-
-        // TODO users must specify these info.
-        let user_id = b"qpv2-user";
-        let user_name = "tea";
-
-        match passkey_prf::register_passkey_async(&window, RP_ID, user_id, user_name) {
-            Ok(op) => {
-                self.passkey_op = Some(PasskeyOp::Registration {
-                    op,
-                    variant: self.selected_variant,
-                    window,
-                });
-            }
-            Err(e) => {
-                self.status = Status::Error(format!("Passkey registration failed: {}", e));
-            }
-        }
-    }
-
-    /// Complete wallet creation after receiving the PRF output.
-    pub(crate) fn create_wallet_finish(
-        &mut self,
-        variant: SpxVariant,
-        credential_id: &[u8],
-        prf_output: &qpv2_core::SecureVec,
-    ) {
-        let key = match qpv2_core::utilities::derive_key_from_prf(prf_output) {
-            Ok(k) => k,
-            Err(e) => {
-                self.status = Status::Error(format!("Key derivation failed: {}", e));
-                return;
-            }
-        };
-
-        let vault = KeyVault::new(variant);
-        let auth_method = AuthMethod::PasskeyPrf {
-            credential_id: credential_id.to_vec(),
-        };
-        if let Err(e) = vault.generate_master_seed(AuthKey::CryptoKey(key), auth_method) {
-            self.status = Status::Error(format!("Failed to create wallet: {}", e));
-            return;
-        }
-
-        // Re-derive key to generate the first account.
-        let key = match qpv2_core::utilities::derive_key_from_prf(prf_output) {
-            Ok(k) => k,
-            Err(e) => {
-                self.status = Status::Error(format!("Key derivation failed: {}", e));
-                self.screen = Screen::Locked;
-                return;
-            }
-        };
-        if let Err(e) = vault.gen_new_account(AuthKey::CryptoKey(key)) {
-            self.status = Status::Error(format!("Failed to create first account: {}", e));
-            self.screen = Screen::Locked;
-            return;
-        }
-
-        // Read lock args from accounts.json (no decryption needed).
-        match KeyVault::get_all_sphincs_lock_args() {
-            Ok(lock_args) => {
-                self.accounts = lock_args;
-                // First account of a brand-new wallet — if a light
-                // client is running, start indexing it from the tip.
-                self.register_lock_scripts_with_light_client(&self.accounts.clone());
-                self.screen = Screen::Unlocked;
-                self.status = Status::Info("Wallet created successfully!".to_string());
-                self.last_poll_time = std::time::Instant::now();
-                self.load_tx_history_from_disk();
-                self.fetch_all_balances();
-                self.fetch_tx_history(true);
-                self.fetch_dao_cells();
-                self.fetch_node_status();
-            }
-            Err(e) => {
-                self.status = Status::Error(format!("Failed to read accounts: {}", e));
-                self.screen = Screen::Locked;
-            }
-        }
-    }
-
     /// Seeds `tx_history` from the active network's on-disk cache so the
     /// dashboard renders instantly on unlock instead of waiting for the
     /// first sync tick. The incremental-sync floor (`tx_history_watermark`)
@@ -320,40 +229,66 @@ impl App {
         }
     }
 
-    /// Kick off async credential-only assertion (no PRF) for unlock.
-    pub(crate) fn unlock_start(&mut self, frame: &mut eframe::Frame) {
-        let window = match crate::window_handle::get_ns_window(frame) {
-            Ok(w) => w,
+    /// Create a password-mode wallet. Opens the pinentry dialog with
+    /// a confirmation field — the dialog itself enforces the match
+    /// (the user can't submit until both fields agree). On submit,
+    /// validates strength via `password_checker`, generates the
+    /// master seed, derives the first account, and transitions to
+    /// `Screen::Unlocked`. Cancellation surfaces as a quiet info
+    /// banner; nothing else changes.
+    pub(crate) fn create_wallet_with_password(&mut self, variant: SpxVariant) {
+        let pw = match crate::pinentry::prompt_password_with_confirmation(
+            "Choose a password for your wallet. You'll be prompted for it \
+             again on every signing operation.",
+            "Password:",
+            "Confirm:",
+            "Passwords do not match.",
+        ) {
+            Ok(s) => s,
             Err(e) => {
-                self.status = Status::Error(format!("Failed to get window: {}", e));
+                self.status = Status::Error(e);
                 return;
             }
         };
-        let credential_id = match self.get_credential_id() {
-            Some(id) => id,
-            None => return,
+
+        let strength_str = match qpv2_core::utilities::password_checker(&pw) {
+            Ok(bits) => format!(" Password strength: {} bits.", bits),
+            Err(e) => {
+                self.status = Status::Error(format!("Weak password: {}", e));
+                return;
+            }
         };
 
-        match passkey_prf::assert_async(&window, RP_ID, &credential_id, None) {
-            Ok(op) => {
-                self.passkey_op = Some(PasskeyOp::UnlockAssert { op });
-            }
-            Err(passkey_prf::PrfError::Cancelled) => {
-                self.status = Status::Info("Cancelled.".to_string());
-            }
-            Err(e) => {
-                self.status = Status::Error(format!("Credential assertion failed: {}", e));
-            }
+        // `generate_master_seed` and `gen_new_account` each consume an
+        // owned `AuthKey::Password(SecureString)`. Mirror the passkey
+        // path (one Touch ID → PRF used twice) and the CLI path (one
+        // input → reused) by cloning the SecureString once instead of
+        // re-prompting. Both copies zeroize-on-drop.
+        let pw_for_account = pw.clone();
+        let vault = KeyVault::new(variant);
+        if let Err(e) =
+            vault.generate_master_seed(AuthKey::Password(pw), AuthMethod::Password)
+        {
+            self.status = Status::Error(format!("Failed to create wallet: {}", e));
+            return;
         }
-    }
 
-    /// Complete wallet unlock after credential assertion succeeds.
-    pub(crate) fn unlock_finish(&mut self) {
+        if let Err(e) = vault.gen_new_account(AuthKey::Password(pw_for_account)) {
+            self.status = Status::Error(format!("Failed to create first account: {}", e));
+            self.auth_method = Some(AuthMethod::Password);
+            return;
+        }
+
         match KeyVault::get_all_sphincs_lock_args() {
             Ok(lock_args) => {
                 self.accounts = lock_args;
+                self.auth_method = Some(AuthMethod::Password);
+                self.register_lock_scripts_with_light_client(&self.accounts.clone());
                 self.screen = Screen::Unlocked;
-                self.status = Status::None;
+                self.status = Status::Info(format!(
+                    "Wallet created successfully!{}",
+                    strength_str
+                ));
                 self.last_poll_time = std::time::Instant::now();
                 self.load_tx_history_from_disk();
                 self.fetch_all_balances();
@@ -362,45 +297,23 @@ impl App {
                 self.fetch_node_status();
             }
             Err(e) => {
-                self.status = Status::Error(format!("Failed to unlock: {}", e));
+                self.status = Status::Error(format!("Failed to read accounts: {}", e));
+                self.auth_method = Some(AuthMethod::Password);
             }
         }
     }
 
-    /// Kick off async PRF assertion to create a new account (requires seed decryption).
-    pub(crate) fn create_new_account_start(&mut self, frame: &mut eframe::Frame) {
-        let window = match crate::window_handle::get_ns_window(frame) {
-            Ok(w) => w,
+    /// Prompt for the wallet password and derive a new account.
+    /// Synchronous: blocks the egui update loop while the pinentry
+    /// dialog is up.
+    pub(crate) fn create_new_account_with_password(&mut self) {
+        let pw = match crate::pinentry::prompt_password(
+            "Enter your wallet password to create a new account.",
+            "Password:",
+        ) {
+            Ok(s) => s,
             Err(e) => {
-                self.status = Status::Error(format!("Failed to get window: {}", e));
-                return;
-            }
-        };
-        let credential_id = match self.get_credential_id() {
-            Some(id) => id,
-            None => return,
-        };
-
-        match passkey_prf::assert_async(&window, RP_ID, &credential_id, Some(PRF_SALT)) {
-            Ok(op) => {
-                self.passkey_op = Some(PasskeyOp::NewAccountAssert { op });
-                self.status = Status::Info("Authenticate with Touch ID...".to_string());
-            }
-            Err(passkey_prf::PrfError::Cancelled) => {
-                self.status = Status::Info("Cancelled.".to_string());
-            }
-            Err(e) => {
-                self.status = Status::Error(format!("PRF assertion failed: {}", e));
-            }
-        }
-    }
-
-    /// Complete new account creation after receiving the PRF output.
-    pub(crate) fn create_new_account_finish(&mut self, prf_output: &qpv2_core::SecureVec) {
-        let key = match qpv2_core::utilities::derive_key_from_prf(prf_output) {
-            Ok(k) => k,
-            Err(e) => {
-                self.status = Status::Error(format!("Key derivation failed: {}", e));
+                self.status = Status::Error(e);
                 return;
             }
         };
@@ -412,17 +325,14 @@ impl App {
                 return;
             }
         };
-
         let vault = KeyVault::new(variant);
-        match vault.gen_new_account(AuthKey::CryptoKey(key)) {
+        match vault.gen_new_account(AuthKey::Password(pw)) {
             Ok(lock_args) => {
-                // Mark as loading and fetch balance in the background.
                 self.balances.insert(lock_args.clone(), None);
                 let qp_client = self.qp_client.clone();
                 let args = lock_args.clone();
                 let (tx, rx) = std::sync::mpsc::channel();
                 self.balance_receiver = Some(rx);
-
                 std::thread::spawn(move || {
                     let result = ckb_node::wallet_helpers::queries::fetch_quantum_lock_balance(
                         &qp_client, &args,
@@ -431,10 +341,6 @@ impl App {
                     let _ = tx.send((args, result));
                 });
                 self.accounts.push(lock_args.clone());
-                // Register only the new account with the light client
-                // (no-op on other backends). Don't pass all accounts
-                // here — `set_scripts(Partial)` would overwrite the
-                // sync cursors of the existing ones.
                 self.register_lock_scripts_with_light_client(std::slice::from_ref(&lock_args));
                 self.status = Status::Info("New account created!".to_string());
             }

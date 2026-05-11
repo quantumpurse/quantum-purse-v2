@@ -1,169 +1,13 @@
-//! Async polling for background operations (passkeys, balances, transactions).
+//! Async polling for background operations (balances, transactions).
 
-use crate::passkey::{PRF_SALT, RP_ID};
 use crate::types::{
-    DaoQueryEvent, PasskeyOp, SpendableCapacityTarget, Status, TransactionKind, TransactionStatus,
+    DaoQueryEvent, SpendableCapacityTarget, Status, TransactionKind, TransactionStatus,
     TxHistoryEvent,
 };
 use crate::App;
 use std::sync::mpsc;
 
 impl App {
-    /// Poll op passkey operations each frame.
-    pub(crate) fn poll_passkey_ops(&mut self) {
-        let op = match self.passkey_op.take() {
-            Some(op) => op,
-            None => return,
-        };
-
-        match op {
-            PasskeyOp::Registration {
-                op,
-                variant,
-                window,
-            } => {
-                match op.poll() {
-                    None => {
-                        // Still waiting — put it back.
-                        self.passkey_op = Some(PasskeyOp::Registration {
-                            op,
-                            variant,
-                            window,
-                        });
-                    }
-                    Some(Ok(registration)) => {
-                        if !registration.prf_supported {
-                            self.status = Status::Error(
-                                "PRF not supported by this authenticator.".to_string(),
-                            );
-                            return;
-                        }
-
-                        // Registration succeeded — now assert with PRF to get the encryption key.
-                        let credential_id = registration.credential_id.clone();
-                        match passkey_prf::assert_async(
-                            &window,
-                            RP_ID,
-                            &credential_id,
-                            Some(PRF_SALT),
-                        ) {
-                            Ok(assert_pending) => {
-                                self.passkey_op = Some(PasskeyOp::PostRegistrationAssert {
-                                    op: assert_pending,
-                                    variant,
-                                    credential_id,
-                                });
-                                self.status = Status::Info(
-                                    "Passkey registered. Now authenticate with Touch ID..."
-                                        .to_string(),
-                                );
-                            }
-                            Err(e) => {
-                                self.status = Status::Error(format!("PRF assertion failed: {}", e));
-                            }
-                        }
-                    }
-                    Some(Err(e)) => {
-                        self.status = Status::Error(format!("Passkey registration failed: {}", e));
-                    }
-                }
-            }
-            PasskeyOp::PostRegistrationAssert {
-                op,
-                variant,
-                credential_id,
-            } => match op.poll() {
-                None => {
-                    self.passkey_op = Some(PasskeyOp::PostRegistrationAssert {
-                        op,
-                        variant,
-                        credential_id,
-                    });
-                }
-                Some(Ok(Some(prf_output))) => {
-                    self.create_wallet_finish(variant, &credential_id, &prf_output);
-                }
-                Some(Ok(None)) => {
-                    self.status = Status::Error(
-                        "Internal error: Expected encryption key from authentication.".to_string(),
-                    );
-                }
-                Some(Err(passkey_prf::PrfError::Cancelled)) => {
-                    self.status = Status::Info("Cancelled.".to_string());
-                }
-                Some(Err(e)) => {
-                    self.status = Status::Error(format!("Authentication failed: {}", e));
-                }
-            },
-            PasskeyOp::UnlockAssert { op } => match op.poll() {
-                None => {
-                    self.passkey_op = Some(PasskeyOp::UnlockAssert { op });
-                }
-                Some(Ok(_)) => {
-                    self.unlock_finish();
-                }
-                Some(Err(passkey_prf::PrfError::Cancelled)) => {
-                    self.status = Status::Info("Cancelled.".to_string());
-                }
-                Some(Err(e)) => {
-                    self.status = Status::Error(format!("Authentication failed: {}", e));
-                }
-            },
-            PasskeyOp::NewAccountAssert { op } => match op.poll() {
-                None => {
-                    self.passkey_op = Some(PasskeyOp::NewAccountAssert { op });
-                }
-                Some(Ok(Some(prf_output))) => {
-                    self.create_new_account_finish(&prf_output);
-                }
-                Some(Ok(None)) => {
-                    self.status = Status::Error(
-                        "Internal error: Expected encryption key from authentication.".to_string(),
-                    );
-                }
-                Some(Err(passkey_prf::PrfError::Cancelled)) => {
-                    self.status = Status::Info("Cancelled.".to_string());
-                }
-                Some(Err(e)) => {
-                    self.status = Status::Error(format!("Authentication failed: {}", e));
-                }
-            },
-            PasskeyOp::SignTransactionAssert {
-                op,
-                kind,
-                unsigned_tx,
-                input_cells,
-                lock_args,
-            } => match op.poll() {
-                None => {
-                    self.passkey_op = Some(PasskeyOp::SignTransactionAssert {
-                        op,
-                        kind,
-                        unsigned_tx,
-                        input_cells,
-                        lock_args,
-                    });
-                }
-                Some(Ok(Some(prf_output))) => {
-                    self.sign_and_send(kind, &prf_output, unsigned_tx, input_cells, lock_args);
-                }
-                Some(Ok(None)) => {
-                    self.tx_status = TransactionStatus::Error(
-                        "Internal error: Expected encryption key from authentication.".to_string(),
-                    );
-                }
-                Some(Err(passkey_prf::PrfError::Cancelled)) => {
-                    self.tx_status = TransactionStatus::Idle;
-                    self.status = Status::Info("Signing cancelled.".to_string());
-                }
-                Some(Err(e)) => {
-                    self.tx_status =
-                        TransactionStatus::Error(format!("Authentication failed: {}", e));
-                }
-            },
-        }
-    }
-
     /// Poll the spendable capacity channel and route the result by target.
     pub(crate) fn poll_spendable_capacity(&mut self) {
         let (target, rx) = match &self.spendable_capacity_rx {
@@ -207,54 +51,31 @@ impl App {
         match rx.try_recv() {
             Ok(Ok((kind, unsigned_tx, input_cells, lock_args))) => {
                 self.transaction_build_rx = None;
-                #[cfg(target_os = "macos")]
-                {
-                    let window = match crate::window_handle::get_ns_window(frame) {
-                        Ok(w) => w,
-                        Err(e) => {
-                            self.tx_status =
-                                TransactionStatus::Error(format!("Failed to get window: {}", e));
-                            return;
-                        }
-                    };
-                    let credential_id = match self.get_credential_id() {
-                        Some(id) => id,
-                        None => {
-                            self.tx_status =
-                                TransactionStatus::Error("Failed to read credential.".to_string());
-                            return;
-                        }
-                    };
 
-                    match passkey_prf::assert_async(&window, RP_ID, &credential_id, Some(PRF_SALT))
-                    {
-                        Ok(op) => {
-                            self.passkey_op = Some(PasskeyOp::SignTransactionAssert {
-                                op,
-                                kind,
-                                unsigned_tx,
-                                input_cells,
-                                lock_args,
-                            });
-                            self.tx_status = TransactionStatus::AwaitingSignature;
-                        }
-                        Err(passkey_prf::PrfError::Cancelled) => {
-                            self.tx_status = TransactionStatus::Idle;
-                            self.status =
-                                Status::Info("Transaction building cancelled.".to_string());
-                        }
-                        Err(e) => {
-                            self.tx_status =
-                                TransactionStatus::Error(format!("PRF assertion failed: {}", e));
-                        }
-                    }
+                // Route based on the wallet's auth method.
+                // - Password: synchronous pinentry prompt → sign + send.
+                // - PasskeyPrf (or unknown): existing Touch ID path.
+                use qpv2_core::types::AuthMethod;
+                if matches!(self.auth_method, Some(AuthMethod::Password)) {
+                    self.tx_status = TransactionStatus::AwaitingSignature;
+                    self.sign_and_send_with_password(
+                        kind,
+                        unsigned_tx,
+                        input_cells,
+                        lock_args,
+                    );
+                    return;
                 }
+
+                #[cfg(target_os = "macos")]
+                self.sign_with_passkey_start(frame, kind, unsigned_tx, input_cells, lock_args);
 
                 #[cfg(not(target_os = "macos"))]
                 {
-                    let _ = (frame, unsigned_tx, input_cells, lock_args);
-                    self.tx_status =
-                        TransactionStatus::Error("Signing is only supported on macOS.".to_string());
+                    let _ = (frame, kind, unsigned_tx, input_cells, lock_args);
+                    self.tx_status = TransactionStatus::Error(
+                        "Passkey signing requires macOS.".to_string(),
+                    );
                 }
             }
             Ok(Err(e)) => {

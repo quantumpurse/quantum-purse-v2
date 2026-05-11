@@ -65,7 +65,19 @@ master_seed
 ```
 
 ### Dependencies
+
 - Rust & Cargo (1.70+)
+
+### Developer Build Toolchain
+
+The GUI's password dialog (`pinentry`) is built from source via
+`vendor/build-pinentry.sh`. Developers on macOS need:
+
+| Tool | Install | Purpose |
+|------|---------|---------|
+| `automake` | `brew install automake` | Generates Makefiles for C deps |
+| `gettext` | `brew install gettext` | Provides m4 macros for autotools |
+| Xcode CLI tools | `xcode-select --install` | Obj-C compiler + ibtool for nib files |
 
 ### Build
 ```shell
@@ -146,6 +158,61 @@ Both local backends are bundled inside the signed `qpv2.app`
 (`Contents/MacOS/{ckb-light-client,ckb}`) and spawned/stopped by the GUI
 automatically. Per-network data dirs live under `~/Library/Application
 Support/quantum-purse/node/`.
+
+### Password Input
+
+Password entry in QPV2 happens **outside the wallet's own process** —
+through a dedicated, OS-native dialog spawned as a child process. The
+wallet binary itself never sees a keystroke during typing; it only
+reads the final password from a kernel pipe at the moment the user
+submits, copies it once into a zeroize-on-drop `SecureString`, and
+drops it the moment the vault op (sign / decrypt / new account)
+returns.
+
+#### Why not just use an egui text field?
+
+A straightforward `egui::TextEdit::singleline(&mut String).password(true)`
+would have the password live inside the wallet's own heap **for the
+entire typing duration** (potentially many seconds), with `String`
+reallocations during keystrokes leaving orphan plaintext fragments in
+freed memory that no application code can zero. Out-of-process entry
+sidesteps both: typing happens in the dialog program's address space,
+and our process gets the bytes as a single small read at the end —
+sub-millisecond exposure window before the bytes enter `SecureString`.
+
+#### How: the `pinentry` crate
+
+QPV2 uses the [`pinentry`](https://docs.rs/pinentry) Rust crate, which
+wraps the GnuPG-project `pinentry-*` family of dialog binaries via the
+[Assuan protocol](https://www.gnupg.org/documentation/manuals/assuan/)
+(line-based text over stdin/stdout pipes). The same Rust call site
+works on every supported OS — only the bundled binary differs:
+
+| OS      | Bundled binary       | UI rendering |
+|---------|----------------------|----------------------------------------------|
+| macOS   | `pinentry-mac`       | Native Cocoa window with `NSSecureTextField` (mlock'd buffer + `EnableSecureEventInput()` to block other apps from tapping the keystrokes) |
+| Windows | `pinentry-w64.exe`   | Native Win32 dialog (with `SecureZeroMemory` backing) |
+| Linux   | `pinentry-gtk-2`     | GTK 2 dialog with secure-entry mode (mlock + clipboard blocking); `pinentry-curses` ncurses fallback for headless |
+
+The binaries ship inside the application bundle / installer — end
+users install nothing. Each platform's dialog inherits that OS's
+**purpose-built secure-input infrastructure**: NSSecureTextField on
+macOS prevents accessibility-API observers, screen recorders, and IME
+services from seeing the field's content; the equivalent Win32 and
+GTK widgets do similar.
+
+#### What pinentry does *not* protect against
+
+- An OS-level keylogger above the dialog still sees keystrokes — same
+  as it would for any password input on the system. Hardware wallets
+  / Touch ID / Windows Hello / Secure Enclave are the only categorical
+  defenses.
+- A compromised bundled `pinentry-*` binary is game-over (same threat
+  as a compromised wallet binary). Both are signed/notarized at build
+  time.
+
+The "PIN" in pinentry is historical naming — the binaries handle full
+passphrases (any length, full Unicode), not just numeric PINs.
 
 ### Data Storage
 

@@ -25,6 +25,11 @@ APP_NAME="qpv2"
 SIGNING_IDENTITY="Developer ID Application: Pham Tung (KPSL53752R)"
 TEAM_ID="KPSL53752R"
 ENTITLEMENTS="$GUI_DIR/entitlements.plist"
+# Toggle: when "false", the pinentry-mac.app sub-bundle is NOT
+# copied/signed into qpv2.app. The password flow will surface a
+# runtime error pointing at the missing path; Touch ID is unaffected.
+# Useful for testing the bundle's behavior in pinentry's absence.
+BUNDLE_PINENTRY="true"
 
 # Parse arguments.
 BUILD_TYPE="debug"
@@ -52,7 +57,24 @@ done
 TARGET_DIR="$PROJECT_ROOT/target/$BUILD_TYPE"
 APP_BUNDLE="$TARGET_DIR/$APP_NAME.app"
 
+if [ "$BUNDLE_PINENTRY" = "true" ]; then
+	PINENTRY_VENDOR="$PROJECT_ROOT/vendor/pinentry-build/$(uname -s)-$(uname -m)/pinentry-mac.app"
+	PINENTRY_VENDOR_BIN="$PINENTRY_VENDOR/Contents/MacOS/pinentry-mac"
+	if [ ! -f "$PINENTRY_VENDOR_BIN" ]; then
+		echo "==> pinentry-mac not found, building from source..."
+		"$PROJECT_ROOT/vendor/build-pinentry.sh"
+		if [ ! -f "$PINENTRY_VENDOR_BIN" ]; then
+			echo "ERROR: vendor/build-pinentry.sh did not produce $PINENTRY_VENDOR_BIN"
+			exit 1
+		fi
+	fi
+fi
+
 echo "==> Building $BINARY_NAME ($BUILD_TYPE)..."
+# Force build.rs to re-run so pinentry-mac.app is freshly staged from
+# vendor/pinentry-build/. Cost: ~20s qpv2-gui recompile per release.
+cargo clean -p qpv2-gui $CARGO_FLAGS
+rm -rf "$TARGET_DIR/pinentry-mac.app"
 cargo build -p qpv2-gui $CARGO_FLAGS
 
 # Build the bundled ckb-light-client from the vendored submodule. It lives
@@ -84,6 +106,24 @@ if [ ! -f "$FULL_NODE_BIN" ]; then
     exit 1
 fi
 
+if [ "$BUNDLE_PINENTRY" = "true" ]; then
+    # Reuse the pinentry-mac.app already staged by qpv2-gui's build.rs
+    # next to the GUI binary (`target/{debug,release}/pinentry-mac.app`).
+    # build.rs copies it from vendor/pinentry-build/Darwin-{arch}/.
+    PINENTRY_NAME="pinentry-mac"
+    PINENTRY_APP_NAME="pinentry-mac.app"
+    PINENTRY_APP_SRC="$TARGET_DIR/$PINENTRY_APP_NAME"
+    if [ ! -d "$PINENTRY_APP_SRC" ]; then
+        echo "ERROR: $PINENTRY_APP_NAME not found at $PINENTRY_APP_SRC"
+        echo "       qpv2-gui's build.rs is responsible for staging it."
+        echo "       Run: vendor/build-pinentry.sh && cargo clean -p qpv2-gui && cargo build -p qpv2-gui $CARGO_FLAGS"
+        exit 1
+    fi
+    echo "==> Using $PINENTRY_APP_NAME from $PINENTRY_APP_SRC (staged by build.rs)"
+else
+    echo "==> Skipping pinentry-mac.app bundling (BUNDLE_PINENTRY=false)"
+fi
+
 echo "==> Creating app bundle at $APP_BUNDLE..."
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
@@ -93,6 +133,11 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 cp "$TARGET_DIR/$BINARY_NAME" "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME"
 cp "$LIGHT_CLIENT_BIN" "$APP_BUNDLE/Contents/MacOS/$LIGHT_CLIENT_NAME"
 cp "$FULL_NODE_BIN" "$APP_BUNDLE/Contents/MacOS/$FULL_NODE_NAME"
+if [ "$BUNDLE_PINENTRY" = "true" ]; then
+    cp -R "$PINENTRY_APP_SRC" "$APP_BUNDLE/Contents/MacOS/$PINENTRY_APP_NAME"
+    PINENTRY_APP_DST="$APP_BUNDLE/Contents/MacOS/$PINENTRY_APP_NAME"
+    PINENTRY_BIN="$PINENTRY_APP_DST/Contents/MacOS/$PINENTRY_NAME"
+fi
 
 # Create Info.plist.
 cat > "$APP_BUNDLE/Contents/Info.plist" << PLIST
@@ -151,6 +196,17 @@ codesign --force --sign "$SIGNING_IDENTITY" \
 codesign --force --sign "$SIGNING_IDENTITY" \
 	--options runtime \
 	"$APP_BUNDLE/Contents/MacOS/$FULL_NODE_NAME"
+if [ "$BUNDLE_PINENTRY" = "true" ]; then
+    # Pinentry is statically linked (no bundled dylibs). Sign the inner
+    # Mach-O binary, then the .app bundle. Hardened runtime is required
+    # for notarization eligibility.
+    codesign --force --sign "$SIGNING_IDENTITY" \
+        --options runtime \
+        "$PINENTRY_BIN"
+    codesign --force --sign "$SIGNING_IDENTITY" \
+        --options runtime \
+        "$PINENTRY_APP_DST"
+fi
 codesign --force --sign "$SIGNING_IDENTITY" \
 	--entitlements "$ENTITLEMENTS" \
 	--options runtime \
