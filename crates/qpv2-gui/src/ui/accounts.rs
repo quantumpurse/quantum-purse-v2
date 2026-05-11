@@ -62,6 +62,7 @@ impl App {
                         if matches!(self.auth_method, Some(AuthMethod::Password)) {
                             self.create_new_account_with_password();
                         } else {
+                            #[cfg(target_os = "macos")]
                             self.create_new_account_with_passkey_start(frame);
                         }
                     }

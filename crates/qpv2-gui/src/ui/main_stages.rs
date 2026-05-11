@@ -84,29 +84,27 @@ impl App {
                     #[cfg(not(target_os = "macos"))]
                     let is_busy = false;
 
-                    // Passkey button — kicks off async registration with Touch ID.
-                    let pk_button = egui::Button::new(
-                        egui::RichText::new(if is_busy {
-                            "Creating wallet..."
-                        } else {
-                            "Create with Touch ID"
-                        })
-                        .size(16.0)
-                        .color(self.colors.bg),
-                    )
-                    .fill(self.colors.accent)
-                    .min_size(egui::vec2(field_width, 48.0));
+                    #[cfg(target_os = "macos")]
+                    {
+                        let pk_button = egui::Button::new(
+                            egui::RichText::new(if is_busy {
+                                "Creating wallet..."
+                            } else {
+                                "Create with Touch ID"
+                            })
+                            .size(16.0)
+                            .color(self.colors.bg),
+                        )
+                        .fill(self.colors.accent)
+                        .min_size(egui::vec2(field_width, 48.0));
 
-                    if ui.add_enabled(!is_busy, pk_button).clicked() {
-                        self.create_wallet_with_passkey_start(frame);
+                        if ui.add_enabled(!is_busy, pk_button).clicked() {
+                            self.create_wallet_with_passkey_start(frame);
+                        }
+
+                        ui.add_space(10.0);
                     }
 
-                    ui.add_space(10.0);
-
-                    // Password button — opens the pinentry dialog
-                    // synchronously (with a confirm field). Blocks
-                    // the egui frame for the duration of the dialog;
-                    // see `pinentry::prompt_password_with_confirmation`.
                     let pw_btn = egui::Button::new(
                         egui::RichText::new("Create with Password")
                             .size(16.0)
@@ -508,24 +506,24 @@ impl App {
             ui.add_space(40.0);
 
             #[cfg(target_os = "macos")]
-            let is_busy = self.passkey_op.is_some();
-            #[cfg(not(target_os = "macos"))]
-            let is_busy = false;
+            {
+                let is_busy = self.passkey_op.is_some();
 
-            let button = egui::Button::new(
-                egui::RichText::new(if is_busy {
-                    "Waiting for Touch ID..."
-                } else {
-                    "Unlock with Touch ID"
-                })
-                .size(16.0)
-                .color(self.colors.bg),
-            )
-            .fill(self.colors.accent2)
-            .min_size(egui::vec2(280.0, 48.0));
+                let button = egui::Button::new(
+                    egui::RichText::new(if is_busy {
+                        "Waiting for Touch ID..."
+                    } else {
+                        "Unlock with Touch ID"
+                    })
+                    .size(16.0)
+                    .color(self.colors.bg),
+                )
+                .fill(self.colors.accent2)
+                .min_size(egui::vec2(280.0, 48.0));
 
-            if ui.add_enabled(!is_busy, button).clicked() {
-                self.unlock_with_passkey_start(frame);
+                if ui.add_enabled(!is_busy, button).clicked() {
+                    self.unlock_with_passkey_start(frame);
+                }
             }
 
             ui.add_space(24.0);
