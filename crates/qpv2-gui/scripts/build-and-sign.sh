@@ -57,6 +57,19 @@ done
 TARGET_DIR="$PROJECT_ROOT/target/$BUILD_TYPE"
 APP_BUNDLE="$TARGET_DIR/$APP_NAME.app"
 
+if [ "$BUNDLE_PINENTRY" = "true" ]; then
+	PINENTRY_VENDOR="$PROJECT_ROOT/vendor/pinentry-build/$(uname -s)-$(uname -m)/pinentry-mac.app"
+	PINENTRY_VENDOR_BIN="$PINENTRY_VENDOR/Contents/MacOS/pinentry-mac"
+	if [ ! -f "$PINENTRY_VENDOR_BIN" ]; then
+		echo "==> pinentry-mac not found, building from source..."
+		"$PROJECT_ROOT/vendor/build-pinentry.sh"
+		if [ ! -f "$PINENTRY_VENDOR_BIN" ]; then
+			echo "ERROR: vendor/build-pinentry.sh did not produce $PINENTRY_VENDOR_BIN"
+			exit 1
+		fi
+	fi
+fi
+
 echo "==> Building $BINARY_NAME ($BUILD_TYPE)..."
 # Force build.rs to re-run so pinentry-mac.app is freshly staged from
 # vendor/pinentry-build/. Cost: ~20s qpv2-gui recompile per release.

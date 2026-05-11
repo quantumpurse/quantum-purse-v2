@@ -46,9 +46,8 @@ fn pinentry_path() -> Result<PathBuf, String> {
         .join("pinentry-mac");
     if !path.exists() {
         let msg = format!(
-            "pinentry-mac.app not found at {}. Release: bundle is broken. \
-             Dev: run `vendor/build-pinentry.sh` and rebuild so build.rs \
-             stages the .app next to the binary.",
+            "pinentry-mac.app not found at {}. \
+             The app bundle is incomplete.",
             path.display()
         );
         // .app bundles launched via `open` swallow stdout/stderr from the
