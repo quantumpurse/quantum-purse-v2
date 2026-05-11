@@ -6,9 +6,9 @@
 //! `vendor/build-pinentry.sh`. If missing, emits a build warning —
 //! the GUI compiles but the password flow will error at runtime.
 
-use std::path::PathBuf;
 #[cfg(target_os = "macos")]
 use std::path::Path;
+use std::path::PathBuf;
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
