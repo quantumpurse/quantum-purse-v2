@@ -43,6 +43,7 @@ fn uname_arch() -> &'static str {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
