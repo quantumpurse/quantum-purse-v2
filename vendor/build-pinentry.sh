@@ -159,6 +159,7 @@ case "$OS" in
 
 	MINGW*|MSYS*)
 		echo "    Configuring for Windows (pinentry-w32)..."
+		export LDFLAGS="${LDFLAGS:-} -lws2_32"
 		./configure \
 			--disable-pinentry-curses \
 			--disable-fallback-curses \
