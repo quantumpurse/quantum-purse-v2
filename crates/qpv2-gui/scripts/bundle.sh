@@ -1,16 +1,11 @@
 #!/usr/bin/env bash
-# Build, bundle, and sign the QPV2 GUI app for macOS.
+# Build and bundle the QPV2 GUI app for macOS (unsigned).
 #
-# Prerequisites:
-#   1. Apple Developer identity: "Developer ID Application: Pham Tung (KPSL53752R)"
-#   2. A Developer ID provisioning profile with Associated Domains capability,
-#      installed at ~/Library/Developer/Xcode/Provisioning Profiles/ or
-#      embedded manually (see PROVISIONING_PROFILE below).
-#   3. The apple-app-site-association file must be deployed to:
-#      https://quantumpurse.org/.well-known/apple-app-site-association
+# Produces target/{debug,release}/qpv2.app with all binaries and
+# Info.plist. Run sign.sh afterwards for code signing.
 #
 # Usage:
-#   ./crates/qpv2-gui/scripts/build-and-sign.sh [--release] [--profile <path>]
+#   ./crates/qpv2-gui/scripts/bundle.sh [--release] [--profile <path>]
 
 set -euo pipefail
 
@@ -18,18 +13,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 GUI_DIR="$(dirname "$SCRIPT_DIR")"
 PROJECT_ROOT="$(cd "$GUI_DIR/../.." && pwd)"
 
-# Configuration.
-BINARY_NAME="qpv2-gui"
-BUNDLE_ID="org.quantumpurse.wallet"
-APP_NAME="qpv2"
-SIGNING_IDENTITY="Developer ID Application: Pham Tung (KPSL53752R)"
-TEAM_ID="KPSL53752R"
+source "$SCRIPT_DIR/config.sh"
+
 ENTITLEMENTS="$GUI_DIR/entitlements.plist"
-# Toggle: when "false", the pinentry-mac.app sub-bundle is NOT
-# copied/signed into qpv2.app. The password flow will surface a
-# runtime error pointing at the missing path; Touch ID is unaffected.
-# Useful for testing the bundle's behavior in pinentry's absence.
-BUNDLE_PINENTRY="true"
 
 # Parse arguments.
 BUILD_TYPE="debug"
@@ -57,6 +43,8 @@ done
 TARGET_DIR="$PROJECT_ROOT/target/$BUILD_TYPE"
 APP_BUNDLE="$TARGET_DIR/$APP_NAME.app"
 
+# ── Build pinentry ────────────────────────────────────────────────
+
 if [ "$BUNDLE_PINENTRY" = "true" ]; then
 	PINENTRY_VENDOR="$PROJECT_ROOT/vendor/pinentry-build/$(uname -s)-$(uname -m)/pinentry-mac.app"
 	PINENTRY_VENDOR_BIN="$PINENTRY_VENDOR/Contents/MacOS/pinentry-mac"
@@ -70,6 +58,8 @@ if [ "$BUNDLE_PINENTRY" = "true" ]; then
 	fi
 fi
 
+# ── Build binaries ────────────────────────────────────────────────
+
 echo "==> Building $BINARY_NAME ($BUILD_TYPE)..."
 # Force build.rs to re-run so pinentry-mac.app is freshly staged from
 # vendor/pinentry-build/. Cost: ~20s qpv2-gui recompile per release.
@@ -77,8 +67,6 @@ cargo clean -p qpv2-gui $CARGO_FLAGS
 rm -rf "$TARGET_DIR/pinentry-mac.app"
 cargo build -p qpv2-gui $CARGO_FLAGS
 
-# Build the bundled ckb-light-client from the vendored submodule. It lives
-# in a separate Cargo workspace so we invoke it via --manifest-path.
 LIGHT_CLIENT_NAME="ckb-light-client"
 LIGHT_CLIENT_SRC="$PROJECT_ROOT/vendor/ckb-light-client"
 LIGHT_CLIENT_BIN="$LIGHT_CLIENT_SRC/target/$BUILD_TYPE/$LIGHT_CLIENT_NAME"
@@ -91,9 +79,6 @@ if [ ! -f "$LIGHT_CLIENT_BIN" ]; then
     exit 1
 fi
 
-# Build the bundled ckb full-node binary. Same submodule pattern as the
-# light client. Heavy build — minutes on a clean target dir, multi-GB
-# build artifacts. Skipped automatically when re-running incrementally.
 FULL_NODE_NAME="ckb"
 FULL_NODE_SRC="$PROJECT_ROOT/vendor/ckb"
 FULL_NODE_BIN="$FULL_NODE_SRC/target/$BUILD_TYPE/$FULL_NODE_NAME"
@@ -107,9 +92,6 @@ if [ ! -f "$FULL_NODE_BIN" ]; then
 fi
 
 if [ "$BUNDLE_PINENTRY" = "true" ]; then
-    # Reuse the pinentry-mac.app already staged by qpv2-gui's build.rs
-    # next to the GUI binary (`target/{debug,release}/pinentry-mac.app`).
-    # build.rs copies it from vendor/pinentry-build/Darwin-{arch}/.
     PINENTRY_NAME="pinentry-mac"
     PINENTRY_APP_NAME="pinentry-mac.app"
     PINENTRY_APP_SRC="$TARGET_DIR/$PINENTRY_APP_NAME"
@@ -124,22 +106,20 @@ else
     echo "==> Skipping pinentry-mac.app bundling (BUNDLE_PINENTRY=false)"
 fi
 
+# ── Create app bundle ─────────────────────────────────────────────
+
 echo "==> Creating app bundle at $APP_BUNDLE..."
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
-# Copy binaries.
 cp "$TARGET_DIR/$BINARY_NAME" "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME"
 cp "$LIGHT_CLIENT_BIN" "$APP_BUNDLE/Contents/MacOS/$LIGHT_CLIENT_NAME"
 cp "$FULL_NODE_BIN" "$APP_BUNDLE/Contents/MacOS/$FULL_NODE_NAME"
 if [ "$BUNDLE_PINENTRY" = "true" ]; then
     cp -R "$PINENTRY_APP_SRC" "$APP_BUNDLE/Contents/MacOS/$PINENTRY_APP_NAME"
-    PINENTRY_APP_DST="$APP_BUNDLE/Contents/MacOS/$PINENTRY_APP_NAME"
-    PINENTRY_BIN="$PINENTRY_APP_DST/Contents/MacOS/$PINENTRY_NAME"
 fi
 
-# Create Info.plist.
 cat > "$APP_BUNDLE/Contents/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -185,44 +165,6 @@ else
 	echo "    Use --profile <path> to provide one."
 fi
 
-echo "==> Signing with identity: $SIGNING_IDENTITY"
-# Sign inner binaries first, then the bundle (Apple recommends against
-# --deep). The light client and full node are standalone TCP/HTTP daemons
-# with no keychain or passkey access, so they get hardened-runtime but
-# no entitlements.
-codesign --force --sign "$SIGNING_IDENTITY" \
-	--options runtime \
-	"$APP_BUNDLE/Contents/MacOS/$LIGHT_CLIENT_NAME"
-codesign --force --sign "$SIGNING_IDENTITY" \
-	--options runtime \
-	"$APP_BUNDLE/Contents/MacOS/$FULL_NODE_NAME"
-if [ "$BUNDLE_PINENTRY" = "true" ]; then
-    # Pinentry is statically linked (no bundled dylibs). Sign the inner
-    # Mach-O binary, then the .app bundle. Hardened runtime is required
-    # for notarization eligibility.
-    codesign --force --sign "$SIGNING_IDENTITY" \
-        --options runtime \
-        "$PINENTRY_BIN"
-    codesign --force --sign "$SIGNING_IDENTITY" \
-        --options runtime \
-        "$PINENTRY_APP_DST"
-fi
-codesign --force --sign "$SIGNING_IDENTITY" \
-	--entitlements "$ENTITLEMENTS" \
-	--options runtime \
-	"$APP_BUNDLE/Contents/MacOS/$BINARY_NAME"
-codesign --force --sign "$SIGNING_IDENTITY" \
-	--entitlements "$ENTITLEMENTS" \
-	--options runtime \
-	"$APP_BUNDLE"
-
-echo "==> Verifying signature..."
-codesign --verify --strict "$APP_BUNDLE"
-echo "==> Signature valid."
-
 echo ""
-echo "==> Done! App bundle: $APP_BUNDLE"
-echo "    Run with: open \"$APP_BUNDLE\""
-echo ""
-echo "==> To check entitlements:"
-echo "    codesign -d --entitlements - \"$APP_BUNDLE\""
+echo "==> Bundle created: $APP_BUNDLE"
+echo "    Run sign.sh to code sign, or use as-is for testing."

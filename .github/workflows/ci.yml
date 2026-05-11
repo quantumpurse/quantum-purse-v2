@@ -53,10 +53,22 @@ jobs:
           ${{ runner.os }}-cargo-build-target-
 
     - name: Run tests
-      run: cargo test --verbose
+      run: |
+        if [ "$RUNNER_OS" = "macOS" ]; then
+          cargo test --workspace --verbose
+        else
+          cargo test --workspace --exclude passkey-prf --verbose
+        fi
+      shell: bash
 
-    - name: Build release binary
-      run: cargo build --release --verbose
+    - name: Build workspace release
+      run: |
+        if [ "$RUNNER_OS" = "macOS" ]; then
+          cargo build --workspace --release --verbose
+        else
+          cargo build --workspace --exclude passkey-prf --release --verbose
+        fi
+      shell: bash
 
   lint:
     name: Lint and Format Check
@@ -75,7 +87,7 @@ jobs:
       run: cargo fmt --all -- --check
 
     - name: Run clippy
-      run: cargo clippy --all-targets --all-features -- -D warnings
+      run: cargo clippy --workspace --exclude passkey-prf --all-targets -- -D warnings
 
   security:
     name: Security Audit

@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*.*.*'  # Triggers on version tags like v0.1.0, v1.2.3, etc.
+      - 'v*.*.*'
 
 env:
   CARGO_TERM_COLOR: always
@@ -31,37 +31,35 @@ jobs:
           draft: false
           prerelease: false
 
-  build-release:
-    name: Build Release Binary
+  # ── CLI binaries ──────────────────────────────────────────────────
+
+  build-cli:
+    name: Build CLI
     needs: create-release
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          # macOS ARM64 (Apple Silicon)
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact_name: qpkv
-            asset_name: qpkv-macos-arm64
+            artifact_name: qpv2-cli
+            asset_name: qpv2-cli-macos-arm64
 
-          # macOS x86_64 (Intel)
           - os: macos-latest
             target: x86_64-apple-darwin
-            artifact_name: qpkv
-            asset_name: qpkv-macos-x86_64
+            artifact_name: qpv2-cli
+            asset_name: qpv2-cli-macos-x86_64
 
-          # Linux x86_64
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: qpkv
-            asset_name: qpkv-linux-x86_64
+            artifact_name: qpv2-cli
+            asset_name: qpv2-cli-linux-x86_64
 
-          # Windows x86_64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: qpkv.exe
-            asset_name: qpkv-windows-x86_64.exe
+            artifact_name: qpv2-cli.exe
+            asset_name: qpv2-cli-windows-x86_64.exe
 
     steps:
     - name: Checkout code
@@ -89,8 +87,8 @@ jobs:
         asset_name: ${{ matrix.asset_name }}
         asset_content_type: application/octet-stream
 
-  build-universal-macos:
-    name: Build Universal macOS Binary
+  build-cli-universal-macos:
+    name: Build Universal macOS CLI
     needs: create-release
     runs-on: macos-latest
     steps:
@@ -111,10 +109,10 @@ jobs:
     - name: Create universal binary
       run: |
         lipo -create \
-          target/aarch64-apple-darwin/release/qpkv \
-          target/x86_64-apple-darwin/release/qpkv \
-          -output qpkv-universal
-        strip qpkv-universal
+          target/aarch64-apple-darwin/release/qpv2-cli \
+          target/x86_64-apple-darwin/release/qpv2-cli \
+          -output qpv2-cli-universal
+        strip qpv2-cli-universal
 
     - name: Upload Universal Binary
       uses: actions/upload-release-asset@v1
@@ -122,6 +120,149 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: ./qpkv-universal
-        asset_name: qpkv-macos-universal
+        asset_path: ./qpv2-cli-universal
+        asset_name: qpv2-cli-macos-universal
         asset_content_type: application/octet-stream
+
+  # ── GUI bundles ───────────────────────────────────────────────────
+
+  build-gui-macos:
+    name: Build macOS GUI (.app unsigned)
+    needs: create-release
+    runs-on: macos-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Install build dependencies
+      run: brew install automake gettext
+
+    - name: Bundle app
+      run: crates/qpv2-gui/scripts/bundle.sh --release
+
+    - name: Package
+      run: |
+        cd target/release
+        tar -czf qpv2-gui-macos-arm64.tar.gz qpv2.app
+
+    - name: Upload
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./target/release/qpv2-gui-macos-arm64.tar.gz
+        asset_name: qpv2-gui-macos-arm64.tar.gz
+        asset_content_type: application/gzip
+
+  build-gui-linux:
+    name: Build Linux GUI
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Build pinentry-gtk-2
+      run: vendor/build-pinentry.sh
+
+    - name: Build GUI
+      run: cargo build -p qpv2-gui --release
+
+    - name: Build ckb-light-client
+      run: |
+        cargo build -p ckb-light-client --release \
+          --manifest-path vendor/ckb-light-client/Cargo.toml
+
+    - name: Build ckb
+      run: |
+        cargo build -p ckb-bin --release \
+          --manifest-path vendor/ckb/Cargo.toml
+
+    - name: Package
+      run: |
+        mkdir -p qpv2-gui-linux-x86_64
+        cp target/release/qpv2-gui qpv2-gui-linux-x86_64/
+        cp vendor/pinentry-build/Linux-x86_64/pinentry-gtk-2 qpv2-gui-linux-x86_64/
+        cp vendor/ckb-light-client/target/release/ckb-light-client qpv2-gui-linux-x86_64/
+        cp vendor/ckb/target/release/ckb qpv2-gui-linux-x86_64/
+        strip qpv2-gui-linux-x86_64/*
+        tar -czf qpv2-gui-linux-x86_64.tar.gz qpv2-gui-linux-x86_64/
+
+    - name: Upload
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./qpv2-gui-linux-x86_64.tar.gz
+        asset_name: qpv2-gui-linux-x86_64.tar.gz
+        asset_content_type: application/gzip
+
+  build-gui-windows:
+    name: Build Windows GUI
+    needs: create-release
+    runs-on: windows-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: true
+        install: >-
+          mingw-w64-x86_64-toolchain automake autoconf libtool make gettext-devel
+
+    - name: Build pinentry-w32
+      shell: msys2 {0}
+      run: vendor/build-pinentry.sh
+
+    - name: Build GUI
+      run: cargo build -p qpv2-gui --release
+
+    - name: Build ckb-light-client
+      run: |
+        cargo build -p ckb-light-client --release `
+          --manifest-path vendor/ckb-light-client/Cargo.toml
+
+    - name: Build ckb
+      run: |
+        cargo build -p ckb-bin --release `
+          --manifest-path vendor/ckb/Cargo.toml
+
+    - name: Package
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Path qpv2-gui-windows-x86_64 -Force
+        Copy-Item target/release/qpv2-gui.exe qpv2-gui-windows-x86_64/
+        Copy-Item (Get-ChildItem vendor/pinentry-build/MINGW*/pinentry-w32.exe) qpv2-gui-windows-x86_64/
+        Copy-Item vendor/ckb-light-client/target/release/ckb-light-client.exe qpv2-gui-windows-x86_64/
+        Copy-Item vendor/ckb/target/release/ckb.exe qpv2-gui-windows-x86_64/
+        Compress-Archive -Path qpv2-gui-windows-x86_64 -DestinationPath qpv2-gui-windows-x86_64.zip
+
+    - name: Upload
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./qpv2-gui-windows-x86_64.zip
+        asset_name: qpv2-gui-windows-x86_64.zip
+        asset_content_type: application/zip
