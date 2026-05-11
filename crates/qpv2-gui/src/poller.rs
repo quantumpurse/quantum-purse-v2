@@ -114,7 +114,7 @@ impl App {
                     self.passkey_op = Some(PasskeyOp::NewAccountAssert { op });
                 }
                 Some(Ok(Some(prf_output))) => {
-                    self.create_new_account_finish(&prf_output);
+                    self.create_new_account_with_passkey_finish(&prf_output);
                 }
                 Some(Ok(None)) => {
                     self.status = Status::Error(

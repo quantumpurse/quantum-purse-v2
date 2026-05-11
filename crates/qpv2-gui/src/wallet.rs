@@ -359,16 +359,8 @@ impl App {
         }
     }
 
-    /// Kick off the appropriate auth flow to create a new account.
-    /// Branches on the wallet's recorded `auth_method`:
-    /// - `Password` → synchronous pinentry prompt + derive.
-    /// - `PasskeyPrf` (or unknown) → async PRF assertion via Touch ID.
-    pub(crate) fn create_new_account_start(&mut self, frame: &mut eframe::Frame) {
-        if matches!(self.auth_method, Some(AuthMethod::Password)) {
-            self.create_new_account_with_password();
-            return;
-        }
-
+    /// Kick off async PRF assertion to create a new account (Touch ID).
+    pub(crate) fn create_new_account_with_passkey_start(&mut self, frame: &mut eframe::Frame) {
         let window = match crate::window_handle::get_ns_window(frame) {
             Ok(w) => w,
             Err(e) => {
@@ -396,7 +388,7 @@ impl App {
     }
 
     /// Complete new account creation after receiving the PRF output.
-    pub(crate) fn create_new_account_finish(&mut self, prf_output: &qpv2_core::SecureVec) {
+    pub(crate) fn create_new_account_with_passkey_finish(&mut self, prf_output: &qpv2_core::SecureVec) {
         let key = match qpv2_core::utilities::derive_vault_enc_key(prf_output) {
             Ok(k) => k,
             Err(e) => {

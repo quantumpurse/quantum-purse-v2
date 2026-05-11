@@ -59,7 +59,11 @@ impl App {
                         .response;
 
                     if new_card.interact(egui::Sense::click()).clicked() {
-                        self.create_new_account_start(frame);
+                        if matches!(self.auth_method, Some(AuthMethod::Password)) {
+                            self.create_new_account_with_password();
+                        } else {
+                            self.create_new_account_with_passkey_start(frame);
+                        }
                     }
 
                     // Import (CLI only)
