@@ -1,9 +1,11 @@
 //! Transaction building, signing, and sending.
 
-use crate::types::{spx_witness_lock_size, TransactionKind, TransactionStatus, Status, CKB_DECIMAL_PLACES};
+use crate::types::{
+    spx_witness_lock_size, Status, TransactionKind, TransactionStatus, CKB_DECIMAL_PLACES,
+};
 use crate::App;
 use ckb_node::{NodeType, QpClient};
-use qpv2_core::{KeyVault, types::AuthKey};
+use qpv2_core::{types::AuthKey, KeyVault};
 use std::sync::mpsc;
 
 /// Pre-flight check before building any tx that uses the QR-lock-script
@@ -372,7 +374,6 @@ impl App {
         });
     }
 
-
     /// Prompt for the wallet password and hand the resulting
     /// `AuthKey::Password` to the sign-and-send core. Synchronous;
     /// blocks the egui update loop while the dialog is up.
@@ -380,10 +381,7 @@ impl App {
         &mut self,
         kind: crate::types::TransactionKind,
         unsigned_tx: ckb_types::core::TransactionView,
-        input_cells: Vec<(
-            ckb_types::packed::CellOutput,
-            ckb_types::bytes::Bytes,
-        )>,
+        input_cells: Vec<(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)>,
         lock_args: String,
     ) {
         let pw = match crate::pinentry::prompt_password(
@@ -397,7 +395,13 @@ impl App {
                 return;
             }
         };
-        self.sign_and_send(kind, AuthKey::Password(pw), unsigned_tx, input_cells, lock_args);
+        self.sign_and_send(
+            kind,
+            AuthKey::Password(pw),
+            unsigned_tx,
+            input_cells,
+            lock_args,
+        );
     }
 
     /// Auth-mechanism-agnostic signing core. Used by both the PRF

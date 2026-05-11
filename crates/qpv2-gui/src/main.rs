@@ -1,9 +1,9 @@
 //! GUI for SPHINCS+ key vault with Passkey PRF / Touch ID support.
 
-mod pinentry;
 mod ckb;
 #[cfg(target_os = "macos")]
 mod passkey;
+mod pinentry;
 mod poller;
 mod transactor;
 mod tx_history_store;

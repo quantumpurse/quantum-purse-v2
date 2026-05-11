@@ -1,5 +1,6 @@
 //! Background data fetchers (balances, DAO cells, spendable capacity, tx history).
 
+use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::sync::mpsc;
@@ -355,7 +356,7 @@ impl App {
 
             // Process each unique transaction, sorted newest first.
             let mut tx_list: Vec<(String, TxInfo)> = seen.into_iter().collect();
-            tx_list.sort_by(|a, b| b.1.block_number.cmp(&a.1.block_number));
+            tx_list.sort_by_key(|item| Reverse(item.1.block_number));
 
             for (tx_hash_str, tx_info) in tx_list {
                 let block_number = tx_info.block_number;

@@ -3,7 +3,8 @@
 #![allow(non_snake_case)]
 
 use std::fmt;
-use std::sync::{Arc, Mutex};
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, NSObject, ProtocolObject};
@@ -55,7 +56,7 @@ impl fmt::Display for PrfError {
 
 impl std::error::Error for PrfError {}
 
-/// Internal state shared between the delegate and the caller via Arc<Mutex<..>>.
+/// Internal state shared between the delegate and the caller via Rc<RefCell<..>>.
 enum AuthResult {
     Pending,
     Success(Retained<ASAuthorization>),
@@ -64,7 +65,7 @@ enum AuthResult {
 
 /// Ivars for the Objective-C delegate class.
 struct DelegateIvars {
-    result: Arc<Mutex<AuthResult>>,
+    result: Rc<RefCell<AuthResult>>,
     window: Retained<NSWindow>,
 }
 
@@ -85,7 +86,7 @@ define_class!(
             _controller: &ASAuthorizationController,
             authorization: &ASAuthorization,
         ) {
-            let mut result = self.ivars().result.lock().unwrap();
+            let mut result = self.ivars().result.borrow_mut();
             *result = AuthResult::Success(authorization.retain());
         }
 
@@ -95,7 +96,7 @@ define_class!(
             _controller: &ASAuthorizationController,
             error: &NSError,
         ) {
-            let mut result = self.ivars().result.lock().unwrap();
+            let mut result = self.ivars().result.borrow_mut();
             let description = error.localizedDescription().to_string();
             *result = AuthResult::Failure(description);
         }
@@ -115,7 +116,7 @@ define_class!(
 );
 
 impl AuthDelegate {
-    fn new(window: Retained<NSWindow>, result: Arc<Mutex<AuthResult>>) -> Retained<Self> {
+    fn new(window: Retained<NSWindow>, result: Rc<RefCell<AuthResult>>) -> Retained<Self> {
         let mtm = MainThreadMarker::from(&*window);
         let delegate = mtm.alloc::<Self>();
         let delegate = delegate.set_ivars(DelegateIvars { result, window });
@@ -128,7 +129,7 @@ impl AuthDelegate {
 /// Call [`PendingRegistration::poll`] each frame to check if the result is ready.
 /// The delegate callbacks fire on the main run loop between eframe update cycles.
 pub struct PendingRegistration {
-    result: Arc<Mutex<AuthResult>>,
+    result: Rc<RefCell<AuthResult>>,
     // Keep the delegate and controller alive until the operation completes.
     _delegate: Retained<AuthDelegate>,
     _controller: Retained<ASAuthorizationController>,
@@ -139,7 +140,7 @@ impl PendingRegistration {
     ///
     /// Returns `None` if still pending, or `Some(Result)` when done.
     pub fn poll(&self) -> Option<Result<Registration, PrfError>> {
-        let mut guard = self.result.lock().unwrap();
+        let mut guard = self.result.borrow_mut();
         if matches!(*guard, AuthResult::Pending) {
             return None;
         }
@@ -190,7 +191,7 @@ impl PendingRegistration {
 /// Call [`AssertionRequest::poll`] each frame to check if the result is ready.
 /// When PRF was requested, the result includes the PRF output; otherwise `None`.
 pub struct AssertionRequest {
-    result: Arc<Mutex<AuthResult>>,
+    result: Rc<RefCell<AuthResult>>,
     with_prf: bool,
     // Keep the delegate and controller alive until the operation completes.
     _delegate: Retained<AuthDelegate>,
@@ -203,7 +204,7 @@ impl AssertionRequest {
     /// Returns `None` if still pending, or `Some(Result)` when done.
     /// The inner `Option<SecureVec>` is `Some` when PRF was requested, `None` otherwise.
     pub fn poll(&self) -> Option<Result<Option<SecureVec>, PrfError>> {
-        let mut guard = self.result.lock().unwrap();
+        let mut guard = self.result.borrow_mut();
         if matches!(*guard, AuthResult::Pending) {
             return None;
         }
@@ -294,7 +295,7 @@ pub fn register_passkey_async(
             &requests,
         );
 
-        let result_arc = Arc::new(Mutex::new(AuthResult::Pending));
+        let result_arc = Rc::new(RefCell::new(AuthResult::Pending));
         let delegate = AuthDelegate::new(window.retain(), result_arc.clone());
         let delegate_proto: &ProtocolObject<dyn ASAuthorizationControllerDelegate> =
             ProtocolObject::from_ref(&*delegate);
@@ -381,7 +382,7 @@ pub fn assert_async(
             &requests,
         );
 
-        let result_arc = Arc::new(Mutex::new(AuthResult::Pending));
+        let result_arc = Rc::new(RefCell::new(AuthResult::Pending));
         let delegate = AuthDelegate::new(window.retain(), result_arc.clone());
         let delegate_proto: &ProtocolObject<dyn ASAuthorizationControllerDelegate> =
             ProtocolObject::from_ref(&*delegate);

@@ -18,24 +18,24 @@ pub(crate) const PRF_SALT: &[u8] = b"quantumpurse-kv-seed-encryption\0";
 
 /// Extracts the NSWindow from the eframe Frame via raw-window-handle.
 fn get_ns_window(frame: &eframe::Frame) -> Result<Retained<NSWindow>, String> {
-	let handle = frame
-		.window_handle()
-		.map_err(|e| format!("Failed to get window handle: {}", e))?;
+    let handle = frame
+        .window_handle()
+        .map_err(|e| format!("Failed to get window handle: {}", e))?;
 
-	match handle.as_raw() {
-		RawWindowHandle::AppKit(appkit_handle) => {
-			let ns_view_ptr = appkit_handle.ns_view.as_ptr();
-			// SAFETY: The pointer came from eframe's WindowHandle, which guarantees
-			// it points to a valid NSView. We are on the main thread because eframe's
-			// update() runs on the main thread.
-			let ns_view: Retained<NSView> = unsafe { Retained::retain(ns_view_ptr.cast()) }
-				.ok_or("Failed to retain NSView from raw pointer")?;
-			ns_view
-				.window()
-				.ok_or_else(|| "NSView is not installed in a window".to_string())
-		}
-		other => Err(format!("Unexpected window handle type: {:?}", other)),
-	}
+    match handle.as_raw() {
+        RawWindowHandle::AppKit(appkit_handle) => {
+            let ns_view_ptr = appkit_handle.ns_view.as_ptr();
+            // SAFETY: The pointer came from eframe's WindowHandle, which guarantees
+            // it points to a valid NSView. We are on the main thread because eframe's
+            // update() runs on the main thread.
+            let ns_view: Retained<NSView> = unsafe { Retained::retain(ns_view_ptr.cast()) }
+                .ok_or("Failed to retain NSView from raw pointer")?;
+            ns_view
+                .window()
+                .ok_or_else(|| "NSView is not installed in a window".to_string())
+        }
+        other => Err(format!("Unexpected window handle type: {:?}", other)),
+    }
 }
 
 impl App {
@@ -57,7 +57,6 @@ impl App {
             }
         }
     }
-
 
     /// Kick off async passkey registration.
     pub(crate) fn create_wallet_with_passkey_start(&mut self, frame: &mut eframe::Frame) {
@@ -217,7 +216,10 @@ impl App {
     }
 
     /// Complete new account creation after receiving the PRF output.
-    pub(crate) fn create_new_account_with_passkey_finish(&mut self, prf_output: &qpv2_core::SecureVec) {
+    pub(crate) fn create_new_account_with_passkey_finish(
+        &mut self,
+        prf_output: &qpv2_core::SecureVec,
+    ) {
         let key = match qpv2_core::utilities::derive_vault_enc_key(prf_output) {
             Ok(k) => k,
             Err(e) => {
@@ -265,54 +267,49 @@ impl App {
         }
     }
 
-	pub(crate) fn sign_with_passkey_start(
-		&mut self,
-		frame: &eframe::Frame,
-		kind: TransactionKind,
-		unsigned_tx: ckb_types::core::TransactionView,
-		input_cells: Vec<(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)>,
-		lock_args: String,
-	) {
-		let window = match get_ns_window(frame) {
-			Ok(w) => w,
-			Err(e) => {
-				self.tx_status =
-					TransactionStatus::Error(format!("Failed to get window: {}", e));
-				return;
-			}
-		};
-		let credential_id = match self.get_credential_id() {
-			Some(id) => id,
-			None => {
-				self.tx_status =
-					TransactionStatus::Error("Failed to read credential.".to_string());
-				return;
-			}
-		};
+    pub(crate) fn sign_with_passkey_start(
+        &mut self,
+        frame: &eframe::Frame,
+        kind: TransactionKind,
+        unsigned_tx: ckb_types::core::TransactionView,
+        input_cells: Vec<(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)>,
+        lock_args: String,
+    ) {
+        let window = match get_ns_window(frame) {
+            Ok(w) => w,
+            Err(e) => {
+                self.tx_status = TransactionStatus::Error(format!("Failed to get window: {}", e));
+                return;
+            }
+        };
+        let credential_id = match self.get_credential_id() {
+            Some(id) => id,
+            None => {
+                self.tx_status = TransactionStatus::Error("Failed to read credential.".to_string());
+                return;
+            }
+        };
 
-		match passkey_prf::assert_async(&window, RP_ID, &credential_id, Some(PRF_SALT))
-		{
-			Ok(op) => {
-				self.passkey_op = Some(PasskeyOp::SignTransactionAssert {
-					op,
-					kind,
-					unsigned_tx,
-					input_cells,
-					lock_args,
-				});
-				self.tx_status = TransactionStatus::AwaitingSignature;
-			}
-			Err(passkey_prf::PrfError::Cancelled) => {
-				self.tx_status = TransactionStatus::Idle;
-				self.status =
-					Status::Info("Transaction building cancelled.".to_string());
-			}
-			Err(e) => {
-				self.tx_status =
-					TransactionStatus::Error(format!("PRF assertion failed: {}", e));
-			}
-		}
-	}
+        match passkey_prf::assert_async(&window, RP_ID, &credential_id, Some(PRF_SALT)) {
+            Ok(op) => {
+                self.passkey_op = Some(PasskeyOp::SignTransactionAssert {
+                    op,
+                    kind,
+                    unsigned_tx,
+                    input_cells,
+                    lock_args,
+                });
+                self.tx_status = TransactionStatus::AwaitingSignature;
+            }
+            Err(passkey_prf::PrfError::Cancelled) => {
+                self.tx_status = TransactionStatus::Idle;
+                self.status = Status::Info("Transaction building cancelled.".to_string());
+            }
+            Err(e) => {
+                self.tx_status = TransactionStatus::Error(format!("PRF assertion failed: {}", e));
+            }
+        }
+    }
 
     /// After Touch ID returns the PRF output, derive the encryption
     /// key and hand it to the auth-agnostic signing core.
@@ -478,7 +475,13 @@ impl App {
                     });
                 }
                 Some(Ok(Some(prf_output))) => {
-                    self.sign_with_passkey_finish(kind, &prf_output, unsigned_tx, input_cells, lock_args);
+                    self.sign_with_passkey_finish(
+                        kind,
+                        &prf_output,
+                        unsigned_tx,
+                        input_cells,
+                        lock_args,
+                    );
                 }
                 Some(Ok(None)) => {
                     self.tx_status = TransactionStatus::Error(

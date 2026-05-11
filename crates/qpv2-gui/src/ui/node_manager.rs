@@ -447,7 +447,7 @@ impl App {
 
                 // Validate: numeric and ≤ known tip (when tip is known).
                 let parsed = self.set_block_input.trim().replace(',', "").parse::<u64>();
-                let valid = matches!(&parsed, Ok(b) if tip.map_or(true, |t| *b <= t));
+                let valid = matches!(&parsed, Ok(b) if tip.is_none_or(|t| *b <= t));
 
                 let set_clicked = ui.add_enabled(valid, egui::Button::new("Set")).clicked();
                 let cancel_clicked = ui.button("Cancel").clicked();
@@ -609,7 +609,7 @@ fn format_int(n: u64) -> String {
     let mut out = String::with_capacity(raw.len() + raw.len() / 3);
     let chars: Vec<char> = raw.chars().collect();
     for (i, ch) in chars.iter().enumerate() {
-        if i > 0 && (chars.len() - i) % 3 == 0 {
+        if i > 0 && (chars.len() - i).is_multiple_of(3) {
             out.push(',');
         }
         out.push(*ch);

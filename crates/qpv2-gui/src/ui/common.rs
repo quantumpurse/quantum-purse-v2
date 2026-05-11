@@ -360,10 +360,22 @@ pub(crate) fn rounded_rect_gradient_mesh(
     // from the TL corner.
     let mut perim: Vec<u32> = Vec::new();
     let corners = [
-        (egui::pos2(rect.left() + radius, rect.top() + radius), std::f32::consts::PI),
-        (egui::pos2(rect.right() - radius, rect.top() + radius), 1.5 * std::f32::consts::PI),
-        (egui::pos2(rect.right() - radius, rect.bottom() - radius), 0.0),
-        (egui::pos2(rect.left() + radius, rect.bottom() - radius), 0.5 * std::f32::consts::PI),
+        (
+            egui::pos2(rect.left() + radius, rect.top() + radius),
+            std::f32::consts::PI,
+        ),
+        (
+            egui::pos2(rect.right() - radius, rect.top() + radius),
+            1.5 * std::f32::consts::PI,
+        ),
+        (
+            egui::pos2(rect.right() - radius, rect.bottom() - radius),
+            0.0,
+        ),
+        (
+            egui::pos2(rect.left() + radius, rect.bottom() - radius),
+            0.5 * std::f32::consts::PI,
+        ),
     ];
     for (arc_center, start_angle) in &corners {
         for i in 0..=ARC_SEGS {
@@ -392,8 +404,7 @@ pub(crate) fn rounded_rect_gradient_mesh(
 }
 
 fn avg4(a: egui::Color32, b: egui::Color32, c: egui::Color32, d: egui::Color32) -> egui::Color32 {
-    let avg =
-        |w: u8, x: u8, y: u8, z: u8| ((w as u16 + x as u16 + y as u16 + z as u16) / 4) as u8;
+    let avg = |w: u8, x: u8, y: u8, z: u8| ((w as u16 + x as u16 + y as u16 + z as u16) / 4) as u8;
     egui::Color32::from_rgba_unmultiplied(
         avg(a.r(), b.r(), c.r(), d.r()),
         avg(a.g(), b.g(), c.g(), d.g()),

@@ -58,12 +58,7 @@ impl App {
                 use qpv2_core::types::AuthMethod;
                 if matches!(self.auth_method, Some(AuthMethod::Password)) {
                     self.tx_status = TransactionStatus::AwaitingSignature;
-                    self.sign_and_send_with_password(
-                        kind,
-                        unsigned_tx,
-                        input_cells,
-                        lock_args,
-                    );
+                    self.sign_and_send_with_password(kind, unsigned_tx, input_cells, lock_args);
                     return;
                 }
 
@@ -73,9 +68,8 @@ impl App {
                 #[cfg(not(target_os = "macos"))]
                 {
                     let _ = (frame, kind, unsigned_tx, input_cells, lock_args);
-                    self.tx_status = TransactionStatus::Error(
-                        "Passkey signing requires macOS.".to_string(),
-                    );
+                    self.tx_status =
+                        TransactionStatus::Error("Passkey signing requires macOS.".to_string());
                 }
             }
             Ok(Err(e)) => {
@@ -238,7 +232,7 @@ impl App {
                     // pass, [old-newest, ..., old-oldest, new-newest,
                     // ..., new-oldest] would render in the wrong order.
                     self.tx_history
-                        .sort_by(|a, b| b.block_number.cmp(&a.block_number));
+                        .sort_by_key(|item| std::cmp::Reverse(item.block_number));
                     self.tx_history.dedup_by(|a, b| a.tx_hash == b.tx_hash);
 
                     // Persist the new snapshot so a restart can render

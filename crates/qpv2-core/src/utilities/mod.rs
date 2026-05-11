@@ -1,4 +1,4 @@
-use super::constants::{ENC_SCRYPT, IV_LENGTH, VAULT_ENC_KEY_HKDF_INFO, SALT_LENGTH};
+use super::constants::{ENC_SCRYPT, IV_LENGTH, SALT_LENGTH, VAULT_ENC_KEY_HKDF_INFO};
 use super::types::{AuthKey, CipherPayload, ScryptParam};
 use crate::containers::{SecureString, SecureVec};
 use aes_gcm::{

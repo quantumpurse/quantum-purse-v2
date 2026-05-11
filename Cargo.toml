@@ -7,5 +7,4 @@ members = [
 	"crates/ckb-node",
 	"crates/passkey-prf",
 ]
-default-members = ["crates/qpv2-cli"]
 resolver = "2"

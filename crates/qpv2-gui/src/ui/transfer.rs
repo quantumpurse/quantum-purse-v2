@@ -169,11 +169,11 @@ impl App {
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
                                     // Clear button when send_all is active.
-                                    if self.transfer_all && !is_busy {
-                                        if ui.small_button("✕").clicked() {
-                                            self.transfer_all = false;
-                                            self.transfer_amount.clear();
-                                        }
+                                    if self.transfer_all && !is_busy
+                                        && ui.small_button("✕").clicked()
+                                    {
+                                        self.transfer_all = false;
+                                        self.transfer_amount.clear();
                                     }
 
                                     let can_calculate_max = !is_busy

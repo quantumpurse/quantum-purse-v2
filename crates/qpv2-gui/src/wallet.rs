@@ -266,9 +266,7 @@ impl App {
         // re-prompting. Both copies zeroize-on-drop.
         let pw_for_account = pw.clone();
         let vault = KeyVault::new(variant);
-        if let Err(e) =
-            vault.generate_master_seed(AuthKey::Password(pw), AuthMethod::Password)
-        {
+        if let Err(e) = vault.generate_master_seed(AuthKey::Password(pw), AuthMethod::Password) {
             self.status = Status::Error(format!("Failed to create wallet: {}", e));
             return;
         }
@@ -285,10 +283,7 @@ impl App {
                 self.auth_method = Some(AuthMethod::Password);
                 self.register_lock_scripts_with_light_client(&self.accounts.clone());
                 self.screen = Screen::Unlocked;
-                self.status = Status::Info(format!(
-                    "Wallet created successfully!{}",
-                    strength_str
-                ));
+                self.status = Status::Info(format!("Wallet created successfully!{}", strength_str));
                 self.last_poll_time = std::time::Instant::now();
                 self.load_tx_history_from_disk();
                 self.fetch_all_balances();

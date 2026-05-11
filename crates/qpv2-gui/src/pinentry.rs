@@ -41,72 +41,68 @@ const PINENTRY_NAME: &str = "pinentry-w32.exe";
 ///
 /// Linux/Windows: plain binary sitting next to the wallet exe.
 fn pinentry_path() -> Result<PathBuf, String> {
-	let exe = std::env::current_exe()
-		.map_err(|e| format!("current_exe() failed: {}", e))?;
-	let dir = exe
-		.parent()
-		.ok_or_else(|| "current_exe() has no parent".to_string())?;
+    let exe = std::env::current_exe().map_err(|e| format!("current_exe() failed: {}", e))?;
+    let dir = exe
+        .parent()
+        .ok_or_else(|| "current_exe() has no parent".to_string())?;
 
-	#[cfg(target_os = "macos")]
-	let path = dir
-		.join("pinentry-mac.app")
-		.join("Contents")
-		.join("MacOS")
-		.join("pinentry-mac");
+    #[cfg(target_os = "macos")]
+    let path = dir
+        .join("pinentry-mac.app")
+        .join("Contents")
+        .join("MacOS")
+        .join("pinentry-mac");
 
-	#[cfg(target_os = "linux")]
-	let path = dir.join("pinentry-gtk-2");
+    #[cfg(target_os = "linux")]
+    let path = dir.join("pinentry-gtk-2");
 
-	#[cfg(target_os = "windows")]
-	let path = dir.join("pinentry-w32.exe");
+    #[cfg(target_os = "windows")]
+    let path = dir.join("pinentry-w32.exe");
 
-	if !path.exists() {
-		let msg = format!(
-			"{} not found at {}. Release: bundle is broken. \
+    if !path.exists() {
+        let msg = format!(
+            "{} not found at {}. Release: bundle is broken. \
 			 Dev: run `vendor/build-pinentry.sh` and rebuild so build.rs \
 			 stages the binary next to the wallet exe.",
-			PINENTRY_NAME,
-			path.display()
-		);
-		eprintln!("auth: {}", msg);
-		return Err(msg);
-	}
-	Ok(path)
+            PINENTRY_NAME,
+            path.display()
+        );
+        eprintln!("auth: {}", msg);
+        return Err(msg);
+    }
+    Ok(path)
 }
 
 /// Maps pinentry errors to user-facing strings.
 fn map_err(e: PinentryError) -> String {
-	match e {
-		PinentryError::Cancelled => "Cancelled.".to_string(),
-		PinentryError::Timeout => "Password entry timed out.".to_string(),
-		PinentryError::Io(e) => format!("Password dialog I/O error: {}", e),
-		PinentryError::Encoding(_) => {
-			"Password is not valid UTF-8.".to_string()
-		}
-		PinentryError::Gpg(g) => format!("Password dialog error: {}", g),
-	}
+    match e {
+        PinentryError::Cancelled => "Cancelled.".to_string(),
+        PinentryError::Timeout => "Password entry timed out.".to_string(),
+        PinentryError::Io(e) => format!("Password dialog I/O error: {}", e),
+        PinentryError::Encoding(_) => "Password is not valid UTF-8.".to_string(),
+        PinentryError::Gpg(g) => format!("Password dialog error: {}", g),
+    }
 }
 
 /// Open a single-field password dialog. `description` appears above
 /// the field, `prompt` immediately to the left of it. The returned
 /// `SecureString` is zeroize-on-drop; the caller is responsible for
 /// not cloning it into unmanaged buffers.
-pub(crate) fn prompt_password(
-	description: &str,
-	prompt: &str,
-) -> Result<SecureString, String> {
-	let path = pinentry_path()?;
-	let mut input = PassphraseInput::with_binary(&path)
-		.ok_or_else(|| format!("{} not executable at {}", PINENTRY_NAME, path.display()))?;
-	let secret = input
-		.with_title("Quantum Purse")
-		.with_description(description)
-		.with_prompt(prompt)
-		.with_ok("Authorize")
-		.with_cancel("Cancel")
-		.interact()
-		.map_err(map_err)?;
-	Ok(SecureString::from_string(secret.expose_secret().to_string()))
+pub(crate) fn prompt_password(description: &str, prompt: &str) -> Result<SecureString, String> {
+    let path = pinentry_path()?;
+    let mut input = PassphraseInput::with_binary(&path)
+        .ok_or_else(|| format!("{} not executable at {}", PINENTRY_NAME, path.display()))?;
+    let secret = input
+        .with_title("Quantum Purse")
+        .with_description(description)
+        .with_prompt(prompt)
+        .with_ok("Authorize")
+        .with_cancel("Cancel")
+        .interact()
+        .map_err(map_err)?;
+    Ok(SecureString::from_string(
+        secret.expose_secret().to_string(),
+    ))
 }
 
 /// Open a password dialog with a confirmation field. pinentry's
@@ -114,22 +110,24 @@ pub(crate) fn prompt_password(
 /// single `SecretString` only after both fields agree. `mismatch_error`
 /// is what the dialog shows in-place when they don't.
 pub(crate) fn prompt_password_with_confirmation(
-	description: &str,
-	prompt: &str,
-	confirm_prompt: &str,
-	mismatch_error: &str,
+    description: &str,
+    prompt: &str,
+    confirm_prompt: &str,
+    mismatch_error: &str,
 ) -> Result<SecureString, String> {
-	let path = pinentry_path()?;
-	let mut input = PassphraseInput::with_binary(&path)
-		.ok_or_else(|| format!("{} not executable at {}", PINENTRY_NAME, path.display()))?;
-	let secret = input
-		.with_title("Quantum Purse")
-		.with_description(description)
-		.with_prompt(prompt)
-		.with_confirmation(confirm_prompt, mismatch_error)
-		.with_ok("Create")
-		.with_cancel("Cancel")
-		.interact()
-		.map_err(map_err)?;
-	Ok(SecureString::from_string(secret.expose_secret().to_string()))
+    let path = pinentry_path()?;
+    let mut input = PassphraseInput::with_binary(&path)
+        .ok_or_else(|| format!("{} not executable at {}", PINENTRY_NAME, path.display()))?;
+    let secret = input
+        .with_title("Quantum Purse")
+        .with_description(description)
+        .with_prompt(prompt)
+        .with_confirmation(confirm_prompt, mismatch_error)
+        .with_ok("Create")
+        .with_cancel("Cancel")
+        .interact()
+        .map_err(map_err)?;
+    Ok(SecureString::from_string(
+        secret.expose_secret().to_string(),
+    ))
 }

@@ -218,9 +218,8 @@ impl App {
             let tr = egui::Color32::from_rgba_unmultiplied(0, 200, 255, 10);
             let brc = egui::Color32::from_rgba_unmultiplied(123, 94, 167, 13);
             let bl = egui::Color32::from_rgba_unmultiplied(0, 200, 255, 10);
-            let mesh = crate::ui::common::rounded_rect_gradient_mesh(
-                card_rect, 20.0, tl, tr, brc, bl,
-            );
+            let mesh =
+                crate::ui::common::rounded_rect_gradient_mesh(card_rect, 20.0, tl, tr, brc, bl);
             painter.set(idx, egui::Shape::mesh(mesh));
         }
 
@@ -234,14 +233,9 @@ impl App {
             // balance digits, broader than the corner glow so it
             // reads as ambient illumination rather than a localized
             // highlight.
-            let spot_center =
-                egui::pos2(card_rect.left() + 120.0, card_rect.top() + 80.0);
-            let mesh = crate::ui::common::smooth_glow_mesh(
-                spot_center,
-                170.0,
-                self.colors.accent,
-                26,
-            );
+            let spot_center = egui::pos2(card_rect.left() + 120.0, card_rect.top() + 80.0);
+            let mesh =
+                crate::ui::common::smooth_glow_mesh(spot_center, 170.0, self.colors.accent, 26);
             painter.set(idx, egui::Shape::mesh(mesh));
         }
 
@@ -252,14 +246,9 @@ impl App {
             // Decoded geometry: glow center sits at
             // `(card.right - 60, card.top + 60)` *inside* the card,
             // visible radius ≈100 px, peak alpha 0.08 ≈ 20/255.
-            let glow_center =
-                egui::pos2(card_rect.right() - 60.0, card_rect.top() + 60.0);
-            let mesh = crate::ui::common::smooth_glow_mesh(
-                glow_center,
-                100.0,
-                self.colors.accent,
-                20,
-            );
+            let glow_center = egui::pos2(card_rect.right() - 60.0, card_rect.top() + 60.0);
+            let mesh =
+                crate::ui::common::smooth_glow_mesh(glow_center, 100.0, self.colors.accent, 20);
             painter.set(idx, egui::Shape::mesh(mesh));
         }
 
