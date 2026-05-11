@@ -10,7 +10,7 @@ use qpv2_core::{
 };
 
 impl App {
-    pub(crate) fn show_welcome(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+    pub(crate) fn show_welcome(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         ui.vertical_centered(|ui| {
             ui.add_space(60.0);
 
@@ -99,7 +99,7 @@ impl App {
                         .min_size(egui::vec2(field_width, 48.0));
 
                         if ui.add_enabled(!is_busy, pk_button).clicked() {
-                            self.create_wallet_with_passkey_start(frame);
+                            self.create_wallet_with_passkey_start(_frame);
                         }
 
                         ui.add_space(10.0);
@@ -481,7 +481,7 @@ impl App {
             });
     }
 
-    pub(crate) fn show_locked(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+    pub(crate) fn show_locked(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         ui.vertical_centered(|ui| {
             ui.add_space(80.0);
 
@@ -522,7 +522,7 @@ impl App {
                 .min_size(egui::vec2(280.0, 48.0));
 
                 if ui.add_enabled(!is_busy, button).clicked() {
-                    self.unlock_with_passkey_start(frame);
+                    self.unlock_with_passkey_start(_frame);
                 }
             }
 
