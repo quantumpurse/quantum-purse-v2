@@ -2,8 +2,8 @@
 // Delegate method names must match Objective-C selectors, not Rust conventions.
 #![allow(non_snake_case)]
 
-use std::fmt;
 use std::cell::RefCell;
+use std::fmt;
 use std::rc::Rc;
 
 use objc2::rc::Retained;
