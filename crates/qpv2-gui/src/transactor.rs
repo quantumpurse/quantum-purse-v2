@@ -372,33 +372,6 @@ impl App {
         });
     }
 
-    /// After Touch ID returns the PRF output, derive the encryption
-    /// key and hand it to the auth-agnostic signing core.
-    pub(crate) fn sign_and_send_with_passkey(
-        &mut self,
-        kind: TransactionKind,
-        prf_output: &qpv2_core::SecureVec,
-        unsigned_tx: ckb_types::core::TransactionView,
-        input_cells: Vec<(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)>,
-        lock_args: String,
-    ) {
-        use qpv2_core::types::AuthKey;
-
-        let key = match qpv2_core::utilities::derive_vault_enc_key(prf_output) {
-            Ok(k) => k,
-            Err(e) => {
-                self.tx_status = TransactionStatus::Error(format!("Key derivation failed: {}", e));
-                return;
-            }
-        };
-        self.sign_and_send(
-            kind,
-            AuthKey::CryptoKey(key),
-            unsigned_tx,
-            input_cells,
-            lock_args,
-        );
-    }
 
     /// Prompt for the wallet password and hand the resulting
     /// `AuthKey::Password` to the sign-and-send core. Synchronous;
@@ -428,7 +401,7 @@ impl App {
     }
 
     /// Auth-mechanism-agnostic signing core. Used by both the PRF
-    /// flow (`sign_and_send_with_passkey`) and the password flow
+    /// flow (`sign_with_passkey_finish`) and the password flow
     /// (`sign_and_send_with_password` in `wallet.rs`). Builds the CKB
     /// tx-message hash, signs via SPHINCS+, fills the witness, and
     /// kicks off the send-tx background thread.

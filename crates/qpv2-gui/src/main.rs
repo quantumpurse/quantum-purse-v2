@@ -10,8 +10,6 @@ mod tx_history_store;
 mod types;
 mod ui;
 mod wallet;
-#[cfg(target_os = "macos")]
-mod window_handle;
 
 use ckb_node::{LocalNodeProcess, NodeConfig, NodeType, QpClient};
 use eframe::egui;
