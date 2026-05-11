@@ -10,10 +10,10 @@
 //!
 //! Lookup is binary-adjacent only — `current_exe().parent()/pinentry-mac`.
 //! For release this resolves inside `qpv2.app/Contents/MacOS/`; for
-//! `cargo run` the build script (`build.rs`) copies the brew-installed
-//! binary next to `target/{debug,release}/qpv2-gui`. There is no
-//! `$PATH` fallback by design, so dev and release exercise the same
-//! resolution path.
+//! `cargo run` the build script (`build.rs`) copies the from-source
+//! build (`vendor/pinentry-build/`) next to `target/{debug,release}/qpv2-gui`.
+//! There is no `$PATH` fallback by design, so dev and release exercise
+//! the same resolution path.
 //!
 //! `interact()` blocks the calling thread for the duration of the
 //! dialog. Called from the egui update loop — frames freeze while the
@@ -30,12 +30,9 @@ use std::path::PathBuf;
 /// Resolves to the inner Mach-O of the bundled
 /// `<dir-of-current-exe>/pinentry-mac.app`.
 ///
-/// brew (and GPGTools upstream) ship `pinentry-mac` as a Cocoa .app
-/// — the binary needs its sibling `Resources/` (nibs, etc.) to draw
-/// the dialog, so we bundle the entire `.app` rather than the inner
-/// binary alone. The 111-byte file at `/opt/homebrew/bin/pinentry-mac`
-/// is a brew-only shell wrapper with a hardcoded Cellar path; copying
-/// it is wrong.
+/// `pinentry-mac` is a Cocoa .app — the binary needs its sibling
+/// `Resources/` (nibs, etc.) to draw the dialog, so we bundle the
+/// entire `.app` rather than the inner binary alone.
 fn pinentry_path() -> Result<PathBuf, String> {
     let exe = std::env::current_exe()
         .map_err(|e| format!("current_exe() failed: {}", e))?;
@@ -50,8 +47,8 @@ fn pinentry_path() -> Result<PathBuf, String> {
     if !path.exists() {
         let msg = format!(
             "pinentry-mac.app not found at {}. Release: bundle is broken. \
-             Dev: run `brew install pinentry-mac` and rebuild so build.rs \
-             copies the .app next to the binary.",
+             Dev: run `vendor/build-pinentry.sh` and rebuild so build.rs \
+             stages the .app next to the binary.",
             path.display()
         );
         // .app bundles launched via `open` swallow stdout/stderr from the

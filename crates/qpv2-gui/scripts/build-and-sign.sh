@@ -58,12 +58,8 @@ TARGET_DIR="$PROJECT_ROOT/target/$BUILD_TYPE"
 APP_BUNDLE="$TARGET_DIR/$APP_NAME.app"
 
 echo "==> Building $BINARY_NAME ($BUILD_TYPE)..."
-# Force build.rs to re-run on every release build so pinentry-mac.app
-# (and its bundled dylibs) are freshly staged from brew. Without this,
-# Cargo's build-script cache may skip build.rs even after `brew upgrade
-# pinentry-mac` or after the staged tree was wiped externally —
-# silently shipping a stale binary or failing on the first packaging
-# run after a fresh install. Cost: ~20s qpv2-gui recompile per release.
+# Force build.rs to re-run so pinentry-mac.app is freshly staged from
+# vendor/pinentry-build/. Cost: ~20s qpv2-gui recompile per release.
 cargo clean -p qpv2-gui $CARGO_FLAGS
 rm -rf "$TARGET_DIR/pinentry-mac.app"
 cargo build -p qpv2-gui $CARGO_FLAGS
@@ -100,18 +96,14 @@ fi
 if [ "$BUNDLE_PINENTRY" = "true" ]; then
     # Reuse the pinentry-mac.app already staged by qpv2-gui's build.rs
     # next to the GUI binary (`target/{debug,release}/pinentry-mac.app`).
-    # Since `cargo build -p qpv2-gui` ran above, build.rs has resolved
-    # brew's symlink chain, copied the .app from the Cellar version
-    # dir, and made the copy writable. No second discovery here —
-    # avoids two source-discovery implementations drifting apart.
+    # build.rs copies it from vendor/pinentry-build/Darwin-{arch}/.
     PINENTRY_NAME="pinentry-mac"
     PINENTRY_APP_NAME="pinentry-mac.app"
     PINENTRY_APP_SRC="$TARGET_DIR/$PINENTRY_APP_NAME"
     if [ ! -d "$PINENTRY_APP_SRC" ]; then
         echo "ERROR: $PINENTRY_APP_NAME not found at $PINENTRY_APP_SRC"
         echo "       qpv2-gui's build.rs is responsible for staging it."
-        echo "       If brew is installed, try: cargo clean -p qpv2-gui && cargo build -p qpv2-gui $CARGO_FLAGS"
-        echo "       Otherwise: brew install pinentry-mac"
+        echo "       Run: vendor/build-pinentry.sh && cargo clean -p qpv2-gui && cargo build -p qpv2-gui $CARGO_FLAGS"
         exit 1
     fi
     echo "==> Using $PINENTRY_APP_NAME from $PINENTRY_APP_SRC (staged by build.rs)"
@@ -129,24 +121,9 @@ cp "$TARGET_DIR/$BINARY_NAME" "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME"
 cp "$LIGHT_CLIENT_BIN" "$APP_BUNDLE/Contents/MacOS/$LIGHT_CLIENT_NAME"
 cp "$FULL_NODE_BIN" "$APP_BUNDLE/Contents/MacOS/$FULL_NODE_NAME"
 if [ "$BUNDLE_PINENTRY" = "true" ]; then
-    # Copy the staged .app tree (already includes Frameworks/ with the
-    # three dylibs, install-name-rewritten by build.rs).
     cp -R "$PINENTRY_APP_SRC" "$APP_BUNDLE/Contents/MacOS/$PINENTRY_APP_NAME"
-
-    # The pinentry-mac binary's LC_LOAD_DYLIB rewrite stays here (not
-    # in build.rs) because it invalidates brew's signature on the
-    # binary, and the codesign chain that immediately follows is
-    # release-only. Doing it in build.rs would break dev launches.
     PINENTRY_APP_DST="$APP_BUNDLE/Contents/MacOS/$PINENTRY_APP_NAME"
     PINENTRY_BIN="$PINENTRY_APP_DST/Contents/MacOS/$PINENTRY_NAME"
-    install_name_tool -change \
-        "/opt/homebrew/opt/libassuan/lib/libassuan.9.dylib" \
-        "@executable_path/../Frameworks/libassuan.9.dylib" \
-        "$PINENTRY_BIN"
-    install_name_tool -change \
-        "/opt/homebrew/opt/libgpg-error/lib/libgpg-error.0.dylib" \
-        "@executable_path/../Frameworks/libgpg-error.0.dylib" \
-        "$PINENTRY_BIN"
 fi
 
 # Create Info.plist.
@@ -207,23 +184,9 @@ codesign --force --sign "$SIGNING_IDENTITY" \
 	--options runtime \
 	"$APP_BUNDLE/Contents/MacOS/$FULL_NODE_NAME"
 if [ "$BUNDLE_PINENTRY" = "true" ]; then
-    # Sign the bundled dylibs leaf-first (libintl has no bundled deps;
-    # libgpg-error depends on libintl; libassuan depends on libgpg-error),
-    # then the inner Mach-O, then the .app bundle. Library validation now
-    # passes because every member shares our Team ID. No entitlements
-    # anywhere: the dialog binary and its deps need nothing beyond
-    # standard Cocoa + pipe I/O. Hardened runtime is required for
-    # notarization eligibility of every nested binary.
-    PINENTRY_FRAMEWORKS="$PINENTRY_APP_DST/Contents/Frameworks"
-    codesign --force --sign "$SIGNING_IDENTITY" \
-        --options runtime \
-        "$PINENTRY_FRAMEWORKS/libintl.8.dylib"
-    codesign --force --sign "$SIGNING_IDENTITY" \
-        --options runtime \
-        "$PINENTRY_FRAMEWORKS/libgpg-error.0.dylib"
-    codesign --force --sign "$SIGNING_IDENTITY" \
-        --options runtime \
-        "$PINENTRY_FRAMEWORKS/libassuan.9.dylib"
+    # Pinentry is statically linked (no bundled dylibs). Sign the inner
+    # Mach-O binary, then the .app bundle. Hardened runtime is required
+    # for notarization eligibility.
     codesign --force --sign "$SIGNING_IDENTITY" \
         --options runtime \
         "$PINENTRY_BIN"

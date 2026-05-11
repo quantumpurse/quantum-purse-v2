@@ -65,7 +65,19 @@ master_seed
 ```
 
 ### Dependencies
+
 - Rust & Cargo (1.70+)
+
+### Developer Build Toolchain
+
+The GUI's password dialog (`pinentry`) is built from source via
+`vendor/build-pinentry.sh`. Developers on macOS need:
+
+| Tool | Install | Purpose |
+|------|---------|---------|
+| `automake` | `brew install automake` | Generates Makefiles for C deps |
+| `gettext` | `brew install gettext` | Provides m4 macros for autotools |
+| Xcode CLI tools | `xcode-select --install` | Obj-C compiler + ibtool for nib files |
 
 ### Build
 ```shell
