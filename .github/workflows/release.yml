@@ -178,7 +178,7 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
 
     - name: Install build dependencies
-      run: sudo apt-get update && sudo apt-get install -y gettext
+      run: sudo apt-get update && sudo apt-get install -y gettext libgtk2.0-dev
 
     - name: Build pinentry-gtk-2
       run: vendor/build-pinentry.sh
@@ -251,7 +251,7 @@ jobs:
 
     - name: Build ckb
       run: |
-        cargo build -p ckb-bin --release `
+        cargo build -p ckb --release `
           --manifest-path vendor/ckb/Cargo.toml
 
     - name: Package
