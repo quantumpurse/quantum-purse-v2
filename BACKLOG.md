@@ -19,6 +19,10 @@
 
 - [ ] **Cache CKB addresses instead of recomputing every frame.** `lock_args_to_address` is called inside the `show_accounts_tab` render loop, re-encoding addresses on every repaint. Store computed addresses in a cache, recompute only on unlock, network toggle, or new account creation.
 
+## Developer Pitfalls
+
+- [ ] **Never run unsigned CI builds on a development Mac that uses passkeys.** An unsigned `.app` with the same bundle ID (`org.quantumpurse.wallet`) poisons macOS's Associated Domains cache — it sees an app without the `com.apple.developer.associated-domains` entitlement and caches a negative association. Subsequent signed builds then fail with "Application with identifier ... is not associated with domain quantumpurse.org" even though the signed app has the correct entitlement. Fix: delete the unsigned `.app`, optionally run `sudo swcutil reset`, and relaunch the signed build.
+
 ## Security
 
 - [ ] **Implement re-validation before signing**
