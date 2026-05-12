@@ -1,0 +1,13 @@
+[package]
+name = "keychain"
+version = "0.1.0"
+edition = "2021"
+description = "macOS Keychain + Touch ID key storage for QuantumPurse."
+repository = "https://github.com/quantumpurse/quantum-purse-v2.git"
+license = "MIT"
+
+[dependencies]
+qpv2-core = { path = "../qpv2-core" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = { version = "3", features = ["OSX_10_13", "OSX_10_15"] }

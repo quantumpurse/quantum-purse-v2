@@ -382,7 +382,7 @@ impl App {
                                 self.local_node.stop();
 
                                 #[cfg(target_os = "macos")]
-                                let _ = crate::keychain::delete_key();
+                                let _ = keychain::delete_key();
 
                                 match KeyVault::clear_database() {
                                     Ok(()) => {

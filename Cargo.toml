@@ -1,6 +1,7 @@
 [workspace]
 members = [
 	"crates/ckb-fips205-utils",
+	"crates/keychain",
 	"crates/qpv2-cli",
 	"crates/qpv2-core",
 	"crates/qpv2-gui",

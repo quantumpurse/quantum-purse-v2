@@ -414,7 +414,7 @@ impl App {
         input_cells: Vec<(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)>,
         lock_args: String,
     ) {
-        let key = match crate::keychain::retrieve_key() {
+        let key = match keychain::retrieve_key() {
             Ok(k) => k,
             Err(e) => {
                 self.tx_status = TransactionStatus::Idle;

@@ -1,16 +1,3 @@
-//! macOS Keychain + Touch ID key storage.
-//!
-//! Stores and retrieves a 32-byte AES-256 encryption key in the macOS
-//! Keychain, gated by `kSecAccessControlBiometryCurrentSet` (Touch ID).
-//! Reads block until the user authenticates or cancels; writes do not
-//! trigger biometric.
-//!
-//! `retrieve_key()` blocks the calling thread for the duration of the
-//! Touch ID prompt. Called from the egui update loop — frames freeze
-//! while the dialog is up. Acceptable for the same reason pinentry
-//! works: the user is interacting with the system dialog, not the
-//! wallet UI.
-
 use qpv2_core::SecureVec;
 use security_framework::passwords::{
     delete_generic_password_options, generic_password, set_generic_password_options,
@@ -42,7 +29,7 @@ fn map_err(e: security_framework::base::Error) -> String {
 /// access control. Does NOT trigger Touch ID — writes are unguarded.
 /// Deletes any existing item first to guarantee the biometric access
 /// control attributes are applied cleanly.
-pub(crate) fn store_key(key: &[u8]) -> Result<(), String> {
+pub fn store_key(key: &[u8]) -> Result<(), String> {
     if key.len() != KEY_LEN {
         return Err(format!("Expected {KEY_LEN}-byte key, got {}", key.len()));
     }
@@ -54,7 +41,7 @@ pub(crate) fn store_key(key: &[u8]) -> Result<(), String> {
 
 /// Retrieve the encryption key from the Keychain. Blocks the calling
 /// thread until the user authenticates with Touch ID or cancels.
-pub(crate) fn retrieve_key() -> Result<SecureVec, String> {
+pub fn retrieve_key() -> Result<SecureVec, String> {
     let bytes = generic_password(protected_opts()).map_err(map_err)?;
     if bytes.len() != KEY_LEN {
         return Err(format!(
@@ -66,6 +53,6 @@ pub(crate) fn retrieve_key() -> Result<SecureVec, String> {
 }
 
 /// Delete the encryption key from the Keychain.
-pub(crate) fn delete_key() -> Result<(), String> {
+pub fn delete_key() -> Result<(), String> {
     delete_generic_password_options(protected_opts()).map_err(map_err)
 }

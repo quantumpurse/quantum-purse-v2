@@ -312,7 +312,7 @@ impl App {
             }
         };
 
-        if let Err(e) = crate::keychain::store_key(&key) {
+        if let Err(e) = keychain::store_key(&key) {
             self.status = Status::Error(format!("Failed to store key in Keychain: {}", e));
             return;
         }
@@ -323,7 +323,7 @@ impl App {
         if let Err(e) =
             vault.generate_master_seed(AuthKey::CryptoKey(key), AuthMethod::Keychain)
         {
-            let _ = crate::keychain::delete_key();
+            let _ = keychain::delete_key();
             self.status = Status::Error(format!("Failed to create wallet: {}", e));
             return;
         }
@@ -359,7 +359,7 @@ impl App {
     /// prompt, then transitions to Unlocked.
     #[cfg(target_os = "macos")]
     pub(crate) fn unlock_with_keychain(&mut self) {
-        match crate::keychain::retrieve_key() {
+        match keychain::retrieve_key() {
             Ok(_) => match KeyVault::get_all_sphincs_lock_args() {
                 Ok(lock_args) => {
                     self.accounts = lock_args;
@@ -386,7 +386,7 @@ impl App {
     /// the biometric prompt.
     #[cfg(target_os = "macos")]
     pub(crate) fn create_new_account_with_keychain(&mut self) {
-        let key = match crate::keychain::retrieve_key() {
+        let key = match keychain::retrieve_key() {
             Ok(k) => k,
             Err(e) => {
                 self.status = Status::Error(e);
