@@ -73,7 +73,7 @@ jobs:
         targets: ${{ matrix.target }}
 
     - name: Build release binary
-      run: cargo build --release --target ${{ matrix.target }} --verbose
+      run: cargo build --package qpv2-cli --release --target ${{ matrix.target }} --verbose
 
     - name: Strip binary (Linux and macOS)
       if: matrix.os != 'windows-latest'
@@ -176,6 +176,9 @@ jobs:
 
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
+
+    - name: Install build dependencies
+      run: sudo apt-get update && sudo apt-get install -y gettext
 
     - name: Build pinentry-gtk-2
       run: vendor/build-pinentry.sh
