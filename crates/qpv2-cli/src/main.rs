@@ -392,7 +392,7 @@ fn main() -> Result<(), String> {
 
             let (auth_method_display, compatible_frontends) = match wallet_info.auth_method {
                 AuthMethod::Password => ("Password", "CLI and GUI"),
-                AuthMethod::PasskeyPrf { .. } => ("Touch ID (Passkey)", "GUI only"),
+                AuthMethod::Keychain => ("Touch ID (Keychain)", "GUI only"),
             };
 
             println!("\n╔════════════════════════════════════════════════════════════════╗");

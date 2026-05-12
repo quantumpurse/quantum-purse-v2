@@ -42,11 +42,7 @@ pub enum AuthMethod {
     /// Password-based authentication using scrypt key derivation.
     #[default]
     Password,
-    /// Passkey PRF-based authentication using HKDF key derivation.
-    PasskeyPrf {
-        /// The WebAuthn credential ID used for PRF assertion.
-        credential_id: Vec<u8>,
-    },
+    Keychain,
 }
 
 /// Authentication key used to encrypt/decrypt the vault.

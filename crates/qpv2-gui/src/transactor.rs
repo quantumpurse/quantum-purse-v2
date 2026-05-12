@@ -404,8 +404,35 @@ impl App {
         );
     }
 
-    /// Auth-mechanism-agnostic signing core. Used by both the PRF
-    /// flow (`sign_with_passkey_finish`) and the password flow
+    /// Retrieve the key from Keychain via Touch ID and sign. Blocks
+    /// for the biometric prompt.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn sign_with_keychain(
+        &mut self,
+        kind: TransactionKind,
+        unsigned_tx: ckb_types::core::TransactionView,
+        input_cells: Vec<(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)>,
+        lock_args: String,
+    ) {
+        let key = match crate::keychain::retrieve_key() {
+            Ok(k) => k,
+            Err(e) => {
+                self.tx_status = TransactionStatus::Idle;
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+        self.sign_and_send(
+            kind,
+            AuthKey::CryptoKey(key),
+            unsigned_tx,
+            input_cells,
+            lock_args,
+        );
+    }
+
+    /// Auth-mechanism-agnostic signing core. Used by both the Keychain
+    /// flow (`sign_with_keychain`) and the password flow
     /// (`sign_and_send_with_password` in `wallet.rs`). Builds the CKB
     /// tx-message hash, signs via SPHINCS+, fills the witness, and
     /// kicks off the send-tx background thread.

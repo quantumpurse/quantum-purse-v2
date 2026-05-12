@@ -8,7 +8,7 @@ use crate::types::{
 use crate::App;
 
 impl App {
-    pub(crate) fn show_dashboard_tab(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+    pub(crate) fn show_dashboard_tab(&mut self, ui: &mut egui::Ui) {
         // Padded content wrapper — used for sections that need horizontal margins.
         let content_padding = 30.0;
 
@@ -357,8 +357,6 @@ impl App {
                 self.show_status(ui);
             });
         });
-
-        let _ = frame; // Suppress unused warning.
     }
 
     /// Render a single transaction card

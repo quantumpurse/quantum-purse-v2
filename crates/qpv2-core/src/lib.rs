@@ -659,11 +659,11 @@ impl KeyVault {
 
         match (&wallet_info.auth_method, expected) {
             (AuthMethod::Password, AuthMethod::Password) => Ok(()),
-            (AuthMethod::PasskeyPrf { .. }, AuthMethod::PasskeyPrf { .. }) => Ok(()),
-            (AuthMethod::PasskeyPrf { .. }, AuthMethod::Password) => {
-                Err("This wallet was initialized with Touch ID/Passkey authentication and cannot be accessed with a password. Please use the GUI application.".to_string())
+            (AuthMethod::Keychain, AuthMethod::Keychain) => Ok(()),
+            (AuthMethod::Keychain, AuthMethod::Password) => {
+                Err("This wallet was initialized with Touch ID authentication and cannot be accessed with a password. Please use Touch ID.".to_string())
             }
-            (AuthMethod::Password, AuthMethod::PasskeyPrf { .. }) => {
+            (AuthMethod::Password, AuthMethod::Keychain) => {
                 Err("This wallet was initialized with password authentication and cannot be accessed with Touch ID. Please use a password instead.".to_string())
             }
         }

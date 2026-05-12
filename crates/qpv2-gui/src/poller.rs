@@ -41,8 +41,8 @@ impl App {
         }
     }
 
-    /// Poll the transaction from channel and trigger Touch ID on success.
-    pub(crate) fn poll_transaction_build(&mut self, frame: &eframe::Frame) {
+    /// Poll the transaction from channel and trigger signing on success.
+    pub(crate) fn poll_transaction_build(&mut self) {
         let rx = match &self.transaction_build_rx {
             Some(rx) => rx,
             None => return,
@@ -52,24 +52,21 @@ impl App {
             Ok(Ok((kind, unsigned_tx, input_cells, lock_args))) => {
                 self.transaction_build_rx = None;
 
-                // Route based on the wallet's auth method.
-                // - Password: synchronous pinentry prompt → sign + send.
-                // - PasskeyPrf (or unknown): existing Touch ID path.
                 use qpv2_core::types::AuthMethod;
+                self.tx_status = TransactionStatus::AwaitingSignature;
                 if matches!(self.auth_method, Some(AuthMethod::Password)) {
-                    self.tx_status = TransactionStatus::AwaitingSignature;
                     self.sign_and_send_with_password(kind, unsigned_tx, input_cells, lock_args);
-                    return;
-                }
+                } else {
+                    #[cfg(target_os = "macos")]
+                    self.sign_with_keychain(kind, unsigned_tx, input_cells, lock_args);
 
-                #[cfg(target_os = "macos")]
-                self.sign_with_passkey_start(frame, kind, unsigned_tx, input_cells, lock_args);
-
-                #[cfg(not(target_os = "macos"))]
-                {
-                    let _ = (frame, kind, unsigned_tx, input_cells, lock_args);
-                    self.tx_status =
-                        TransactionStatus::Error("Passkey signing requires macOS.".to_string());
+                    #[cfg(not(target_os = "macos"))]
+                    {
+                        let _ = (kind, unsigned_tx, input_cells, lock_args);
+                        self.tx_status = TransactionStatus::Error(
+                            "Touch ID signing requires macOS.".to_string(),
+                        );
+                    }
                 }
             }
             Ok(Err(e)) => {

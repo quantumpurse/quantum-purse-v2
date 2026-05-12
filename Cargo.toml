@@ -5,6 +5,5 @@ members = [
 	"crates/qpv2-core",
 	"crates/qpv2-gui",
 	"crates/ckb-node",
-	"crates/passkey-prf",
 ]
 resolver = "2"

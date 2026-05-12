@@ -150,36 +150,6 @@ pub(crate) enum Status {
     Error(String),
 }
 
-/// Tracks in-flight passkey operations so the UI doesn't block.
-#[cfg(target_os = "macos")]
-pub(crate) enum PasskeyOp {
-    /// Waiting for passkey registration to complete.
-    Registration {
-        op: passkey_prf::PendingRegistration,
-        variant: SpxVariant,
-        window: objc2::rc::Retained<objc2_app_kit::NSWindow>,
-    },
-    /// Registration done; waiting for PRF assertion to get the encryption key.
-    PostRegistrationAssert {
-        op: passkey_prf::AssertionRequest,
-        variant: SpxVariant,
-        credential_id: Vec<u8>,
-    },
-    /// Waiting for unlock credential assertion (no PRF).
-    UnlockAssert { op: passkey_prf::AssertionRequest },
-    /// Waiting for PRF assertion to create a new account.
-    NewAccountAssert { op: passkey_prf::AssertionRequest },
-    /// Waiting for PRF assertion to sign a transfer transaction.
-    SignTransactionAssert {
-        op: passkey_prf::AssertionRequest,
-        // just relaying transaction type to the poller.
-        kind: TransactionKind,
-        unsigned_tx: ckb_types::core::TransactionView,
-        input_cells: Vec<(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)>,
-        lock_args: String,
-    },
-}
-
 /// Tracks the state of an in-progress transfer transaction.
 #[derive(Debug, Clone)]
 pub(crate) enum TransactionStatus {

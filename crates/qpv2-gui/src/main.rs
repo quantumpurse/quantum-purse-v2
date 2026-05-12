@@ -2,7 +2,7 @@
 
 mod ckb;
 #[cfg(target_os = "macos")]
-mod passkey;
+mod keychain;
 mod pinentry;
 mod poller;
 mod transactor;
@@ -25,8 +25,6 @@ const POLL_INTERVAL: Duration = Duration::from_secs(10);
 /// How long a non-None status banner stays visible before auto-clearing.
 const STATUS_DURATION: Duration = Duration::from_secs(5);
 
-#[cfg(target_os = "macos")]
-use types::PasskeyOp;
 use types::{
     AppColors, BalanceResult, DaoQueryResult, DaoView, NodeStatus, NodeStatusUpdate, Screen,
     SpendableCapacityTarget, Status, Tab, TransactionSendResult, TransactionStatus, TxBuildResult,
@@ -67,10 +65,6 @@ pub(crate) struct App {
 
     // Receives balance results from background thread.
     pub(crate) balance_receiver: Option<mpsc::Receiver<BalanceResult>>,
-
-    // In-flight passkey operation (macOS only).
-    #[cfg(target_os = "macos")]
-    pub(crate) passkey_op: Option<PasskeyOp>,
 
     // Node selector popup state.
     pub(crate) node_selector_open: bool,
@@ -295,8 +289,6 @@ impl App {
             settings_binary_path,
             settings_data_dir,
             balance_receiver: None,
-            #[cfg(target_os = "macos")]
-            passkey_op: None,
             node_selector_open: false,
             node_selector_rect: None,
             temp_network,
@@ -366,14 +358,10 @@ impl App {
 }
 
 impl eframe::App for App {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        // Poll passkey operations each frame.
-        #[cfg(target_os = "macos")]
-        self.poll_passkey_ops();
-
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // First-frame setup for password-mode wallets that App::new
         // dropped straight into Screen::Unlocked. Mirrors what
-        // `unlock_with_passkey_finish` does for Touch ID wallets after a
+        // `unlock_with_keychain` does for Touch ID wallets after a
         // successful unlock.
         if self.pending_unlocked_session_setup {
             self.pending_unlocked_session_setup = false;
@@ -389,7 +377,7 @@ impl eframe::App for App {
             self.tick_status(ctx);
             self.poll_all_balances();
             self.poll_spendable_capacity();
-            self.poll_transaction_build(frame);
+            self.poll_transaction_build();
             self.poll_transaction_send();
             self.poll_dao_cells();
             self.poll_tx_history();
@@ -417,7 +405,7 @@ impl eframe::App for App {
                     .frame(egui::Frame::new().fill(self.colors.bg))
                     .show(ctx, |ui| {
                         self.draw_gradient_bg(ui);
-                        self.show_welcome(ui, frame);
+                        self.show_welcome(ui);
                     });
             }
             Screen::Locked => {
@@ -425,12 +413,12 @@ impl eframe::App for App {
                     .frame(egui::Frame::new().fill(self.colors.bg))
                     .show(ctx, |ui| {
                         self.draw_gradient_bg(ui);
-                        self.show_locked(ui, frame);
+                        self.show_locked(ui);
                     });
             }
             Screen::Unlocked => {
                 // Sidebar + content layout handled by show_unlocked.
-                self.show_unlocked(ctx, frame);
+                self.show_unlocked(ctx);
             }
         }
 
@@ -441,12 +429,8 @@ impl eframe::App for App {
             || self.transaction_send_rx.is_some()
             || self.dao_cells_query_rx.is_some()
             || self.tx_history_rx.is_some();
-        #[cfg(target_os = "macos")]
-        let has_pending_op = self.passkey_op.is_some();
-        #[cfg(not(target_os = "macos"))]
-        let has_pending_op = false;
 
-        if has_pending_op || async_pending {
+        if async_pending {
             ctx.request_repaint();
         }
     }

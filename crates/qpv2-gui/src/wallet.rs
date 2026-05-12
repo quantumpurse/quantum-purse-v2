@@ -298,6 +298,134 @@ impl App {
         }
     }
 
+    /// Create a Keychain (Touch ID) wallet. Generates a random 32-byte
+    /// key, stores it in the Keychain with biometric access control,
+    /// then creates the wallet and first account. Synchronous — the
+    /// Keychain write does NOT trigger Touch ID.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn create_wallet_with_keychain(&mut self, variant: SpxVariant) {
+        let key = match qpv2_core::utilities::get_random_bytes(32) {
+            Ok(b) => b,
+            Err(e) => {
+                self.status = Status::Error(format!("Failed to generate key: {}", e));
+                return;
+            }
+        };
+
+        if let Err(e) = crate::keychain::store_key(&key) {
+            self.status = Status::Error(format!("Failed to store key in Keychain: {}", e));
+            return;
+        }
+
+        let key_for_account = key.clone();
+
+        let vault = KeyVault::new(variant);
+        if let Err(e) =
+            vault.generate_master_seed(AuthKey::CryptoKey(key), AuthMethod::Keychain)
+        {
+            let _ = crate::keychain::delete_key();
+            self.status = Status::Error(format!("Failed to create wallet: {}", e));
+            return;
+        }
+
+        if let Err(e) = vault.gen_new_account(AuthKey::CryptoKey(key_for_account)) {
+            self.status = Status::Error(format!("Failed to create first account: {}", e));
+            self.auth_method = Some(AuthMethod::Keychain);
+            return;
+        }
+
+        match KeyVault::get_all_sphincs_lock_args() {
+            Ok(lock_args) => {
+                self.accounts = lock_args;
+                self.auth_method = Some(AuthMethod::Keychain);
+                self.register_lock_scripts_with_light_client(&self.accounts.clone());
+                self.screen = Screen::Unlocked;
+                self.status = Status::Info("Wallet created with Touch ID!".to_string());
+                self.last_poll_time = std::time::Instant::now();
+                self.load_tx_history_from_disk();
+                self.fetch_all_balances();
+                self.fetch_tx_history(true);
+                self.fetch_dao_cells();
+                self.fetch_node_status();
+            }
+            Err(e) => {
+                self.status = Status::Error(format!("Failed to read accounts: {}", e));
+                self.auth_method = Some(AuthMethod::Keychain);
+            }
+        }
+    }
+
+    /// Unlock with Touch ID via Keychain. Blocks for the biometric
+    /// prompt, then transitions to Unlocked.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn unlock_with_keychain(&mut self) {
+        match crate::keychain::retrieve_key() {
+            Ok(_) => match KeyVault::get_all_sphincs_lock_args() {
+                Ok(lock_args) => {
+                    self.accounts = lock_args;
+                    self.screen = Screen::Unlocked;
+                    self.status = Status::None;
+                    self.last_poll_time = std::time::Instant::now();
+                    self.load_tx_history_from_disk();
+                    self.fetch_all_balances();
+                    self.fetch_tx_history(true);
+                    self.fetch_dao_cells();
+                    self.fetch_node_status();
+                }
+                Err(e) => {
+                    self.status = Status::Error(format!("Failed to unlock: {}", e));
+                }
+            },
+            Err(e) => {
+                self.status = Status::Error(e);
+            }
+        }
+    }
+
+    /// Derive a new account using Touch ID via Keychain. Blocks for
+    /// the biometric prompt.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn create_new_account_with_keychain(&mut self) {
+        let key = match crate::keychain::retrieve_key() {
+            Ok(k) => k,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+
+        let variant = match KeyVault::get_spx_variant() {
+            Ok(v) => v,
+            Err(e) => {
+                self.status = Status::Error(format!("Failed to read wallet variant: {}", e));
+                return;
+            }
+        };
+        let vault = KeyVault::new(variant);
+        match vault.gen_new_account(AuthKey::CryptoKey(key)) {
+            Ok(lock_args) => {
+                self.balances.insert(lock_args.clone(), None);
+                let qp_client = self.qp_client.clone();
+                let args = lock_args.clone();
+                let (tx, rx) = std::sync::mpsc::channel();
+                self.balance_receiver = Some(rx);
+                std::thread::spawn(move || {
+                    let result = ckb_node::wallet_helpers::queries::fetch_quantum_lock_balance(
+                        &qp_client, &args,
+                    )
+                    .map_err(|e| e.to_string());
+                    let _ = tx.send((args, result));
+                });
+                self.accounts.push(lock_args.clone());
+                self.register_lock_scripts_with_light_client(std::slice::from_ref(&lock_args));
+                self.status = Status::Info("New account created!".to_string());
+            }
+            Err(e) => {
+                self.status = Status::Error(format!("Failed to create account: {}", e));
+            }
+        }
+    }
+
     /// Prompt for the wallet password and derive a new account.
     /// Synchronous: blocks the egui update loop while the pinentry
     /// dialog is up.
