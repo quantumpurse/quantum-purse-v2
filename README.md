@@ -70,6 +70,10 @@ master_seed
 
 ### Developer Build Toolchain
 
+Local GUI development and build scripts (`build.sh`, `launch.sh`,
+`crates/qpv2-gui/scripts/`) are designed for macOS only. Linux and
+Windows GUI builds are handled by the CI/CD workflow.
+
 The GUI's password dialog (`pinentry`) is built from source via
 `vendor/build-pinentry.sh`. Developers on macOS need:
 
@@ -79,7 +83,7 @@ The GUI's password dialog (`pinentry`) is built from source via
 | `gettext` | `brew install gettext` | Provides m4 macros for autotools |
 | Xcode CLI tools | `xcode-select --install` | Obj-C compiler + ibtool for nib files |
 
-### Build
+### Build (macOS)
 ```shell
 # Build dev binary
 ./build.sh

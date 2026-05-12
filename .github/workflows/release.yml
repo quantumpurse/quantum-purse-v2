@@ -193,7 +193,7 @@ jobs:
 
     - name: Build ckb
       run: |
-        cargo build -p ckb-bin --release \
+        cargo build -p ckb --release \
           --manifest-path vendor/ckb/Cargo.toml
 
     - name: Package
