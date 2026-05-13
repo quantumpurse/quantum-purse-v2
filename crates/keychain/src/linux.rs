@@ -5,10 +5,10 @@ use std::collections::HashMap;
 
 const LABEL: &str = "QuantumPurse";
 
-fn attributes() -> HashMap<String, String> {
+fn attributes<'a>() -> HashMap<&'a str, &'a str> {
     let mut attrs = HashMap::new();
-    attrs.insert("service".to_string(), SERVICE.to_string());
-    attrs.insert("account".to_string(), ACCOUNT.to_string());
+    attrs.insert("service", SERVICE);
+    attrs.insert("account", ACCOUNT);
     attrs
 }
 
@@ -21,7 +21,7 @@ pub fn store_key(key: &[u8]) -> Result<(), String> {
         return Err(format!("Expected {KEY_LEN}-byte key, got {}.", key.len()));
     }
 
-    let ss = SecretService::new(EncryptionType::Dh).map_err(map_err)?;
+    let ss = SecretService::connect(EncryptionType::Dh).map_err(map_err)?;
     let collection = ss.get_default_collection().map_err(map_err)?;
 
     collection
@@ -32,7 +32,7 @@ pub fn store_key(key: &[u8]) -> Result<(), String> {
 }
 
 pub fn retrieve_key() -> Result<SecureVec, String> {
-    let ss = SecretService::new(EncryptionType::Dh).map_err(map_err)?;
+    let ss = SecretService::connect(EncryptionType::Dh).map_err(map_err)?;
     let result = ss.search_items(attributes()).map_err(map_err)?;
 
     let item = result
@@ -54,7 +54,7 @@ pub fn retrieve_key() -> Result<SecureVec, String> {
 }
 
 pub fn delete_key() -> Result<(), String> {
-    let ss = SecretService::new(EncryptionType::Dh).map_err(map_err)?;
+    let ss = SecretService::connect(EncryptionType::Dh).map_err(map_err)?;
     let result = ss.search_items(attributes()).map_err(map_err)?;
 
     for item in result.unlocked {

@@ -59,22 +59,10 @@ jobs:
       run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev
 
     - name: Run tests
-      run: |
-        if [ "$RUNNER_OS" = "macOS" ]; then
-          cargo test --workspace --verbose
-        else
-          cargo test --workspace --exclude passkey-prf --verbose
-        fi
-      shell: bash
+      run: cargo test --workspace --verbose
 
     - name: Build workspace release
-      run: |
-        if [ "$RUNNER_OS" = "macOS" ]; then
-          cargo build --workspace --release --verbose
-        else
-          cargo build --workspace --exclude passkey-prf --release --verbose
-        fi
-      shell: bash
+      run: cargo build --workspace --release --verbose
 
   lint:
     name: Lint and Format Check
@@ -98,7 +86,7 @@ jobs:
       run: cargo fmt --all -- --check
 
     - name: Run clippy
-      run: cargo clippy --workspace --exclude passkey-prf --all-targets -- -D warnings
+      run: cargo clippy --workspace --all-targets -- -D warnings
 
   security:
     name: Security Audit
