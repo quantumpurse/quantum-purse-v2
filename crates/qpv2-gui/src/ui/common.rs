@@ -433,11 +433,7 @@ fn bilinear(
 /// vertices in a corner region beyond the arc are projected onto the
 /// arc. Call this on circular glow meshes before painting to prevent
 /// leakage past rounded card corners.
-pub(crate) fn clamp_mesh_to_rounded_rect(
-    mesh: &mut egui::Mesh,
-    rect: egui::Rect,
-    radius: f32,
-) {
+pub(crate) fn clamp_mesh_to_rounded_rect(mesh: &mut egui::Mesh, rect: egui::Rect, radius: f32) {
     for vertex in &mut mesh.vertices {
         vertex.pos = clamp_to_rounded_rect(vertex.pos, rect, radius);
     }
