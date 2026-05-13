@@ -13,7 +13,7 @@ Developed in collaboration with Claude Opus (4.5 / 4.6 / 4.7): developer-led arc
 | **Mnemonic standard** | Custom BIP39 English |
 | **Local encryption**  | AES256               |
 | **Key derivation**    | HKDF-SHA256          |
-| **Authentication**    | Password             |
+| **Authentication**    | Password / Touch ID (macOS) |
 | **Password hashing**  | Scrypt               |
 | **Platform**          | macOS, Windows, Linux |
 
@@ -83,7 +83,29 @@ The GUI's password dialog (`pinentry`) is built from source via
 | `gettext` | `brew install gettext` | Provides m4 macros for autotools |
 | Xcode CLI tools | `xcode-select --install` | Obj-C compiler + ibtool for nib files |
 
-### Build (macOS)
+### Build CLI
+```shell
+# Build dev
+cargo build -p qpv2-cli
+
+# Build release
+cargo build -p qpv2-cli --release
+
+# Sign for Touch ID (macOS only, required after every build)
+codesign -s "Developer ID Application: Pham Tung (KPSL53752R)" \
+  --entitlements crates/qpv2-gui/entitlements.plist \
+  --force target/release/qpv2-cli
+
+# Run release binary
+./target/release/qpv2-cli --help
+
+# Run tests
+cargo test -p qpv2-cli
+```
+
+Signing is only needed for Touch ID (`--keychain`) support. Password-only wallets work without signing.
+
+### Build GUI (macOS)
 ```shell
 # Build dev binary
 ./build.sh
@@ -92,7 +114,7 @@ The GUI's password dialog (`pinentry`) is built from source via
 ./build.sh --release
 
 # Run tests
-cargo test
+cargo test --workspace
 ```
 
 ### Use CLI
@@ -100,13 +122,19 @@ cargo test
 The CLI provides the following commands:
 
 ```shell
-# Initialize a new wallet
-qpv2-cli init --variant <VARIANT> # example: qpv2-cli init --variant Sha2256S
+# Initialize a new wallet (password)
+qpv2-cli init --variant <VARIANT>
 
-# ImportMnemonic an existing wallet
-qpv2-cli mnemonic import
+# Initialize a new wallet (Touch ID, macOS only)
+qpv2-cli init --variant <VARIANT> --keychain
 
-# ExportMnemonic seed phrase
+# Import mnemonic (password)
+qpv2-cli mnemonic import --variant <VARIANT>
+
+# Import mnemonic (Touch ID, macOS only)
+qpv2-cli mnemonic import --variant <VARIANT> --keychain
+
+# Export mnemonic seed phrase
 qpv2-cli mnemonic export
 
 # Generate a new account
@@ -115,20 +143,23 @@ qpv2-cli account new
 # List all accounts
 qpv2-cli account list
 
-# Sign and generate a raw sphincs+ signature for any message
-qpv2-cli sign --identifier <IDENTIFIER> --message <MESSAGE>
-
-# Sign a message - designed for CKB transaction
-qpv2-cli ckb sign --lock-args <LOCK_ARGS> --message <MESSAGE>
-
 # Recover accounts
-qpv2-cli ckb recover --count <COUNT>
+qpv2-cli account recover --count <COUNT>
 
 # Generate account batch for discovery
-qpv2-cli ckb try-gen-batch --start <START> --count <COUNT> # example: qpv2-cli try-gen-batch --start 0 --count 10
+qpv2-cli account try-gen-batch --start <START> --count <COUNT>
+
+# Sign a raw SPHINCS+ message
+qpv2-cli sign --identifier <IDENTIFIER> --message <MESSAGE>
+
+# Sign a CKB transaction message
+qpv2-cli ckb sign --lock-args <LOCK_ARGS> --message <MESSAGE>
 
 # Get CKB transaction message hash
-qpv2-cli ckb get-ckb-tx-message --tx-file <TX_FILE>
+qpv2-cli ckb get-tx-message --tx-file <TX_FILE>
+
+# Display wallet information
+qpv2-cli info
 
 # Clear all vault data
 qpv2-cli clear
@@ -136,6 +167,8 @@ qpv2-cli clear
 # Show help
 qpv2-cli --help
 ```
+
+Commands that require authentication (export, new account, sign, etc.) auto-detect the wallet's auth method. Password wallets prompt for a password; Touch ID wallets trigger the system biometric dialog.
 
 ### Use GUI
 ```shell

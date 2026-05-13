@@ -21,6 +21,9 @@ enum Commands {
         /// SPHINCS+ variant (Sha2128F, Sha2128S, Sha2192F, Sha2192S, Sha2256F, Sha2256S, Shake128F, Shake128S, Shake192F, Shake192S, Shake256F, Shake256S)
         #[arg(short, long)]
         variant: String,
+        /// Use Touch ID (macOS Keychain) instead of password
+        #[arg(long)]
+        keychain: bool,
     },
     /// Mnemonic operations (import/export)
     Mnemonic {
@@ -76,6 +79,10 @@ enum MnemonicCommands {
 
         #[arg(short, long)]
         seed_file: Option<String>,
+
+        /// Encrypt with keychain instead of password
+        #[arg(long)]
+        keychain: bool,
     },
     Export {
         #[arg(short, long)]
@@ -151,11 +158,57 @@ fn prompt_for_input(prompt: &str) -> Result<SecureString, String> {
     Ok(result)
 }
 
+fn get_auth_key() -> Result<AuthKey, String> {
+    let wallet_info = KeyVault::read_wallet_info()?;
+    match wallet_info.auth_method {
+        AuthMethod::Password => {
+            let password = prompt_for_input("Enter password: ")?;
+            Ok(AuthKey::Password(password))
+        }
+        AuthMethod::Keychain => {
+            #[cfg(target_os = "macos")]
+            {
+                println!("Authenticate with Touch ID...");
+                let key = keychain::retrieve_key()?;
+                Ok(AuthKey::CryptoKey(key))
+            }
+            #[cfg(not(target_os = "macos"))]
+            Err("This wallet uses macOS Keychain authentication, which is not supported on this platform.".to_string())
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn init_with_touch_id(vault: &KeyVault) -> Result<(), String> {
+    let key = qpv2_core::utilities::get_random_bytes(32)
+        .map_err(|e| format!("Failed to generate key: {}", e))?;
+    keychain::store_key(&key)?;
+    if let Err(e) = vault.generate_master_seed(AuthKey::CryptoKey(key), AuthMethod::Keychain) {
+        let _ = keychain::delete_key();
+        return Err(e);
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn import_with_touch_id(vault: &KeyVault, seed_phrase: SecureString) -> Result<(), String> {
+    let key = qpv2_core::utilities::get_random_bytes(32)
+        .map_err(|e| format!("Failed to generate key: {}", e))?;
+    keychain::store_key(&key)?;
+    if let Err(e) =
+        vault.import_seed_phrase(seed_phrase, AuthKey::CryptoKey(key), AuthMethod::Keychain)
+    {
+        let _ = keychain::delete_key();
+        return Err(e);
+    }
+    Ok(())
+}
+
 fn main() -> Result<(), String> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Init { variant } => {
+        Commands::Init { variant, keychain } => {
             let variant = parse_variant(&variant)?;
             let vault = KeyVault::new(variant);
 
@@ -165,39 +218,12 @@ fn main() -> Result<(), String> {
                 variant.required_bip39_size_in_word_total()
             );
 
-            let password = prompt_for_input("Enter password: ")?;
-            let confirm = prompt_for_input("Confirm password: ")?;
-            if password != confirm {
-                return Err("Passwords do not match".to_string());
-            }
-
-            match qpv2_core::utilities::password_checker(&password) {
-                Ok(strength) => println!("Password strength: {} bits", strength),
-                Err(e) => {
-                    return Err(format!("Password validation failed: {}", e));
-                }
-            }
-
-            vault.generate_master_seed(AuthKey::Password(password), AuthMethod::Password)?;
-            println!("✓ Master seed generated successfully");
-            println!(
-                "⚠️  Make sure to backup your seed phrase using the 'mnemonic export' command"
-            );
-        }
-
-        Commands::Mnemonic { command } => match command {
-            MnemonicCommands::Import { variant, seed_file } => {
-                let variant = parse_variant(&variant)?;
-                let vault = KeyVault::new(variant);
-
-                let seed_phrase = if let Some(file_path) = seed_file {
-                    SecureString::from_string(
-                        fs::read_to_string(file_path).map_err(|e| e.to_string())?,
-                    )
-                } else {
-                    prompt_for_input("Enter seed phrase: ")?
-                };
-
+            if keychain {
+                #[cfg(target_os = "macos")]
+                init_with_touch_id(&vault)?;
+                #[cfg(not(target_os = "macos"))]
+                return Err("Keychain authentication is not supported on this platform.".to_string());
+            } else {
                 let password = prompt_for_input("Enter password: ")?;
                 let confirm = prompt_for_input("Confirm password: ")?;
                 if password != confirm {
@@ -211,11 +237,56 @@ fn main() -> Result<(), String> {
                     }
                 }
 
-                vault.import_seed_phrase(
-                    seed_phrase,
-                    AuthKey::Password(password),
-                    AuthMethod::Password,
-                )?;
+                vault.generate_master_seed(AuthKey::Password(password), AuthMethod::Password)?;
+            }
+            println!("✓ Master seed generated successfully");
+            println!(
+                "⚠️  Make sure to backup your seed phrase using the 'mnemonic export' command"
+            );
+        }
+
+        Commands::Mnemonic { command } => match command {
+            MnemonicCommands::Import {
+                variant,
+                seed_file,
+                keychain,
+            } => {
+                let variant = parse_variant(&variant)?;
+                let vault = KeyVault::new(variant);
+
+                let seed_phrase = if let Some(file_path) = seed_file {
+                    SecureString::from_string(
+                        fs::read_to_string(file_path).map_err(|e| e.to_string())?,
+                    )
+                } else {
+                    prompt_for_input("Enter seed phrase: ")?
+                };
+
+                if keychain {
+                    #[cfg(target_os = "macos")]
+                    import_with_touch_id(&vault, seed_phrase)?;
+                    #[cfg(not(target_os = "macos"))]
+                    return Err("Keychain authentication is not supported on this platform.".to_string());
+                } else {
+                    let password = prompt_for_input("Enter password: ")?;
+                    let confirm = prompt_for_input("Confirm password: ")?;
+                    if password != confirm {
+                        return Err("Passwords do not match".to_string());
+                    }
+
+                    match qpv2_core::utilities::password_checker(&password) {
+                        Ok(strength) => println!("Password strength: {} bits", strength),
+                        Err(e) => {
+                            return Err(format!("Password validation failed: {}", e));
+                        }
+                    }
+
+                    vault.import_seed_phrase(
+                        seed_phrase,
+                        AuthKey::Password(password),
+                        AuthMethod::Password,
+                    )?;
+                }
                 println!("✓ Seed phrase imported successfully");
             }
 
@@ -223,11 +294,8 @@ fn main() -> Result<(), String> {
                 let variant = KeyVault::get_spx_variant()?;
                 let vault = KeyVault::new(variant);
 
-                // Check authentication compatibility. CLI only supports password
-                KeyVault::check_auth_compatibility(&AuthMethod::Password)?;
-
-                let password = prompt_for_input("Enter password: ")?;
-                let seed_phrase = vault.export_seed_phrase(AuthKey::Password(password))?;
+                let auth = get_auth_key()?;
+                let seed_phrase = vault.export_seed_phrase(auth)?;
 
                 if let Some(output_path) = output {
                     fs::write(output_path, &*seed_phrase).map_err(|e| e.to_string())?;
@@ -245,11 +313,8 @@ fn main() -> Result<(), String> {
                     let variant = KeyVault::get_spx_variant()?;
                     let vault = KeyVault::new(variant);
 
-                    // Check authentication compatibility. CLI only supports password
-                    KeyVault::check_auth_compatibility(&AuthMethod::Password)?;
-
-                    let password = prompt_for_input("Enter password: ")?;
-                    let lock_args = vault.gen_new_account(AuthKey::Password(password))?;
+                    let auth = get_auth_key()?;
+                    let lock_args = vault.gen_new_account(auth)?;
                     println!("✓ New account created");
                     println!("Identifier(CKB quantum lock script args): {}", lock_args);
                 }
@@ -272,11 +337,8 @@ fn main() -> Result<(), String> {
                     let variant = KeyVault::get_spx_variant()?;
                     let vault = KeyVault::new(variant);
 
-                    // Check authentication compatibility. CLI only supports password
-                    KeyVault::check_auth_compatibility(&AuthMethod::Password)?;
-
-                    let password = prompt_for_input("Enter password: ")?;
-                    let accounts = vault.recover_accounts(AuthKey::Password(password), count)?;
+                    let auth = get_auth_key()?;
+                    let accounts = vault.recover_accounts(auth, count)?;
 
                     println!("✓ Recovered {} accounts:", accounts.len());
                     for (idx, lock_args) in accounts.iter().enumerate() {
@@ -288,12 +350,8 @@ fn main() -> Result<(), String> {
                     let variant = KeyVault::get_spx_variant()?;
                     let vault = KeyVault::new(variant);
 
-                    // Check authentication compatibility. CLI only supports password
-                    KeyVault::check_auth_compatibility(&AuthMethod::Password)?;
-
-                    let password = prompt_for_input("Enter password: ")?;
-                    let accounts =
-                        vault.try_gen_account_batch(AuthKey::Password(password), start, count)?;
+                    let auth = get_auth_key()?;
+                    let accounts = vault.try_gen_account_batch(auth, start, count)?;
 
                     println!("Generated {} accounts:", accounts.len());
                     for (idx, lock_args) in accounts.iter().enumerate() {
@@ -310,14 +368,10 @@ fn main() -> Result<(), String> {
             let variant = KeyVault::get_spx_variant()?;
             let vault = KeyVault::new(variant);
 
-            // Check authentication compatibility. CLI only supports password
-            KeyVault::check_auth_compatibility(&AuthMethod::Password)?;
-
             let message_bytes = hex::decode(&message).map_err(|e| e.to_string())?;
-            let password = prompt_for_input("Enter password: ")?;
+            let auth = get_auth_key()?;
 
-            let (signature, pub_key) =
-                vault.raw_sign(AuthKey::Password(password), identifier, message_bytes)?;
+            let (signature, pub_key) = vault.raw_sign(auth, identifier, message_bytes)?;
             println!("Signature: {}", hex::encode(signature));
             println!("Public Key: {}", hex::encode(pub_key));
         }
@@ -348,14 +402,10 @@ fn main() -> Result<(), String> {
                 let variant = KeyVault::get_spx_variant()?;
                 let vault = KeyVault::new(variant);
 
-                // Check authentication compatibility. CLI only supports password
-                KeyVault::check_auth_compatibility(&AuthMethod::Password)?;
-
                 let message_bytes = hex::decode(&message).map_err(|e| e.to_string())?;
-                let password = prompt_for_input("Enter password: ")?;
+                let auth = get_auth_key()?;
 
-                let signature =
-                    vault.ckb_sign(AuthKey::Password(password), lock_args, message_bytes)?;
+                let signature = vault.ckb_sign(auth, lock_args, message_bytes)?;
                 println!("Signature: {}", hex::encode(signature));
             }
 
@@ -376,6 +426,8 @@ fn main() -> Result<(), String> {
                 .map_err(|e| e.to_string())?;
 
             if confirmation.trim().to_lowercase() == "yes" {
+                #[cfg(target_os = "macos")]
+                let _ = keychain::delete_key();
                 KeyVault::clear_database()?;
                 println!("✓ All wallet data cleared");
             } else {
@@ -392,7 +444,7 @@ fn main() -> Result<(), String> {
 
             let (auth_method_display, compatible_frontends) = match wallet_info.auth_method {
                 AuthMethod::Password => ("Password", "CLI and GUI"),
-                AuthMethod::Keychain => ("Touch ID (Keychain)", "GUI only"),
+                AuthMethod::Keychain => ("Touch ID (Keychain)", "CLI (macOS) and GUI (macOS)"),
             };
 
             println!("\n╔════════════════════════════════════════════════════════════════╗");
