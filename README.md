@@ -83,39 +83,33 @@ The GUI's password dialog (`pinentry`) is built from source via
 | `gettext` | `brew install gettext` | Provides m4 macros for autotools |
 | Xcode CLI tools | `xcode-select --install` | Obj-C compiler + ibtool for nib files |
 
-### Build CLI
+### Build & Run
 ```shell
-# Build dev
-cargo build -p qpv2-cli
+# Build CLI (debug)
+./build.sh cli
 
-# Build release
-cargo build -p qpv2-cli --release
+# Build CLI (release, codesigned for Touch ID)
+./build.sh cli --release
 
-# Sign for Touch ID (macOS only, required after every build)
-codesign -s "Developer ID Application: Pham Tung (KPSL53752R)" \
-  --entitlements crates/qpv2-gui/entitlements.plist \
-  --force target/release/qpv2-cli
+# Build GUI (debug, macOS only)
+./build.sh gui
 
-# Run release binary
-./target/release/qpv2-cli --help
+# Build GUI (release, macOS only)
+./build.sh gui --release
 
-# Run tests
-cargo test -p qpv2-cli
-```
+# Run CLI
+./launch.sh cli
+./launch.sh cli --release
 
-Signing is only needed for Touch ID (`--keychain`) support. Password-only wallets work without signing.
-
-### Build GUI (macOS)
-```shell
-# Build dev binary
-./build.sh
-
-# Build prod binary
-./build.sh --release
+# Run GUI
+./launch.sh gui
+./launch.sh gui --release
 
 # Run tests
 cargo test --workspace
 ```
+
+The CLI build includes codesigning with entitlements, which is required for Touch ID (`--keychain`) support. Password-only wallets work without signing.
 
 ### Use CLI
 
@@ -172,11 +166,11 @@ Commands that require authentication (export, new account, sign, etc.) auto-dete
 
 ### Use GUI
 ```shell
-# launch the dev gui
-./launch.sh
+# Launch the dev GUI
+./launch.sh gui
 
-# launch the prod gui
-./launch.sh --release
+# Launch the prod GUI
+./launch.sh gui --release
 ```
 
 ### Node Backends
