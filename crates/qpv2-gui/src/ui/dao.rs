@@ -192,33 +192,6 @@ impl App {
 
                         ui.add_space(22.0);
 
-                        // ── Status Messages ──
-                        match &self.tx_status {
-                            TransactionStatus::Success(hash) => {
-                                ui.horizontal(|ui| {
-                                    ui.label(
-                                        egui::RichText::new("Transaction sent: ")
-                                            .size(12.0)
-                                            .color(self.colors.accent),
-                                    );
-                                    ui.label(
-                                        egui::RichText::new(hash)
-                                            .size(11.0)
-                                            .color(self.colors.text_muted)
-                                            .font(egui::FontId::monospace(11.0)),
-                                    );
-                                });
-                                ui.add_space(8.0);
-                            }
-                            TransactionStatus::Error(e) => {
-                                ui.label(
-                                    egui::RichText::new(e).size(12.0).color(self.colors.danger),
-                                );
-                                ui.add_space(8.0);
-                            }
-                            _ => {}
-                        }
-
                         // ── Active Positions Table ──
                         self.show_dao_positions_table(ui);
                     }
