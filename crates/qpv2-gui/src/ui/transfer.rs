@@ -449,12 +449,13 @@ impl App {
                         card_rect.left() + 120.0,
                         card_rect.top() + 80.0,
                     );
-                    let mesh = crate::ui::common::smooth_glow_mesh(
+                    let mut mesh = crate::ui::common::smooth_glow_mesh(
                         spot_center,
                         170.0,
                         self.colors.accent,
                         26,
                     );
+                    crate::ui::common::clamp_mesh_to_rounded_rect(&mut mesh, card_rect, 18.0);
                     painter.set(idx, egui::Shape::mesh(mesh));
                 }
 
@@ -465,12 +466,13 @@ impl App {
                         card_rect.right() - 60.0,
                         card_rect.top() + 60.0,
                     );
-                    let mesh = crate::ui::common::smooth_glow_mesh(
+                    let mut mesh = crate::ui::common::smooth_glow_mesh(
                         glow_center,
                         100.0,
                         self.colors.accent,
                         20,
                     );
+                    crate::ui::common::clamp_mesh_to_rounded_rect(&mut mesh, card_rect, 18.0);
                     painter.set(idx, egui::Shape::mesh(mesh));
                 }
             }); // vertical

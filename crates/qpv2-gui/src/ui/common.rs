@@ -428,6 +428,57 @@ fn bilinear(
     lerp_color(top, bot, v)
 }
 
+/// Clamps every vertex in `mesh` to lie inside a rounded rect.
+/// Vertices outside the bounding rect are clamped to its edge;
+/// vertices in a corner region beyond the arc are projected onto the
+/// arc. Call this on circular glow meshes before painting to prevent
+/// leakage past rounded card corners.
+pub(crate) fn clamp_mesh_to_rounded_rect(
+    mesh: &mut egui::Mesh,
+    rect: egui::Rect,
+    radius: f32,
+) {
+    for vertex in &mut mesh.vertices {
+        vertex.pos = clamp_to_rounded_rect(vertex.pos, rect, radius);
+    }
+}
+
+fn clamp_to_rounded_rect(p: egui::Pos2, rect: egui::Rect, radius: f32) -> egui::Pos2 {
+    let x = p.x.clamp(rect.left(), rect.right());
+    let y = p.y.clamp(rect.top(), rect.bottom());
+
+    let corners = [
+        (rect.left() + radius, rect.top() + radius),
+        (rect.right() - radius, rect.top() + radius),
+        (rect.right() - radius, rect.bottom() - radius),
+        (rect.left() + radius, rect.bottom() - radius),
+    ];
+
+    for &(cx, cy) in &corners {
+        let in_corner_x = if cx <= rect.center().x {
+            x < cx
+        } else {
+            x > cx
+        };
+        let in_corner_y = if cy <= rect.center().y {
+            y < cy
+        } else {
+            y > cy
+        };
+
+        if in_corner_x && in_corner_y {
+            let dx = x - cx;
+            let dy = y - cy;
+            let dist = (dx * dx + dy * dy).sqrt();
+            if dist > radius {
+                return egui::pos2(cx + dx * radius / dist, cy + dy * radius / dist);
+            }
+        }
+    }
+
+    egui::pos2(x, y)
+}
+
 /// Linearly interpolates between two RGBA colours at fraction `t`
 /// (clamped to `[0, 1]`). Used by the gradient mesh builders here and
 /// by the node-manager sync-bar gradient.

@@ -197,14 +197,6 @@ impl App {
                 });
             });
 
-        // With the Frame finalized, `response.rect` includes the
-        // outer_margin (30 px horizontal). Shrink it by that margin
-        // to land on the actual painted card outline; otherwise the
-        // gradient mesh and clip rect end up 30 px wider on each
-        // side and bleed past the card horizontally. (egui can't do
-        // rounded clipping; at the four rounded corners the mesh /
-        // glow alpha is already near zero, so the sliver of leakage
-        // past `corner_radius` is imperceptible.)
         let card_rect = frame_response.response.rect.shrink2(egui::vec2(30.0, 0.0));
         let painter = ui.painter_at(card_rect);
 
@@ -234,21 +226,17 @@ impl App {
             // reads as ambient illumination rather than a localized
             // highlight.
             let spot_center = egui::pos2(card_rect.left() + 120.0, card_rect.top() + 80.0);
-            let mesh =
+            let mut mesh =
                 crate::ui::common::smooth_glow_mesh(spot_center, 170.0, self.colors.accent, 26);
+            crate::ui::common::clamp_mesh_to_rounded_rect(&mut mesh, card_rect, 20.0);
             painter.set(idx, egui::Shape::mesh(mesh));
         }
 
         if let Some(idx) = glow_idx {
-            // Top-right corner glow — `.balance-hero::after`:
-            // 200×200 box at top:-40, right:-40, radial-gradient
-            // peaking at accent .08 and going transparent at 70%.
-            // Decoded geometry: glow center sits at
-            // `(card.right - 60, card.top + 60)` *inside* the card,
-            // visible radius ≈100 px, peak alpha 0.08 ≈ 20/255.
             let glow_center = egui::pos2(card_rect.right() - 60.0, card_rect.top() + 60.0);
-            let mesh =
+            let mut mesh =
                 crate::ui::common::smooth_glow_mesh(glow_center, 100.0, self.colors.accent, 20);
+            crate::ui::common::clamp_mesh_to_rounded_rect(&mut mesh, card_rect, 20.0);
             painter.set(idx, egui::Shape::mesh(mesh));
         }
 
