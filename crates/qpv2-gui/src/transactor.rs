@@ -407,7 +407,7 @@ impl App {
     /// Retrieve the key from Keychain via Touch ID and sign. Blocks
     /// for the biometric prompt.
     #[cfg(target_os = "macos")]
-    pub(crate) fn sign_with_keychain(
+    pub(crate) fn sign_and_send_with_keychain(
         &mut self,
         kind: TransactionKind,
         unsigned_tx: ckb_types::core::TransactionView,
@@ -432,7 +432,7 @@ impl App {
     }
 
     /// Auth-mechanism-agnostic signing core. Used by both the Keychain
-    /// flow (`sign_with_keychain`) and the password flow
+    /// flow (`sign_and_send_with_keychain`) and the password flow
     /// (`sign_and_send_with_password` in `wallet.rs`). Builds the CKB
     /// tx-message hash, signs via SPHINCS+, fills the witness, and
     /// kicks off the send-tx background thread.

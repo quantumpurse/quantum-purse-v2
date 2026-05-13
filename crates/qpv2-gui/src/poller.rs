@@ -58,7 +58,7 @@ impl App {
                     self.sign_and_send_with_password(kind, unsigned_tx, input_cells, lock_args);
                 } else {
                     #[cfg(target_os = "macos")]
-                    self.sign_with_keychain(kind, unsigned_tx, input_cells, lock_args);
+                    self.sign_and_send_with_keychain(kind, unsigned_tx, input_cells, lock_args);
 
                     #[cfg(not(target_os = "macos"))]
                     {
