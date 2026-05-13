@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 qpv2-core = { path = "../qpv2-core" }
+keychain = { path = "../keychain" }
 ckb-node = { path = "../ckb-node" }
 ckb-fips205-utils = { path = "../ckb-fips205-utils", features = ["signing"] }
 ckb-gen-types = { version = "1.0.2", default-features = false }
@@ -24,6 +25,3 @@ pinentry = "0.8.0"
 secrecy = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-
-[target.'cfg(target_os = "macos")'.dependencies]
-keychain = { path = "../keychain" }

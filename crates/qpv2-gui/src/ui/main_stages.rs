@@ -79,12 +79,10 @@ impl App {
 
                     ui.add_space(32.0);
 
-                    #[cfg(target_os = "macos")]
                     {
+                        let label = format!("Create with {}", keychain::keystore_short_name());
                         let pk_button = egui::Button::new(
-                            egui::RichText::new("Create with Touch ID")
-                                .size(16.0)
-                                .color(self.colors.bg),
+                            egui::RichText::new(label).size(16.0).color(self.colors.bg),
                         )
                         .fill(self.colors.accent)
                         .min_size(egui::vec2(field_width, 48.0));
@@ -381,7 +379,6 @@ impl App {
                                 // leave scraps behind.
                                 self.local_node.stop();
 
-                                #[cfg(target_os = "macos")]
                                 let _ = keychain::delete_key();
 
                                 match KeyVault::clear_database() {
@@ -411,10 +408,7 @@ impl App {
                     // with a per-session unlock barrier (Touch ID).
                     // Password-mode wallets have no unlock barrier;
                     // every privileged op re-prompts.
-                    if matches!(
-                        self.auth_method,
-                        Some(AuthMethod::Keychain)
-                    ) {
+                    if matches!(self.auth_method, Some(AuthMethod::Keychain)) {
                         ui.horizontal(|ui| {
                             ui.add_space(14.0);
                             let lock_btn = egui::Button::new(
@@ -500,15 +494,12 @@ impl App {
 
             ui.add_space(40.0);
 
-            #[cfg(target_os = "macos")]
             {
-                let button = egui::Button::new(
-                    egui::RichText::new("Unlock with Touch ID")
-                        .size(16.0)
-                        .color(self.colors.bg),
-                )
-                .fill(self.colors.accent2)
-                .min_size(egui::vec2(280.0, 48.0));
+                let label = format!("Unlock with {}", keychain::keystore_short_name());
+                let button =
+                    egui::Button::new(egui::RichText::new(label).size(16.0).color(self.colors.bg))
+                        .fill(self.colors.accent2)
+                        .min_size(egui::vec2(280.0, 48.0));
 
                 if ui.add(button).clicked() {
                     self.unlock_with_keychain();

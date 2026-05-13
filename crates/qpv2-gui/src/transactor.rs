@@ -404,9 +404,7 @@ impl App {
         );
     }
 
-    /// Retrieve the key from Keychain via Touch ID and sign. Blocks
-    /// for the biometric prompt.
-    #[cfg(target_os = "macos")]
+    /// Retrieve the key from the platform credential store and sign.
     pub(crate) fn sign_and_send_with_keychain(
         &mut self,
         kind: TransactionKind,

@@ -298,11 +298,9 @@ impl App {
         }
     }
 
-    /// Create a Keychain (Touch ID) wallet. Generates a random 32-byte
-    /// key, stores it in the Keychain with biometric access control,
-    /// then creates the wallet and first account. Synchronous — the
-    /// Keychain write does NOT trigger Touch ID.
-    #[cfg(target_os = "macos")]
+    /// Create a Keychain wallet. Generates a random 32-byte key,
+    /// stores it in the platform credential store, then creates the
+    /// wallet and first account.
     pub(crate) fn create_wallet_with_keychain(&mut self, variant: SpxVariant) {
         let key = match qpv2_core::utilities::get_random_bytes(32) {
             Ok(b) => b,
@@ -320,9 +318,7 @@ impl App {
         let key_for_account = key.clone();
 
         let vault = KeyVault::new(variant);
-        if let Err(e) =
-            vault.generate_master_seed(AuthKey::CryptoKey(key), AuthMethod::Keychain)
-        {
+        if let Err(e) = vault.generate_master_seed(AuthKey::CryptoKey(key), AuthMethod::Keychain) {
             let _ = keychain::delete_key();
             self.status = Status::Error(format!("Failed to create wallet: {}", e));
             return;
@@ -340,7 +336,10 @@ impl App {
                 self.auth_method = Some(AuthMethod::Keychain);
                 self.register_lock_scripts_with_light_client(&self.accounts.clone());
                 self.screen = Screen::Unlocked;
-                self.status = Status::Info("Wallet created with Touch ID!".to_string());
+                self.status = Status::Info(format!(
+                    "Wallet created with {}!",
+                    keychain::keystore_short_name()
+                ));
                 self.last_poll_time = std::time::Instant::now();
                 self.load_tx_history_from_disk();
                 self.fetch_all_balances();
@@ -355,9 +354,8 @@ impl App {
         }
     }
 
-    /// Unlock with Touch ID via Keychain. Blocks for the biometric
-    /// prompt, then transitions to Unlocked.
-    #[cfg(target_os = "macos")]
+    /// Unlock via the platform credential store, then transition to
+    /// Unlocked.
     pub(crate) fn unlock_with_keychain(&mut self) {
         match keychain::retrieve_key() {
             Ok(_) => match KeyVault::get_all_sphincs_lock_args() {
@@ -382,9 +380,7 @@ impl App {
         }
     }
 
-    /// Derive a new account using Touch ID via Keychain. Blocks for
-    /// the biometric prompt.
-    #[cfg(target_os = "macos")]
+    /// Derive a new account using the platform credential store.
     pub(crate) fn create_new_account_with_keychain(&mut self) {
         let key = match keychain::retrieve_key() {
             Ok(k) => k,

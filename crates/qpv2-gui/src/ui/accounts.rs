@@ -62,7 +62,6 @@ impl App {
                         if matches!(self.auth_method, Some(AuthMethod::Password)) {
                             self.create_new_account_with_password();
                         } else {
-                            #[cfg(target_os = "macos")]
                             self.create_new_account_with_keychain();
                         }
                     }
@@ -166,7 +165,7 @@ impl App {
                             ui,
                             self.colors.accent2_tint,
                             match info.auth_method {
-                                AuthMethod::Keychain => "Touch ID".into(),
+                                AuthMethod::Keychain => keychain::keystore_short_name().into(),
                                 AuthMethod::Password => "Password".into(),
                             },
                             self.colors.accent2,

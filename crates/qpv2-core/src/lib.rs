@@ -661,10 +661,10 @@ impl KeyVault {
             (AuthMethod::Password, AuthMethod::Password) => Ok(()),
             (AuthMethod::Keychain, AuthMethod::Keychain) => Ok(()),
             (AuthMethod::Keychain, AuthMethod::Password) => {
-                Err("This wallet was initialized with Touch ID authentication and cannot be accessed with a password. Please use Touch ID.".to_string())
+                Err("This wallet uses platform credential store authentication and cannot be accessed with a password.".to_string())
             }
             (AuthMethod::Password, AuthMethod::Keychain) => {
-                Err("This wallet was initialized with password authentication and cannot be accessed with Touch ID. Please use a password instead.".to_string())
+                Err("This wallet uses password authentication and cannot be accessed with a credential store.".to_string())
             }
         }
     }

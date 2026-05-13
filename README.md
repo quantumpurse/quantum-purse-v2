@@ -2,7 +2,7 @@
 
 Quantum Purse version 2 built entirely in Rust. Secure and Performant. There are 2 UI options: CLI and GUI (egui).
 
-Developed in collaboration with Claude Opus (4.5 / 4.6 / 4.7): developer-led architecture, abstraction boundaries, and design decisions; Claude-authored implementation under per-step review.
+Developed in collaboration with Claude Opus (4.5 / 4.6): developer-led architecture, abstraction boundaries, and design decisions; Claude-authored implementation under review.
 
 ###### <u>Feature list</u>:
 
@@ -13,7 +13,7 @@ Developed in collaboration with Claude Opus (4.5 / 4.6 / 4.7): developer-led arc
 | **Mnemonic standard** | Custom BIP39 English |
 | **Local encryption**  | AES256               |
 | **Key derivation**    | HKDF-SHA256          |
-| **Authentication**    | Password / Touch ID (macOS) |
+| **Authentication**    | Password / Platform credential store (Touch ID, Credential Manager, Secret Service) |
 | **Password hashing**  | Scrypt               |
 | **Platform**          | macOS, Windows, Linux |
 
@@ -88,7 +88,7 @@ The GUI's password dialog (`pinentry`) is built from source via
 # Build CLI (debug)
 ./build.sh cli
 
-# Build CLI (release, codesigned for Touch ID)
+# Build CLI (release, codesigned for keychain support)
 ./build.sh cli --release
 
 # Build GUI (debug, macOS only)
@@ -109,7 +109,7 @@ The GUI's password dialog (`pinentry`) is built from source via
 cargo test --workspace
 ```
 
-The CLI build includes codesigning with entitlements, which is required for Touch ID (`--keychain`) support. Password-only wallets work without signing.
+The CLI build includes codesigning with entitlements, which is required for keychain (`--keychain`) support on macOS. Password-only wallets work without signing.
 
 ### Use CLI
 
@@ -119,13 +119,13 @@ The CLI provides the following commands:
 # Initialize a new wallet (password)
 qpv2-cli init --variant <VARIANT>
 
-# Initialize a new wallet (Touch ID, macOS only)
+# Initialize a new wallet (platform credential store)
 qpv2-cli init --variant <VARIANT> --keychain
 
 # Import mnemonic (password)
 qpv2-cli mnemonic import --variant <VARIANT>
 
-# Import mnemonic (Touch ID, macOS only)
+# Import mnemonic (platform credential store)
 qpv2-cli mnemonic import --variant <VARIANT> --keychain
 
 # Export mnemonic seed phrase
@@ -162,7 +162,7 @@ qpv2-cli clear
 qpv2-cli --help
 ```
 
-Commands that require authentication (export, new account, sign, etc.) auto-detect the wallet's auth method. Password wallets prompt for a password; Touch ID wallets trigger the system biometric dialog.
+Commands that require authentication (export, new account, sign, etc.) auto-detect the wallet's auth method. Password wallets prompt for a password; keychain wallets use the platform's native credential store (Touch ID on macOS, Credential Manager on Windows, Secret Service on Linux).
 
 ### Use GUI
 ```shell

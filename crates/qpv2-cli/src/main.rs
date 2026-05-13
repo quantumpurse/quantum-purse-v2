@@ -21,7 +21,7 @@ enum Commands {
         /// SPHINCS+ variant (Sha2128F, Sha2128S, Sha2192F, Sha2192S, Sha2256F, Sha2256S, Shake128F, Shake128S, Shake192F, Shake192S, Shake256F, Shake256S)
         #[arg(short, long)]
         variant: String,
-        /// Use Touch ID (macOS Keychain) instead of password
+        /// Use platform credential store (Touch ID on macOS, Credential Manager on Windows, Secret Service on Linux)
         #[arg(long)]
         keychain: bool,
     },
@@ -80,7 +80,7 @@ enum MnemonicCommands {
         #[arg(short, long)]
         seed_file: Option<String>,
 
-        /// Encrypt with keychain instead of password
+        /// Use platform credential store instead of password
         #[arg(long)]
         keychain: bool,
     },
@@ -166,20 +166,14 @@ fn get_auth_key() -> Result<AuthKey, String> {
             Ok(AuthKey::Password(password))
         }
         AuthMethod::Keychain => {
-            #[cfg(target_os = "macos")]
-            {
-                println!("Authenticate with Touch ID...");
-                let key = keychain::retrieve_key()?;
-                Ok(AuthKey::CryptoKey(key))
-            }
-            #[cfg(not(target_os = "macos"))]
-            Err("This wallet uses macOS Keychain authentication, which is not supported on this platform.".to_string())
+            println!("Authenticate with {}...", keychain::keystore_short_name());
+            let key = keychain::retrieve_key()?;
+            Ok(AuthKey::CryptoKey(key))
         }
     }
 }
 
-#[cfg(target_os = "macos")]
-fn init_with_touch_id(vault: &KeyVault) -> Result<(), String> {
+fn init_with_keychain(vault: &KeyVault) -> Result<(), String> {
     let key = qpv2_core::utilities::get_random_bytes(32)
         .map_err(|e| format!("Failed to generate key: {}", e))?;
     keychain::store_key(&key)?;
@@ -190,8 +184,7 @@ fn init_with_touch_id(vault: &KeyVault) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
-fn import_with_touch_id(vault: &KeyVault, seed_phrase: SecureString) -> Result<(), String> {
+fn import_with_keychain(vault: &KeyVault, seed_phrase: SecureString) -> Result<(), String> {
     let key = qpv2_core::utilities::get_random_bytes(32)
         .map_err(|e| format!("Failed to generate key: {}", e))?;
     keychain::store_key(&key)?;
@@ -219,10 +212,7 @@ fn main() -> Result<(), String> {
             );
 
             if keychain {
-                #[cfg(target_os = "macos")]
-                init_with_touch_id(&vault)?;
-                #[cfg(not(target_os = "macos"))]
-                return Err("Keychain authentication is not supported on this platform.".to_string());
+                init_with_keychain(&vault)?;
             } else {
                 let password = prompt_for_input("Enter password: ")?;
                 let confirm = prompt_for_input("Confirm password: ")?;
@@ -263,10 +253,7 @@ fn main() -> Result<(), String> {
                 };
 
                 if keychain {
-                    #[cfg(target_os = "macos")]
-                    import_with_touch_id(&vault, seed_phrase)?;
-                    #[cfg(not(target_os = "macos"))]
-                    return Err("Keychain authentication is not supported on this platform.".to_string());
+                    import_with_keychain(&vault, seed_phrase)?;
                 } else {
                     let password = prompt_for_input("Enter password: ")?;
                     let confirm = prompt_for_input("Confirm password: ")?;
@@ -426,7 +413,6 @@ fn main() -> Result<(), String> {
                 .map_err(|e| e.to_string())?;
 
             if confirmation.trim().to_lowercase() == "yes" {
-                #[cfg(target_os = "macos")]
                 let _ = keychain::delete_key();
                 KeyVault::clear_database()?;
                 println!("✓ All wallet data cleared");
@@ -443,8 +429,10 @@ fn main() -> Result<(), String> {
             let wallet_info = KeyVault::read_wallet_info()?;
 
             let (auth_method_display, compatible_frontends) = match wallet_info.auth_method {
-                AuthMethod::Password => ("Password", "CLI and GUI"),
-                AuthMethod::Keychain => ("Touch ID (Keychain)", "CLI (macOS) and GUI (macOS)"),
+                AuthMethod::Password => ("Password".to_string(), "CLI and GUI"),
+                AuthMethod::Keychain => {
+                    (keychain::keystore_display_name().to_string(), "CLI and GUI")
+                }
             };
 
             println!("\n╔════════════════════════════════════════════════════════════════╗");

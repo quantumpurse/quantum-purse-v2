@@ -2,7 +2,7 @@
 name = "keychain"
 version = "0.1.0"
 edition = "2021"
-description = "macOS Keychain + Touch ID key storage for QuantumPurse."
+description = "Multi-platform credential storage for QuantumPurse."
 repository = "https://github.com/quantumpurse/quantum-purse-v2.git"
 license = "MIT"
 
@@ -11,3 +11,9 @@ qpv2-core = { path = "../qpv2-core" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = { version = "3", features = ["OSX_10_13", "OSX_10_15"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Credentials"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+dbus-secret-service = { version = "4.1", features = ["crypto-rust"] }

@@ -54,6 +54,10 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-cargo-build-target-
 
+    - name: Install system dependencies (Linux)
+      if: runner.os == 'Linux'
+      run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev
+
     - name: Run tests
       run: |
         if [ "$RUNNER_OS" = "macOS" ]; then
@@ -86,6 +90,9 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
       with:
         components: rustfmt, clippy
+
+    - name: Install system dependencies
+      run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev
 
     - name: Check formatting
       run: cargo fmt --all -- --check

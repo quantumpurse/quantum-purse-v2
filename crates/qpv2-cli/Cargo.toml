@@ -12,9 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 qpv2-core = { path = "../qpv2-core" }
+keychain = { path = "../keychain" }
 clap = { version = "4.5.60", features = ["derive"] }
 rpassword = "7.4.0"
 hex = "0.4.3"
-
-[target.'cfg(target_os = "macos")'.dependencies]
-keychain = { path = "../keychain" }
