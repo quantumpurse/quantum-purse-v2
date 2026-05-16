@@ -8,6 +8,7 @@ use security_framework::passwords::{
 fn protected_opts() -> PasswordOptions {
     let mut opts = PasswordOptions::new_generic_password(SERVICE, ACCOUNT);
     opts.use_protected_keychain();
+    opts.set_access_synchronized(Some(false));
     opts
 }
 
