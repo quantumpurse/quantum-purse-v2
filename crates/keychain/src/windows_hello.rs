@@ -11,9 +11,7 @@ use crate::{KEY_LEN, SERVICE, ACCOUNT};
 use qpv2_core::SecureVec;
 use std::path::PathBuf;
 use std::ptr;
-use windows_sys::Win32::Foundation::GetLastError;
 use windows_sys::Win32::Security::Cryptography::{
-	BCryptCloseAlgorithmProvider, BCryptGenRandom, BCryptOpenAlgorithmProvider,
 	NCryptCreatePersistedKey, NCryptDecrypt, NCryptDeleteKey, NCryptEncrypt,
 	NCryptFinalizeKey, NCryptFreeObject, NCryptOpenKey, NCryptOpenStorageProvider,
 	NCryptSetProperty, BCRYPT_OAEP_PADDING_INFO, BCRYPT_RSA_ALGORITHM,
@@ -69,14 +67,6 @@ impl Drop for ProvHandle {
 }
 
 struct KeyHandle(NCRYPT_KEY_HANDLE);
-
-impl KeyHandle {
-	fn take(mut self) -> NCRYPT_KEY_HANDLE {
-		let h = self.0;
-		self.0 = 0;
-		h
-	}
-}
 
 impl Drop for KeyHandle {
 	fn drop(&mut self) {
@@ -176,7 +166,8 @@ fn open_or_create_key(hprov: NCRYPT_PROV_HANDLE) -> Result<KeyHandle, String> {
 		return Err(status_to_err(status, "Failed to set gesture requirement"));
 	}
 
-	// Set the prompt message shown in the Windows Hello dialog.
+	// Per-session UI hint, not a persisted key property — flag is 0
+	// intentionally (not NCRYPT_PERSIST_FLAG).
 	let prop_context = to_utf16("Use Context");
 	let context_msg = to_utf16("Unlock Quantum Purse wallet");
 	let status = unsafe {
@@ -216,16 +207,16 @@ pub fn store_key(key: &[u8]) -> Result<(), String> {
 	let prov = open_provider()?;
 	let hkey = open_or_create_key(prov.0)?;
 
-	let mut padding = oaep_padding();
+	let padding = oaep_padding();
 
 	// First call: get required output size.
 	let mut cipher_len: u32 = 0;
 	let status = unsafe {
 		NCryptEncrypt(
 			hkey.0,
-			key.as_ptr() as *mut u8,
+			key.as_ptr(),
 			key.len() as u32,
-			&mut padding as *mut _ as *mut _,
+			&padding as *const _ as *const _,
 			ptr::null_mut(),
 			0,
 			&mut cipher_len,
@@ -242,9 +233,9 @@ pub fn store_key(key: &[u8]) -> Result<(), String> {
 	let status = unsafe {
 		NCryptEncrypt(
 			hkey.0,
-			key.as_ptr() as *mut u8,
+			key.as_ptr(),
 			key.len() as u32,
-			&mut padding as *mut _ as *mut _,
+			&padding as *const _ as *const _,
 			ciphertext.as_mut_ptr(),
 			cipher_len,
 			&mut actual_len,
@@ -279,37 +270,20 @@ pub fn retrieve_key() -> Result<SecureVec, String> {
 	let ciphertext = std::fs::read(&path)
 		.map_err(|e| format!("Failed to read {}: {}.", WRAPPED_KEY_FILE, e))?;
 
-	let mut padding = oaep_padding();
+	let padding = oaep_padding();
 
-	// First call: get required output size.
-	let mut plain_len: u32 = 0;
-	let status = unsafe {
-		NCryptDecrypt(
-			hkey.0,
-			ciphertext.as_ptr() as *mut u8,
-			ciphertext.len() as u32,
-			&mut padding as *mut _ as *mut _,
-			ptr::null_mut(),
-			0,
-			&mut plain_len,
-			NCRYPT_PAD_OAEP_FLAG,
-		)
-	};
-	if status != 0 {
-		return Err(status_to_err(status, "Failed to determine plaintext size"));
-	}
-
-	// Second call: decrypt (triggers Windows Hello prompt).
-	let mut plaintext = vec![0u8; plain_len as usize];
+	// Single decrypt call. RSA-2048 plaintext ≤ 256 bytes; skipping
+	// the size-probe avoids a potential duplicate Windows Hello prompt.
+	let mut plaintext = vec![0u8; 256];
 	let mut actual_len: u32 = 0;
 	let status = unsafe {
 		NCryptDecrypt(
 			hkey.0,
-			ciphertext.as_ptr() as *mut u8,
+			ciphertext.as_ptr(),
 			ciphertext.len() as u32,
-			&mut padding as *mut _ as *mut _,
+			&padding as *const _ as *const _,
 			plaintext.as_mut_ptr(),
-			plain_len,
+			256,
 			&mut actual_len,
 			NCRYPT_PAD_OAEP_FLAG,
 		)
@@ -349,9 +323,10 @@ pub fn delete_key() -> Result<(), String> {
 	}
 
 	let path = wrapped_key_path()?;
-	if path.exists() {
-		std::fs::remove_file(&path)
-			.map_err(|e| format!("Failed to remove {}: {}.", WRAPPED_KEY_FILE, e))?;
+	match std::fs::remove_file(&path) {
+		Ok(()) => {}
+		Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+		Err(e) => return Err(format!("Failed to remove {}: {}.", WRAPPED_KEY_FILE, e)),
 	}
 
 	Ok(())
