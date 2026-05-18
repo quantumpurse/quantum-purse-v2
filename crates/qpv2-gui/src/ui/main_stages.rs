@@ -94,6 +94,23 @@ impl App {
                         ui.add_space(10.0);
                     }
 
+                    {
+                        let fido2_btn = egui::Button::new(
+                            egui::RichText::new("Create with Security Key")
+                                .size(16.0)
+                                .color(self.colors.text),
+                        )
+                        .fill(self.colors.surface)
+                        .stroke(egui::Stroke::new(1.0, self.colors.accent2))
+                        .min_size(egui::vec2(field_width, 48.0));
+
+                        if ui.add(fido2_btn).clicked() {
+                            self.create_wallet_with_fido2(self.selected_variant);
+                        }
+
+                        ui.add_space(10.0);
+                    }
+
                     let pw_btn = egui::Button::new(
                         egui::RichText::new("Create with Password")
                             .size(16.0)
@@ -408,7 +425,10 @@ impl App {
                     // with a per-session unlock barrier (Touch ID).
                     // Password-mode wallets have no unlock barrier;
                     // every privileged op re-prompts.
-                    if matches!(self.auth_method, Some(AuthMethod::Keychain)) {
+                    if matches!(
+                        self.auth_method,
+                        Some(AuthMethod::Keychain) | Some(AuthMethod::Fido2 { .. })
+                    ) {
                         ui.horizontal(|ui| {
                             ui.add_space(14.0);
                             let lock_btn = egui::Button::new(
@@ -494,21 +514,37 @@ impl App {
 
             ui.add_space(40.0);
 
-            {
-                let label = format!("Unlock with {}", keychain::keystore_short_name());
-                let button =
-                    egui::Button::new(egui::RichText::new(label).size(16.0).color(self.colors.bg))
-                        .fill(self.colors.accent2)
-                        .min_size(egui::vec2(280.0, 48.0));
+            match &self.auth_method {
+                Some(AuthMethod::Fido2 { credential_id }) => {
+                    let cred_id = credential_id.clone();
+                    let button = egui::Button::new(
+                        egui::RichText::new("Unlock with Security Key")
+                            .size(16.0)
+                            .color(self.colors.bg),
+                    )
+                    .fill(self.colors.accent2)
+                    .min_size(egui::vec2(280.0, 48.0));
 
-                if ui.add(button).clicked() {
-                    self.unlock_with_keychain();
+                    if ui.add(button).clicked() {
+                        self.unlock_with_fido2(&cred_id);
+                    }
                 }
+                Some(AuthMethod::Keychain) => {
+                    let label = format!("Unlock with {}", keychain::keystore_short_name());
+                    let button = egui::Button::new(
+                        egui::RichText::new(label).size(16.0).color(self.colors.bg),
+                    )
+                    .fill(self.colors.accent2)
+                    .min_size(egui::vec2(280.0, 48.0));
+
+                    if ui.add(button).clicked() {
+                        self.unlock_with_keychain();
+                    }
+                }
+                _ => {}
             }
 
             ui.add_space(24.0);
-            // Nest in a centered layout so the status row lines up with
-            // the rest of the page instead of flushing left.
             ui.vertical_centered(|ui| self.show_status(ui));
         });
     }

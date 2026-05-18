@@ -59,10 +59,21 @@ impl App {
                         .response;
 
                     if new_card.interact(egui::Sense::click()).clicked() {
-                        if matches!(self.auth_method, Some(AuthMethod::Password)) {
-                            self.create_new_account_with_password();
-                        } else {
-                            self.create_new_account_with_keychain();
+                        match &self.auth_method {
+                            Some(AuthMethod::Password) => {
+                                self.create_new_account_with_password();
+                            }
+                            Some(AuthMethod::Keychain) => {
+                                self.create_new_account_with_keychain();
+                            }
+                            Some(AuthMethod::Fido2 { credential_id }) => {
+                                let cred_id = credential_id.clone();
+                                self.create_new_account_with_fido2(&cred_id);
+                            }
+                            None => {
+                                self.status =
+                                    Status::Error("No authentication method set.".to_string());
+                            }
                         }
                     }
 
@@ -167,6 +178,7 @@ impl App {
                             match info.auth_method {
                                 AuthMethod::Keychain => keychain::keystore_short_name().into(),
                                 AuthMethod::Password => "Password".into(),
+                                AuthMethod::Fido2 { .. } => "FIDO2 Key".into(),
                             },
                             self.colors.accent2,
                         );

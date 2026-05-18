@@ -54,10 +54,24 @@ impl App {
 
                 use qpv2_core::types::AuthMethod;
                 self.tx_status = TransactionStatus::AwaitingSignature;
-                if matches!(self.auth_method, Some(AuthMethod::Password)) {
-                    self.sign_and_send_with_password(kind, unsigned_tx, input_cells, lock_args);
-                } else {
-                    self.sign_and_send_with_keychain(kind, unsigned_tx, input_cells, lock_args);
+                match &self.auth_method {
+                    Some(AuthMethod::Password) => {
+                        self.sign_and_send_with_password(kind, unsigned_tx, input_cells, lock_args);
+                    }
+                    Some(AuthMethod::Keychain) => {
+                        self.sign_and_send_with_keychain(kind, unsigned_tx, input_cells, lock_args);
+                    }
+                    Some(AuthMethod::Fido2 { credential_id }) => {
+                        let cred_id = credential_id.clone();
+                        self.sign_and_send_with_fido2(
+                            &cred_id, kind, unsigned_tx, input_cells, lock_args,
+                        );
+                    }
+                    None => {
+                        self.tx_status = TransactionStatus::Error(
+                            "No authentication method set.".to_string(),
+                        );
+                    }
                 }
             }
             Ok(Err(e)) => {

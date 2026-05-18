@@ -19,6 +19,10 @@
 
 ## Developer Pitfalls
 
+## FIDO2
+
+- [ ] **Support built-in user verification (UV) for FIDO2 devices.** Devices with on-board biometrics (YubiKey Bio fingerprint) or on-device PIN entry (keypads/buttons) handle user verification internally — no host-side PIN is needed. Detect device UV capability at registration/assertion time and skip the PIN prompt when the device supports internal UV. Currently only the clientPin path is implemented (PIN entered on host, sent encrypted to device).
+
 ## Security
 
 - [ ] **Implement re-validation before signing**

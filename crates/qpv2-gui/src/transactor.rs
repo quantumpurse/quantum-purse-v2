@@ -429,6 +429,57 @@ impl App {
         );
     }
 
+    /// Retrieve the vault key from a FIDO2 device and sign.
+    pub(crate) fn sign_and_send_with_fido2(
+        &mut self,
+        credential_id: &str,
+        kind: TransactionKind,
+        unsigned_tx: ckb_types::core::TransactionView,
+        input_cells: Vec<(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)>,
+        lock_args: String,
+    ) {
+        let cred_bytes = match hex::decode(credential_id) {
+            Ok(b) => b,
+            Err(e) => {
+                self.tx_status = TransactionStatus::Idle;
+                self.status = Status::Error(format!("Invalid credential ID: {}", e));
+                return;
+            }
+        };
+
+        let pin = match crate::pinentry::prompt_password(
+            "Enter your FIDO2 security key PIN to sign this transaction.",
+            "PIN:",
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                self.tx_status = TransactionStatus::Idle;
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+
+        let hmac_output = match keychain::fido2::authenticate(&cred_bytes, &pin) {
+            Ok(h) => h,
+            Err(e) => {
+                self.tx_status = TransactionStatus::Idle;
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+
+        let key = match qpv2_core::utilities::derive_vault_enc_key(&hmac_output) {
+            Ok(k) => k,
+            Err(e) => {
+                self.tx_status = TransactionStatus::Idle;
+                self.status = Status::Error(format!("Key derivation failed: {}", e));
+                return;
+            }
+        };
+
+        self.sign_and_send(kind, AuthKey::CryptoKey(key), unsigned_tx, input_cells, lock_args);
+    }
+
     /// Auth-mechanism-agnostic signing core. Used by both the Keychain
     /// flow (`sign_and_send_with_keychain`) and the password flow
     /// (`sign_and_send_with_password` in `wallet.rs`). Builds the CKB

@@ -24,6 +24,9 @@ enum Commands {
         /// Use platform credential store (Touch ID on macOS, Credential Manager on Windows, Secret Service on Linux)
         #[arg(long)]
         keychain: bool,
+        /// Use a FIDO2 security key with hmac-secret extension
+        #[arg(long)]
+        fido2: bool,
     },
     /// Mnemonic operations (import/export)
     Mnemonic {
@@ -83,6 +86,10 @@ enum MnemonicCommands {
         /// Use platform credential store instead of password
         #[arg(long)]
         keychain: bool,
+
+        /// Use a FIDO2 security key with hmac-secret extension
+        #[arg(long)]
+        fido2: bool,
     },
     Export {
         #[arg(short, long)]
@@ -170,6 +177,14 @@ fn get_auth_key() -> Result<AuthKey, String> {
             let key = keychain::retrieve_key()?;
             Ok(AuthKey::CryptoKey(key))
         }
+        AuthMethod::Fido2 { ref credential_id } => {
+            let cred_bytes = hex::decode(credential_id)
+                .map_err(|e| format!("Invalid credential ID: {}", e))?;
+            let pin = prompt_for_input("Enter security key PIN: ")?;
+            let hmac_output = keychain::fido2::authenticate(&cred_bytes, &pin)?;
+            let key = qpv2_core::utilities::derive_vault_enc_key(&hmac_output)?;
+            Ok(AuthKey::CryptoKey(key))
+        }
     }
 }
 
@@ -197,11 +212,45 @@ fn import_with_keychain(vault: &KeyVault, seed_phrase: SecureString) -> Result<(
     Ok(())
 }
 
+fn init_with_fido2(vault: &KeyVault) -> Result<(), String> {
+    let pin = prompt_for_input("Enter security key PIN: ")?;
+    println!("Registering credential...");
+    let credential = keychain::fido2::register(&pin)?;
+    let credential_id = hex::encode(&credential.credential_id);
+
+    println!("Deriving encryption key...");
+    let hmac_output = keychain::fido2::authenticate(&credential.credential_id, &pin)?;
+    let key = qpv2_core::utilities::derive_vault_enc_key(&hmac_output)?;
+
+    let auth_method = AuthMethod::Fido2 { credential_id };
+    vault.generate_master_seed(AuthKey::CryptoKey(key), auth_method)?;
+    Ok(())
+}
+
+fn import_with_fido2(vault: &KeyVault, seed_phrase: SecureString) -> Result<(), String> {
+    let pin = prompt_for_input("Enter security key PIN: ")?;
+    println!("Registering credential...");
+    let credential = keychain::fido2::register(&pin)?;
+    let credential_id = hex::encode(&credential.credential_id);
+
+    println!("Deriving encryption key...");
+    let hmac_output = keychain::fido2::authenticate(&credential.credential_id, &pin)?;
+    let key = qpv2_core::utilities::derive_vault_enc_key(&hmac_output)?;
+
+    let auth_method = AuthMethod::Fido2 { credential_id };
+    vault.import_seed_phrase(seed_phrase, AuthKey::CryptoKey(key), auth_method)?;
+    Ok(())
+}
+
 fn main() -> Result<(), String> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Init { variant, keychain } => {
+        Commands::Init {
+            variant,
+            keychain,
+            fido2,
+        } => {
             let variant = parse_variant(&variant)?;
             let vault = KeyVault::new(variant);
 
@@ -211,7 +260,11 @@ fn main() -> Result<(), String> {
                 variant.required_bip39_size_in_word_total()
             );
 
-            if keychain {
+            if keychain && fido2 {
+                return Err("Cannot use both --keychain and --fido2.".to_string());
+            } else if fido2 {
+                init_with_fido2(&vault)?;
+            } else if keychain {
                 init_with_keychain(&vault)?;
             } else {
                 let password = prompt_for_input("Enter password: ")?;
@@ -240,6 +293,7 @@ fn main() -> Result<(), String> {
                 variant,
                 seed_file,
                 keychain,
+                fido2,
             } => {
                 let variant = parse_variant(&variant)?;
                 let vault = KeyVault::new(variant);
@@ -252,7 +306,11 @@ fn main() -> Result<(), String> {
                     prompt_for_input("Enter seed phrase: ")?
                 };
 
-                if keychain {
+                if keychain && fido2 {
+                    return Err("Cannot use both --keychain and --fido2.".to_string());
+                } else if fido2 {
+                    import_with_fido2(&vault, seed_phrase)?;
+                } else if keychain {
                     import_with_keychain(&vault, seed_phrase)?;
                 } else {
                     let password = prompt_for_input("Enter password: ")?;
@@ -433,6 +491,7 @@ fn main() -> Result<(), String> {
                 AuthMethod::Keychain => {
                     (keychain::keystore_display_name().to_string(), "CLI and GUI")
                 }
+                AuthMethod::Fido2 { .. } => ("FIDO2 Security Key".to_string(), "CLI and GUI"),
             };
 
             println!("\n╔════════════════════════════════════════════════════════════════╗");

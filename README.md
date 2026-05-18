@@ -337,6 +337,61 @@ secrets via D-Bus with zero additional authentication — GNOME
 considers this by design. There is no hardware-backed isolation.
 Biometric re-enrollment does not invalidate stored keys.
 
+#### FIDO2 — Hardware Key (hmac-secret)
+
+When a wallet is created with `--fido2` (CLI) or the security key button
+(GUI), a FIDO2 credential is registered on the authenticator using the
+CTAP2 hmac-secret extension. The 32-byte HMAC output is fed through
+HKDF (`derive_vault_enc_key`) to produce the AES-256 vault encryption
+key. The credential ID is persisted in `wallet_info.json`; the device
+itself stores nothing (non-resident credential).
+
+Same core technique as passkey PRF but via CTAP2 hmac-secret.
+
+##### CTAP2 hmac-secret protocol
+
+```
+Registration:
+  PIN → verified on-device (8 retries before permanent lockout)
+  CredRandomWithUV = random()                               ← fresh per credential
+  credential_id = Encrypt(wrapping_key, CredRandomWithUV)   ← sealed into blob
+  return credential_id to client                            ← device forgets CredRandom
+
+Assertion:
+  PIN → verified on-device, selects CredRandomWithUV
+  CredRandomWithUV = Decrypt(wrapping_key, credential_id)   ← recovered from blob
+  output = HMAC-SHA256(CredRandomWithUV, salt)               ← returned to client
+```
+
+##### PIN role
+
+The PIN is an access gate — its value never enters the HMAC
+computation. However, whether user verification (PIN) occurred selects
+which credential secret the device uses: `CredRandomWithUV` vs
+`CredRandomWithoutUV` (CTAP 2.1+), producing different outputs. QPV2
+always passes PIN, so it always lands on the `WithUV` path consistently.
+
+##### Key terms
+
+- **wrapping_key**: Permanent device-internal key that encrypts/decrypts
+  credential blobs. Never leaves hardware.
+- **CredRandomWithUV**: Per-credential random material generated at
+  registration. Encrypted into the credential_id blob. The device
+  forgets it after registration — it is recovered from the blob at
+  each assertion.
+- **Non-resident credential**: The device stores nothing; the client
+  holds the credential_id. Unlimited credentials per device.
+
+##### Security properties
+
+- **Three-factor**: Physical device + PIN + physical presence (tap).
+- **PIN brute-force**: [8 retries enforced on-device](https://fidoalliance.org/specs/fido-v2.0-id-20180227/fido-client-to-authenticator-protocol-v2.0-id-20180227.html#client-pin-support-requirements),
+  then permanent lockout. Power-cycle delay after 3 failures prevents
+  scripted bursts.
+- **Device loss**: Without the FIDO2 key, the HMAC cannot be computed
+  and the vault cannot be decrypted. The seed phrase (CLI-only export)
+  is the recovery path.
+
 ### Authentication Roadmap
 
 | Platform | Primary | Fallback |

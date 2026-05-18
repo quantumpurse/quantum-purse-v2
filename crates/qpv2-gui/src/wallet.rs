@@ -298,6 +298,53 @@ impl App {
         }
     }
 
+    /// Prompt for the wallet password and derive a new account.
+    /// Synchronous: blocks the egui update loop while the pinentry
+    /// dialog is up.
+    pub(crate) fn create_new_account_with_password(&mut self) {
+        let pw = match crate::pinentry::prompt_password(
+            "Enter your wallet password to create a new account.",
+            "Password:",
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+
+        let variant = match KeyVault::get_spx_variant() {
+            Ok(v) => v,
+            Err(e) => {
+                self.status = Status::Error(format!("Failed to read wallet variant: {}", e));
+                return;
+            }
+        };
+        let vault = KeyVault::new(variant);
+        match vault.gen_new_account(AuthKey::Password(pw)) {
+            Ok(lock_args) => {
+                self.balances.insert(lock_args.clone(), None);
+                let qp_client = self.qp_client.clone();
+                let args = lock_args.clone();
+                let (tx, rx) = std::sync::mpsc::channel();
+                self.balance_receiver = Some(rx);
+                std::thread::spawn(move || {
+                    let result = ckb_node::wallet_helpers::queries::fetch_quantum_lock_balance(
+                        &qp_client, &args,
+                    )
+                    .map_err(|e| e.to_string());
+                    let _ = tx.send((args, result));
+                });
+                self.accounts.push(lock_args.clone());
+                self.register_lock_scripts_with_light_client(std::slice::from_ref(&lock_args));
+                self.status = Status::Info("New account created!".to_string());
+            }
+            Err(e) => {
+                self.status = Status::Error(format!("Failed to create account: {}", e));
+            }
+        }
+    }
+
     /// Create a Keychain wallet. Generates a random 32-byte key,
     /// stores it in the platform credential store, then creates the
     /// wallet and first account.
@@ -422,17 +469,162 @@ impl App {
         }
     }
 
-    /// Prompt for the wallet password and derive a new account.
-    /// Synchronous: blocks the egui update loop while the pinentry
-    /// dialog is up.
-    pub(crate) fn create_new_account_with_password(&mut self) {
-        let pw = match crate::pinentry::prompt_password(
-            "Enter your wallet password to create a new account.",
-            "Password:",
+    /// Create a FIDO2-authenticated wallet. Prompts for the device PIN
+    /// via pinentry, registers a credential, then derives the encryption
+    /// key via hmac-secret.
+    pub(crate) fn create_wallet_with_fido2(&mut self, variant: SpxVariant) {
+        let pin = match crate::pinentry::prompt_password(
+            "Enter your FIDO2 security key PIN to register a new credential.",
+            "PIN:",
         ) {
             Ok(s) => s,
             Err(e) => {
                 self.status = Status::Error(e);
+                return;
+            }
+        };
+
+        let credential = match keychain::fido2::register(&pin) {
+            Ok(c) => c,
+            Err(e) => {
+                self.status = Status::Error(format!("FIDO2 registration failed: {}", e));
+                return;
+            }
+        };
+
+        let credential_id = hex::encode(&credential.credential_id);
+
+        let hmac_output = match keychain::fido2::authenticate(&credential.credential_id, &pin) {
+            Ok(h) => h,
+            Err(e) => {
+                self.status = Status::Error(format!("FIDO2 authentication failed: {}", e));
+                return;
+            }
+        };
+
+        let key = match qpv2_core::utilities::derive_vault_enc_key(&hmac_output) {
+            Ok(k) => k,
+            Err(e) => {
+                self.status = Status::Error(format!("Key derivation failed: {}", e));
+                return;
+            }
+        };
+
+        let key_for_account = key.clone();
+        let auth_method = AuthMethod::Fido2 {
+            credential_id: credential_id.clone(),
+        };
+
+        let vault = KeyVault::new(variant);
+        if let Err(e) = vault.generate_master_seed(AuthKey::CryptoKey(key), auth_method.clone()) {
+            self.status = Status::Error(format!("Failed to create wallet: {}", e));
+            return;
+        }
+
+        if let Err(e) = vault.gen_new_account(AuthKey::CryptoKey(key_for_account)) {
+            self.status = Status::Error(format!("Failed to create first account: {}", e));
+            self.auth_method = Some(auth_method);
+            return;
+        }
+
+        match KeyVault::get_all_sphincs_lock_args() {
+            Ok(lock_args) => {
+                self.accounts = lock_args;
+                self.auth_method = Some(AuthMethod::Fido2 { credential_id });
+                self.register_lock_scripts_with_light_client(&self.accounts.clone());
+                self.screen = Screen::Unlocked;
+                self.status = Status::Info("Wallet created with FIDO2 security key!".to_string());
+                self.last_poll_time = std::time::Instant::now();
+                self.load_tx_history_from_disk();
+                self.fetch_all_balances();
+                self.fetch_tx_history(true);
+                self.fetch_dao_cells();
+                self.fetch_node_status();
+            }
+            Err(e) => {
+                self.status = Status::Error(format!("Failed to read accounts: {}", e));
+                self.auth_method = Some(AuthMethod::Fido2 { credential_id });
+            }
+        }
+    }
+
+    /// Unlock via FIDO2 hmac-secret, then transition to Unlocked.
+    pub(crate) fn unlock_with_fido2(&mut self, credential_id: &str) {
+        let cred_bytes = match hex::decode(credential_id) {
+            Ok(b) => b,
+            Err(e) => {
+                self.status = Status::Error(format!("Invalid credential ID: {}", e));
+                return;
+            }
+        };
+
+        let pin = match crate::pinentry::prompt_password(
+            "Enter your FIDO2 security key PIN to unlock.",
+            "PIN:",
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+
+        match keychain::fido2::authenticate(&cred_bytes, &pin) {
+            Ok(_) => match KeyVault::get_all_sphincs_lock_args() {
+                Ok(lock_args) => {
+                    self.accounts = lock_args;
+                    self.screen = Screen::Unlocked;
+                    self.status = Status::None;
+                    self.last_poll_time = std::time::Instant::now();
+                    self.load_tx_history_from_disk();
+                    self.fetch_all_balances();
+                    self.fetch_tx_history(true);
+                    self.fetch_dao_cells();
+                    self.fetch_node_status();
+                }
+                Err(e) => {
+                    self.status = Status::Error(format!("Failed to unlock: {}", e));
+                }
+            },
+            Err(e) => {
+                self.status = Status::Error(e);
+            }
+        }
+    }
+
+    /// Derive a new account using FIDO2 hmac-secret.
+    pub(crate) fn create_new_account_with_fido2(&mut self, credential_id: &str) {
+        let cred_bytes = match hex::decode(credential_id) {
+            Ok(b) => b,
+            Err(e) => {
+                self.status = Status::Error(format!("Invalid credential ID: {}", e));
+                return;
+            }
+        };
+
+        let pin = match crate::pinentry::prompt_password(
+            "Enter your FIDO2 security key PIN to create a new account.",
+            "PIN:",
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+
+        let hmac_output = match keychain::fido2::authenticate(&cred_bytes, &pin) {
+            Ok(h) => h,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+
+        let key = match qpv2_core::utilities::derive_vault_enc_key(&hmac_output) {
+            Ok(k) => k,
+            Err(e) => {
+                self.status = Status::Error(format!("Key derivation failed: {}", e));
                 return;
             }
         };
@@ -445,7 +637,7 @@ impl App {
             }
         };
         let vault = KeyVault::new(variant);
-        match vault.gen_new_account(AuthKey::Password(pw)) {
+        match vault.gen_new_account(AuthKey::CryptoKey(key)) {
             Ok(lock_args) => {
                 self.balances.insert(lock_args.clone(), None);
                 let qp_client = self.qp_client.clone();

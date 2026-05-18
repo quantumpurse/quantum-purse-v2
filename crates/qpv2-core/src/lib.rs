@@ -660,12 +660,11 @@ impl KeyVault {
         match (&wallet_info.auth_method, expected) {
             (AuthMethod::Password, AuthMethod::Password) => Ok(()),
             (AuthMethod::Keychain, AuthMethod::Keychain) => Ok(()),
-            (AuthMethod::Keychain, AuthMethod::Password) => {
-                Err("This wallet uses platform credential store authentication and cannot be accessed with a password.".to_string())
-            }
-            (AuthMethod::Password, AuthMethod::Keychain) => {
-                Err("This wallet uses password authentication and cannot be accessed with a credential store.".to_string())
-            }
+            (AuthMethod::Fido2 { .. }, AuthMethod::Fido2 { .. }) => Ok(()),
+            (actual, attempted) => Err(format!(
+                "Authentication method mismatch: wallet uses {:?}, attempted {:?}.",
+                actual, attempted
+            )),
         }
     }
 

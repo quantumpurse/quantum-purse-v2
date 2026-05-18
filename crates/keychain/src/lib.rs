@@ -5,10 +5,16 @@
 //! - macOS: Data Protection Keychain with Touch ID biometric gating.
 //! - Windows: Credential Manager (DPAPI-protected).
 //! - Linux: Secret Service D-Bus (GNOME Keyring / KDE Wallet).
+//!
+//! Optionally provides FIDO2 hardware key authentication via
+//! the `fido2` feature flag.
 
 pub(crate) const SERVICE: &str = "quantumpurse";
 pub(crate) const ACCOUNT: &str = "vault-encryption-key";
 pub(crate) const KEY_LEN: usize = 32;
+
+#[cfg(feature = "fido2")]
+pub mod fido2;
 
 #[cfg(target_os = "macos")]
 mod macos;

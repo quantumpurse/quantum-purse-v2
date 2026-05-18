@@ -42,7 +42,10 @@ pub enum AuthMethod {
     /// Password-based authentication using scrypt key derivation.
     #[default]
     Password,
+    /// Platform credential store (macOS Keychain, Windows TPM, Linux TPM).
     Keychain,
+    /// FIDO2 hardware key with hmac-secret extension.
+    Fido2 { credential_id: String },
 }
 
 /// Authentication key used to encrypt/decrypt the vault.
