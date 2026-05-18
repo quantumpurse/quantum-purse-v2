@@ -321,92 +321,41 @@ or per-class are not disclosed. The security *properties* above are
 documented in the [Apple Platform Security Guide](https://support.apple.com/guide/security/welcome/web);
 the internal cryptographic construction is not.
 
-#### Windows — Credential Manager (DPAPI)
+#### Windows — Credential Manager (DPAPI) — Interim
 
 Keys are stored via `CredWriteW` / `CredReadW`. Encryption is
 software-only using DPAPI, which derives the encryption key from the
-user's login password (PBKDF2). There is no hardware-backed isolation
-— an administrator or tools like Mimikatz can extract credentials.
-Biometric re-enrollment does not invalidate stored keys.
+user's login password. There is no per-access authentication — any
+process running as the logged-in user reads the key silently.
 
-#### Linux — Secret Service (D-Bus)
+#### Linux — Secret Service (D-Bus) — Interim
 
 Keys are stored via the freedesktop.org Secret Service API (GNOME
 Keyring or KWallet). Any process running as the same user can read all
-secrets via D-Bus with zero additional authentication — GNOME
-considers this by design. There is no hardware-backed isolation.
-Biometric re-enrollment does not invalidate stored keys.
+secrets via D-Bus with zero additional authentication.
 
-#### FIDO2 — Hardware Key (hmac-secret)
+#### Platform comparison
 
-When a wallet is created with `--fido2` (CLI) or the security key button
-(GUI), a FIDO2 credential is registered on the authenticator using the
-CTAP2 hmac-secret extension. The 32-byte HMAC output is fed through
-HKDF (`derive_vault_enc_key`) to produce the AES-256 vault encryption
-key. The credential ID is persisted in `wallet_info.json`; the device
-itself stores nothing (non-resident credential).
+| Scenario | Plain file | DPAPI / Secret Service (interim) | Apple Keychain + Touch ID | TPM + Windows Hello (planned) | TPM seal (planned) | FIDO2 Hardware Key |
+|---|---|---|---|---|---|---|
+| Malware running as user | Reads key freely | Reads key freely | Blocked — Secure Enclave requires Touch ID per access | Blocked — requires biometric/PIN prompt per access | Blocked — TPM requires authorization policy | Blocked — requires physical device + PIN + tap |
+| Another user on same machine | Can read if file permissions allow | Cannot decrypt (tied to user session) | Cannot access (Keychain bound to user + biometric) | Cannot access (TPM key bound to user + biometric) | Cannot access (TPM sealed to user session) | Cannot access — no device, no PIN |
+| Stolen disk, booted from USB | Reads key in plaintext | Cannot decrypt without user's login password | Cannot decrypt — key sealed in Secure Enclave hardware | Cannot decrypt — key sealed inside TPM hardware | Cannot decrypt — sealed blob useless without TPM | Cannot decrypt — credential_id blob useless without device |
+| Admin with Mimikatz while user logged in | Reads key freely | Can extract DPAPI master key from memory | Key never leaves Secure Enclave in plaintext | Key never leaves TPM in plaintext — nothing to extract | Key never leaves TPM in plaintext | Key never leaves FIDO2 device — HMAC computed on-chip |
+| Remote attacker with shell as user | Reads key freely | Reads key freely | Blocked — no physical presence for Touch ID | Blocked — no physical presence for biometric prompt | Depends on authorization policy | Blocked — no physical device to tap |
 
-Same core technique as passkey PRF but via CTAP2 hmac-secret.
-
-##### CTAP2 hmac-secret protocol
-
-```
-Registration:
-  PIN → verified on-device (8 retries before permanent lockout)
-  CredRandomWithUV = random()                               ← fresh per credential
-  credential_id = Encrypt(wrapping_key, CredRandomWithUV)   ← sealed into blob
-  return credential_id to client                            ← device forgets CredRandom
-
-Assertion:
-  PIN → verified on-device, selects CredRandomWithUV
-  CredRandomWithUV = Decrypt(wrapping_key, credential_id)   ← recovered from blob
-  output = HMAC-SHA256(CredRandomWithUV, salt)               ← returned to client
-```
-
-##### PIN role
-
-The PIN is an access gate — its value never enters the HMAC
-computation. However, whether user verification (PIN) occurred selects
-which credential secret the device uses: `CredRandomWithUV` vs
-`CredRandomWithoutUV` (CTAP 2.1+), producing different outputs. QPV2
-always passes PIN, so it always lands on the `WithUV` path consistently.
-
-##### Key terms
-
-- **wrapping_key**: Permanent device-internal key that encrypts/decrypts
-  credential blobs. Never leaves hardware.
-- **CredRandomWithUV**: Per-credential random material generated at
-  registration. Encrypted into the credential_id blob. The device
-  forgets it after registration — it is recovered from the blob at
-  each assertion.
-- **Non-resident credential**: The device stores nothing; the client
-  holds the credential_id. Unlimited credentials per device.
-
-##### Security properties
-
-- **Three-factor**: Physical device + PIN + physical presence (tap).
-- **PIN brute-force**: [8 retries enforced on-device](https://fidoalliance.org/specs/fido-v2.0-id-20180227/fido-client-to-authenticator-protocol-v2.0-id-20180227.html#client-pin-support-requirements),
-  then permanent lockout. Power-cycle delay after 3 failures prevents
-  scripted bursts.
-- **Device loss**: Without the FIDO2 key, the HMAC cannot be computed
-  and the vault cannot be decrypted. The seed phrase (CLI-only export)
-  is the recovery path.
+The DPAPI and Secret Service implementations are interim — they offer
+encryption at rest but no runtime access control. The roadmap replaces
+them with hardware-backed options that match macOS-level protection.
 
 ### Authentication Roadmap
 
 | Platform | Primary | Fallback |
 |---|---|---|
-| macOS | Secure Enclave + Touch ID (current) | Password via Pinentry |
+| macOS | Secure Enclave + Touch ID (done) | Password via Pinentry |
 | Windows | TPM + Windows Hello via `windows-sys` NCrypt | Password via Pinentry |
 | Linux | TPM seal via `tss-esapi` | Password via Pinentry |
-| All | FIDO2 via `ctap-hid-fido2` as optional hardware key auth | Password via Pinentry |
-
-The current Windows (DPAPI) and Linux (Secret Service) credential
-store implementations are interim — they provide convenience but not
-meaningful security isolation. The roadmap replaces them with
-hardware-backed options that approach macOS-level protection, with
-password via Pinentry as the universal fallback when hardware is
-unavailable.
+| All | FIDO2 via `ctap-hid-fido2` (done) | Password via Pinentry |
 
 ### Data Storage
 
