@@ -518,7 +518,7 @@ impl App {
                 Some(AuthMethod::Fido2 { credential_id }) => {
                     let cred_id = credential_id.clone();
                     let button = egui::Button::new(
-                        egui::RichText::new("Unlock with Security Key")
+                        egui::RichText::new("Unlock with FIDO2")
                             .size(16.0)
                             .color(self.colors.bg),
                     )
