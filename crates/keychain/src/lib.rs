@@ -3,7 +3,7 @@
 //! Stores and retrieves a 32-byte AES-256 encryption key using
 //! the platform's native credential store:
 //! - macOS: Data Protection Keychain with Touch ID biometric gating.
-//! - Windows: Credential Manager (DPAPI-protected).
+//! - Windows: TPM + Windows Hello via Microsoft Passport KSP.
 //! - Linux: Secret Service D-Bus (GNOME Keyring / KDE Wallet).
 //!
 //! Optionally provides FIDO2 hardware key authentication via
@@ -22,9 +22,11 @@ mod macos;
 pub use macos::{delete_key, retrieve_key, store_key};
 
 #[cfg(target_os = "windows")]
-mod windows;
+mod windows_hello;
 #[cfg(target_os = "windows")]
-pub use windows::{delete_key, retrieve_key, store_key};
+mod windows_dpapi;
+#[cfg(target_os = "windows")]
+pub use windows_hello::{delete_key, retrieve_key, store_key};
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -38,7 +40,7 @@ pub fn keystore_display_name() -> &'static str {
     }
     #[cfg(target_os = "windows")]
     {
-        "Windows Credential Manager"
+        "Windows Hello (TPM)"
     }
     #[cfg(target_os = "linux")]
     {
@@ -53,7 +55,7 @@ pub fn keystore_short_name() -> &'static str {
     }
     #[cfg(target_os = "windows")]
     {
-        "Windows Credential Manager"
+        "Windows Hello"
     }
     #[cfg(target_os = "linux")]
     {

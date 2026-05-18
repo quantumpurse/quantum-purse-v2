@@ -348,6 +348,20 @@ The DPAPI and Secret Service implementations are interim — they offer
 encryption at rest but no runtime access control. The roadmap replaces
 them with hardware-backed options that match macOS-level protection.
 
+#### Hardware-backed authentication architecture
+
+All hardware-backed methods share the same core pattern: an opaque
+hardware operation gated by authentication produces or releases a key.
+
+| | FIDO2 (hmac-secret) | TPM + Windows Hello | Apple Secure Enclave |
+|---|---|---|---|
+| Hardware holds | wrapping_key (permanent, fused) | RSA private key (persistent in TPM) | Per-item key wrapped by class key derived from hardware UID |
+| Client stores on disk | credential_id = Encrypt(wrapping_key, CredRandom) | wrapped_key.bin = Encrypt(RSA_pub, AES_key) | Keychain item (encrypted by per-item key) |
+| On use | Device decrypts blob → HMAC(CredRandom, salt) → returns derived key | TPM decrypts blob → returns original key | Secure Enclave unwraps per-item key → decrypts → returns key |
+| Authentication gate | PIN (verified on-device, 8 retries) | Windows Hello biometric/PIN | Touch ID (biometric match in Secure Enclave) |
+| Secret origin | Generated inside the device (CredRandom) | Generated on the client | Generated on the client |
+| Key leaves hardware? | Never — only HMAC derivative returned | Only during decrypt operation | Only during decrypt operation |
+
 ### Authentication Roadmap
 
 | Platform | Primary | Fallback |

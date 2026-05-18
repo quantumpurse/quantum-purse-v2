@@ -1,0 +1,358 @@
+//! Windows Hello + TPM credential storage via Microsoft Passport KSP.
+//!
+//! Stores the 32-byte vault encryption key by wrapping it with an
+//! RSA-2048 key held in the TPM via the Microsoft Passport Key Storage
+//! Provider. Decryption triggers a Windows Hello biometric/PIN prompt.
+//!
+//! The wrapped ciphertext (~256 bytes) is persisted to disk alongside
+//! the wallet files. The RSA private key never leaves the TPM.
+
+use crate::{KEY_LEN, SERVICE, ACCOUNT};
+use qpv2_core::SecureVec;
+use std::path::PathBuf;
+use std::ptr;
+use windows_sys::Win32::Foundation::GetLastError;
+use windows_sys::Win32::Security::Cryptography::{
+	BCryptCloseAlgorithmProvider, BCryptGenRandom, BCryptOpenAlgorithmProvider,
+	NCryptCreatePersistedKey, NCryptDecrypt, NCryptDeleteKey, NCryptEncrypt,
+	NCryptFinalizeKey, NCryptFreeObject, NCryptOpenKey, NCryptOpenStorageProvider,
+	NCryptSetProperty, BCRYPT_OAEP_PADDING_INFO, BCRYPT_RSA_ALGORITHM,
+	BCRYPT_SHA256_ALGORITHM, NCRYPT_KEY_HANDLE, NCRYPT_OVERWRITE_KEY_FLAG,
+	NCRYPT_PAD_OAEP_FLAG, NCRYPT_PERSIST_FLAG, NCRYPT_PROV_HANDLE, NCRYPT_SILENT_FLAG,
+};
+
+const WRAPPED_KEY_FILE: &str = "wrapped_key.bin";
+
+const NTE_BAD_KEYSET: i32 = -2146893802_i32; // 0x80090016
+const NTE_USER_CANCELLED: i32 = -2146893770_i32; // 0x80090036
+
+fn passport_provider() -> Vec<u16> {
+	"Microsoft Passport Key Storage Provider"
+		.encode_utf16()
+		.chain(Some(0))
+		.collect()
+}
+
+fn key_name() -> Vec<u16> {
+	format!("{}/{}", SERVICE, ACCOUNT)
+		.encode_utf16()
+		.chain(Some(0))
+		.collect()
+}
+
+fn wrapped_key_path() -> Result<PathBuf, String> {
+	qpv2_core::db::get_data_dir()
+		.map(|d| d.join(WRAPPED_KEY_FILE))
+		.map_err(|e| e.to_string())
+}
+
+fn status_to_err(status: i32, context: &str) -> String {
+	if status == NTE_USER_CANCELLED {
+		"Cancelled.".to_string()
+	} else {
+		format!("{}: SECURITY_STATUS 0x{:08X}.", context, status as u32)
+	}
+}
+
+fn to_utf16(s: &str) -> Vec<u16> {
+	s.encode_utf16().chain(Some(0)).collect()
+}
+
+struct ProvHandle(NCRYPT_PROV_HANDLE);
+
+impl Drop for ProvHandle {
+	fn drop(&mut self) {
+		if self.0 != 0 {
+			unsafe { NCryptFreeObject(self.0) };
+		}
+	}
+}
+
+struct KeyHandle(NCRYPT_KEY_HANDLE);
+
+impl KeyHandle {
+	fn take(mut self) -> NCRYPT_KEY_HANDLE {
+		let h = self.0;
+		self.0 = 0;
+		h
+	}
+}
+
+impl Drop for KeyHandle {
+	fn drop(&mut self) {
+		if self.0 != 0 {
+			unsafe { NCryptFreeObject(self.0) };
+		}
+	}
+}
+
+fn open_provider() -> Result<ProvHandle, String> {
+	let provider = passport_provider();
+	let mut hprov: NCRYPT_PROV_HANDLE = 0;
+	let status = unsafe { NCryptOpenStorageProvider(&mut hprov, provider.as_ptr(), 0) };
+	if status != 0 {
+		return Err(status_to_err(
+			status,
+			"Failed to open Microsoft Passport Key Storage Provider. \
+			 Ensure Windows Hello is configured",
+		));
+	}
+	Ok(ProvHandle(hprov))
+}
+
+fn open_or_create_key(hprov: NCRYPT_PROV_HANDLE) -> Result<KeyHandle, String> {
+	let name = key_name();
+	let mut hkey: NCRYPT_KEY_HANDLE = 0;
+
+	let status = unsafe { NCryptOpenKey(hprov, &mut hkey, name.as_ptr(), 0, 0) };
+	if status == 0 {
+		return Ok(KeyHandle(hkey));
+	}
+	if status != NTE_BAD_KEYSET {
+		return Err(status_to_err(status, "Failed to open existing key"));
+	}
+
+	let status = unsafe {
+		NCryptCreatePersistedKey(
+			hprov,
+			&mut hkey,
+			BCRYPT_RSA_ALGORITHM,
+			name.as_ptr(),
+			0,
+			NCRYPT_OVERWRITE_KEY_FLAG,
+		)
+	};
+	if status != 0 {
+		return Err(status_to_err(status, "Failed to create RSA key in TPM"));
+	}
+
+	let key = KeyHandle(hkey);
+
+	// Set key length to 2048 bits.
+	let key_length: u32 = 2048;
+	let prop_length = to_utf16("Length");
+	let status = unsafe {
+		NCryptSetProperty(
+			key.0,
+			prop_length.as_ptr(),
+			&key_length as *const u32 as *const u8,
+			4,
+			NCRYPT_PERSIST_FLAG,
+		)
+	};
+	if status != 0 {
+		return Err(status_to_err(status, "Failed to set key length"));
+	}
+
+	// Require Windows Hello authentication on every key use.
+	let prop_cache_type = to_utf16("NgcCacheType");
+	let cache_type: u32 = 1; // AUTH_MANDATORY_FLAG
+	let status = unsafe {
+		NCryptSetProperty(
+			key.0,
+			prop_cache_type.as_ptr(),
+			&cache_type as *const u32 as *const u8,
+			4,
+			NCRYPT_PERSIST_FLAG,
+		)
+	};
+	if status != 0 {
+		return Err(status_to_err(status, "Failed to set cache type"));
+	}
+
+	// Require PIN/biometric gesture.
+	let prop_gesture = to_utf16("PinCacheIsGestureRequired");
+	let gesture_required: u32 = 1;
+	let status = unsafe {
+		NCryptSetProperty(
+			key.0,
+			prop_gesture.as_ptr(),
+			&gesture_required as *const u32 as *const u8,
+			4,
+			NCRYPT_PERSIST_FLAG,
+		)
+	};
+	if status != 0 {
+		return Err(status_to_err(status, "Failed to set gesture requirement"));
+	}
+
+	// Set the prompt message shown in the Windows Hello dialog.
+	let prop_context = to_utf16("Use Context");
+	let context_msg = to_utf16("Unlock Quantum Purse wallet");
+	let status = unsafe {
+		NCryptSetProperty(
+			key.0,
+			prop_context.as_ptr(),
+			context_msg.as_ptr() as *const u8,
+			(context_msg.len() * 2) as u32,
+			0,
+		)
+	};
+	if status != 0 {
+		return Err(status_to_err(status, "Failed to set UI context message"));
+	}
+
+	let status = unsafe { NCryptFinalizeKey(key.0, 0) };
+	if status != 0 {
+		return Err(status_to_err(status, "Failed to finalize key"));
+	}
+
+	Ok(key)
+}
+
+fn oaep_padding() -> BCRYPT_OAEP_PADDING_INFO {
+	BCRYPT_OAEP_PADDING_INFO {
+		pszAlgId: BCRYPT_SHA256_ALGORITHM,
+		pbLabel: ptr::null_mut(),
+		cbLabel: 0,
+	}
+}
+
+pub fn store_key(key: &[u8]) -> Result<(), String> {
+	if key.len() != KEY_LEN {
+		return Err(format!("Expected {KEY_LEN}-byte key, got {}.", key.len()));
+	}
+
+	let prov = open_provider()?;
+	let hkey = open_or_create_key(prov.0)?;
+
+	let mut padding = oaep_padding();
+
+	// First call: get required output size.
+	let mut cipher_len: u32 = 0;
+	let status = unsafe {
+		NCryptEncrypt(
+			hkey.0,
+			key.as_ptr() as *mut u8,
+			key.len() as u32,
+			&mut padding as *mut _ as *mut _,
+			ptr::null_mut(),
+			0,
+			&mut cipher_len,
+			NCRYPT_PAD_OAEP_FLAG | NCRYPT_SILENT_FLAG,
+		)
+	};
+	if status != 0 {
+		return Err(status_to_err(status, "Failed to determine ciphertext size"));
+	}
+
+	// Second call: encrypt.
+	let mut ciphertext = vec![0u8; cipher_len as usize];
+	let mut actual_len: u32 = 0;
+	let status = unsafe {
+		NCryptEncrypt(
+			hkey.0,
+			key.as_ptr() as *mut u8,
+			key.len() as u32,
+			&mut padding as *mut _ as *mut _,
+			ciphertext.as_mut_ptr(),
+			cipher_len,
+			&mut actual_len,
+			NCRYPT_PAD_OAEP_FLAG | NCRYPT_SILENT_FLAG,
+		)
+	};
+	if status != 0 {
+		return Err(status_to_err(status, "Failed to encrypt key"));
+	}
+	ciphertext.truncate(actual_len as usize);
+
+	let path = wrapped_key_path()?;
+	std::fs::write(&path, &ciphertext)
+		.map_err(|e| format!("Failed to write {}: {}.", WRAPPED_KEY_FILE, e))?;
+
+	Ok(())
+}
+
+pub fn retrieve_key() -> Result<SecureVec, String> {
+	let prov = open_provider()?;
+	let name = key_name();
+	let mut hkey: NCRYPT_KEY_HANDLE = 0;
+
+	// Open without NCRYPT_SILENT_FLAG so Windows Hello prompt fires.
+	let status = unsafe { NCryptOpenKey(prov.0, &mut hkey, name.as_ptr(), 0, 0) };
+	if status != 0 {
+		return Err(status_to_err(status, "Failed to open key"));
+	}
+	let hkey = KeyHandle(hkey);
+
+	let path = wrapped_key_path()?;
+	let ciphertext = std::fs::read(&path)
+		.map_err(|e| format!("Failed to read {}: {}.", WRAPPED_KEY_FILE, e))?;
+
+	let mut padding = oaep_padding();
+
+	// First call: get required output size.
+	let mut plain_len: u32 = 0;
+	let status = unsafe {
+		NCryptDecrypt(
+			hkey.0,
+			ciphertext.as_ptr() as *mut u8,
+			ciphertext.len() as u32,
+			&mut padding as *mut _ as *mut _,
+			ptr::null_mut(),
+			0,
+			&mut plain_len,
+			NCRYPT_PAD_OAEP_FLAG,
+		)
+	};
+	if status != 0 {
+		return Err(status_to_err(status, "Failed to determine plaintext size"));
+	}
+
+	// Second call: decrypt (triggers Windows Hello prompt).
+	let mut plaintext = vec![0u8; plain_len as usize];
+	let mut actual_len: u32 = 0;
+	let status = unsafe {
+		NCryptDecrypt(
+			hkey.0,
+			ciphertext.as_ptr() as *mut u8,
+			ciphertext.len() as u32,
+			&mut padding as *mut _ as *mut _,
+			plaintext.as_mut_ptr(),
+			plain_len,
+			&mut actual_len,
+			NCRYPT_PAD_OAEP_FLAG,
+		)
+	};
+	if status != 0 {
+		return Err(status_to_err(status, "Decryption failed"));
+	}
+	plaintext.truncate(actual_len as usize);
+
+	if plaintext.len() != KEY_LEN {
+		return Err(format!(
+			"Decrypted {}-byte key, expected {KEY_LEN}.",
+			plaintext.len()
+		));
+	}
+
+	Ok(SecureVec::from_vec(plaintext))
+}
+
+pub fn delete_key() -> Result<(), String> {
+	let prov = open_provider()?;
+	let name = key_name();
+	let mut hkey: NCRYPT_KEY_HANDLE = 0;
+
+	let status = unsafe { NCryptOpenKey(prov.0, &mut hkey, name.as_ptr(), 0, 0) };
+	if status == NTE_BAD_KEYSET {
+		// Key doesn't exist — nothing to delete from TPM.
+	} else if status != 0 {
+		return Err(status_to_err(status, "Failed to open key for deletion"));
+	} else {
+		// NCryptDeleteKey frees the handle on success.
+		let status = unsafe { NCryptDeleteKey(hkey, 0) };
+		if status != 0 {
+			unsafe { NCryptFreeObject(hkey) };
+			return Err(status_to_err(status, "Failed to delete key"));
+		}
+	}
+
+	let path = wrapped_key_path()?;
+	if path.exists() {
+		std::fs::remove_file(&path)
+			.map_err(|e| format!("Failed to remove {}: {}.", WRAPPED_KEY_FILE, e))?;
+	}
+
+	Ok(())
+}
