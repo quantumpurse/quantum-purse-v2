@@ -21,4 +21,5 @@ security-framework = { version = "3", features = ["OSX_10_13", "OSX_10_15"] }
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Credentials", "Win32_Security_Cryptography"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+tss-esapi = "7"
 dbus-secret-service = { version = "4.1", features = ["crypto-rust"] }

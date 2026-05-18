@@ -4,7 +4,7 @@
 //! the platform's native credential store:
 //! - macOS: Data Protection Keychain with Touch ID biometric gating.
 //! - Windows: TPM + Windows Hello via Microsoft Passport KSP.
-//! - Linux: Secret Service D-Bus (GNOME Keyring / KDE Wallet).
+//! - Linux: TPM seal/unseal via `tss-esapi`.
 //!
 //! Optionally provides FIDO2 hardware key authentication via
 //! the `fido2` feature flag.
@@ -30,9 +30,12 @@ mod windows_dpapi;
 pub use windows_hello::{delete_key, retrieve_key, store_key};
 
 #[cfg(target_os = "linux")]
-mod linux;
+mod linux_tpm;
 #[cfg(target_os = "linux")]
-pub use linux::{delete_key, retrieve_key, store_key};
+#[allow(dead_code)]
+mod linux_secret_service;
+#[cfg(target_os = "linux")]
+pub use linux_tpm::{delete_key, retrieve_key, store_key};
 
 pub fn keystore_display_name() -> &'static str {
     #[cfg(target_os = "macos")]
@@ -45,7 +48,7 @@ pub fn keystore_display_name() -> &'static str {
     }
     #[cfg(target_os = "linux")]
     {
-        "Secret Service (D-Bus)"
+        "TPM"
     }
 }
 
@@ -60,6 +63,6 @@ pub fn keystore_short_name() -> &'static str {
     }
     #[cfg(target_os = "linux")]
     {
-        "Secret Service"
+        "TPM"
     }
 }

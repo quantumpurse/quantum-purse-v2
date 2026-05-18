@@ -13,7 +13,7 @@ Developed in collaboration with Claude Opus (4.5 / 4.6): developer-led architect
 | **Mnemonic standard** | Custom BIP39 English |
 | **Local encryption**  | AES256               |
 | **Key derivation**    | HKDF-SHA256          |
-| **Authentication**    | Password / Platform credential store (Touch ID, Credential Manager, Secret Service) |
+| **Authentication**    | Password / Platform credential store (Touch ID, Windows Hello, TPM) / FIDO2 |
 | **Password hashing**  | Scrypt               |
 | **Platform**          | macOS, Windows, Linux |
 
@@ -321,54 +321,74 @@ or per-class are not disclosed. The security *properties* above are
 documented in the [Apple Platform Security Guide](https://support.apple.com/guide/security/welcome/web);
 the internal cryptographic construction is not.
 
-#### Windows — Credential Manager (DPAPI) — Interim
+#### Windows — TPM + Windows Hello (Microsoft Passport KSP)
 
-Keys are stored via `CredWriteW` / `CredReadW`. Encryption is
-software-only using DPAPI, which derives the encryption key from the
-user's login password. There is no per-access authentication — any
-process running as the logged-in user reads the key silently.
+An RSA-2048 key pair is created inside the TPM via the Microsoft
+Passport Key Storage Provider. The 32-byte vault encryption key is
+encrypted with `NCryptEncrypt` (RSA-OAEP SHA-256) and the ~256-byte
+ciphertext is stored to `wrapped_key.bin` on disk. On unlock,
+`NCryptDecrypt` triggers a Windows Hello biometric/PIN prompt before
+the TPM releases the private key. The RSA private key never leaves
+the TPM.
 
-#### Linux — Secret Service (D-Bus) — Interim
+The previous DPAPI Credential Manager implementation is preserved in
+`windows_dpapi.rs` for reference.
 
-Keys are stored via the freedesktop.org Secret Service API (GNOME
-Keyring or KWallet). Any process running as the same user can read all
-secrets via D-Bus with zero additional authentication.
+#### Linux — TPM seal via `tss-esapi`
+
+The 32-byte vault encryption key is sealed under the TPM's Storage
+Root Key (SRK) using `TPM2_Create`. The sealed blobs (Private +
+Public) are persisted to `tpm_sealed_blob.bin` on disk. On unlock,
+the SRK is recreated from a well-known template (deterministic — same
+template always produces the same SRK on the same TPM), the blobs are
+loaded, and `TPM2_Unseal` returns the 32 bytes. The key never leaves
+the TPM in plaintext except during the unseal operation, and the
+sealed blob is useless on another machine.
+
+Binary blob format: `[u32 LE: private_len][private bytes][public bytes]`.
+
+Requires `libtss2-dev` (Ubuntu/Debian), `tpm2-tss-devel` (Fedora),
+or `tpm2-tss` (Arch) at build time. Device access via `/dev/tpmrm0`
+(kernel resource manager).
+
+The previous Secret Service D-Bus implementation is preserved in
+`linux_secret_service.rs` for reference.
 
 #### Platform comparison
 
-| Scenario | Plain file | DPAPI / Secret Service (interim) | Apple Keychain + Touch ID | TPM + Windows Hello (planned) | TPM seal (planned) | FIDO2 Hardware Key |
+| Scenario | Plain file | DPAPI / Secret Service | Apple Keychain + Touch ID | TPM + Windows Hello | TPM seal | FIDO2 Hardware Key |
 |---|---|---|---|---|---|---|
 | Malware running as user | Reads key freely | Reads key freely | Blocked — Secure Enclave requires Touch ID per access | Blocked — requires biometric/PIN prompt per access | Blocked — TPM requires authorization policy | Blocked — requires physical device + PIN + tap |
 | Another user on same machine | Can read if file permissions allow | Cannot decrypt (tied to user session) | Cannot access (Keychain bound to user + biometric) | Cannot access (TPM key bound to user + biometric) | Cannot access (TPM sealed to user session) | Cannot access — no device, no PIN |
 | Stolen disk, booted from USB | Reads key in plaintext | Cannot decrypt without user's login password | Cannot decrypt — key sealed in Secure Enclave hardware | Cannot decrypt — key sealed inside TPM hardware | Cannot decrypt — sealed blob useless without TPM | Cannot decrypt — credential_id blob useless without device |
 | Admin with Mimikatz while user logged in | Reads key freely | Can extract DPAPI master key from memory | Key never leaves Secure Enclave in plaintext | Key never leaves TPM in plaintext — nothing to extract | Key never leaves TPM in plaintext | Key never leaves FIDO2 device — HMAC computed on-chip |
-| Remote attacker with shell as user | Reads key freely | Reads key freely | Blocked — no physical presence for Touch ID | Blocked — no physical presence for biometric prompt | Depends on authorization policy | Blocked — no physical device to tap |
+| Remote attacker with shell as user | Reads key freely | Reads key freely | Blocked — no physical presence for Touch ID | Blocked — no physical presence for biometric prompt | Can unseal if process reaches `/dev/tpmrm0` | Blocked — no physical device to tap |
 
-The DPAPI and Secret Service implementations are interim — they offer
-encryption at rest but no runtime access control. The roadmap replaces
-them with hardware-backed options that match macOS-level protection.
+The DPAPI (Windows) and Secret Service (Linux) implementations are
+preserved for reference. Both are replaced by hardware-backed options:
+TPM + Windows Hello on Windows and TPM seal on Linux.
 
 #### Hardware-backed authentication architecture
 
 All hardware-backed methods share the same core pattern: an opaque
 hardware operation gated by authentication produces or releases a key.
 
-| | FIDO2 (hmac-secret) | TPM + Windows Hello | Apple Secure Enclave |
-|---|---|---|---|
-| Hardware holds | wrapping_key (permanent, fused) | RSA private key (persistent in TPM) | Per-item key wrapped by class key derived from hardware UID |
-| Client stores on disk | credential_id = Encrypt(wrapping_key, CredRandom) | wrapped_key.bin = Encrypt(RSA_pub, AES_key) | Keychain item (encrypted by per-item key) |
-| On use | Device decrypts blob → HMAC(CredRandom, salt) → returns derived key | TPM decrypts blob → returns original key | Secure Enclave unwraps per-item key → decrypts → returns key |
-| Authentication gate | PIN (verified on-device, 8 retries) | Windows Hello biometric/PIN | Touch ID (biometric match in Secure Enclave) |
-| Secret origin | Generated inside the device (CredRandom) | Generated on the client | Generated on the client |
-| Key leaves hardware? | Never — only HMAC derivative returned | Only during decrypt operation | Only during decrypt operation |
+| | FIDO2 (hmac-secret) | TPM + Windows Hello | TPM seal (Linux) | Apple Secure Enclave |
+|---|---|---|---|---|
+| Hardware holds | wrapping_key (permanent, fused) | RSA private key (persistent in TPM) | SRK (deterministic from well-known template) | Per-item key wrapped by class key derived from hardware UID |
+| Client stores on disk | credential_id = Encrypt(wrapping_key, CredRandom) | wrapped_key.bin = Encrypt(RSA_pub, AES_key) | tpm_sealed_blob.bin (Private + Public) | Keychain item (encrypted by per-item key) |
+| On use | Device decrypts blob → HMAC(CredRandom, salt) → returns derived key | TPM decrypts blob → returns original key | TPM loads sealed blob → TPM2_Unseal → returns key | Secure Enclave unwraps per-item key → decrypts → returns key |
+| Authentication gate | PIN (verified on-device, 8 retries) | Windows Hello biometric/PIN | TPM authorization policy | Touch ID (biometric match in Secure Enclave) |
+| Secret origin | Generated inside the device (CredRandom) | Generated on the client | Generated on the client | Generated on the client |
+| Key leaves hardware? | Never — only HMAC derivative returned | Only during unseal operation | Only during unseal operation | Only during decrypt operation |
 
 ### Authentication Roadmap
 
 | Platform | Primary | Fallback |
 |---|---|---|
 | macOS | Secure Enclave + Touch ID (done) | Password via Pinentry |
-| Windows | TPM + Windows Hello via `windows-sys` NCrypt | Password via Pinentry |
-| Linux | TPM seal via `tss-esapi` | Password via Pinentry |
+| Windows | TPM + Windows Hello via `windows-sys` NCrypt (done) | Password via Pinentry |
+| Linux | TPM seal via `tss-esapi` (done) | Password via Pinentry |
 | All | FIDO2 via `ctap-hid-fido2` (done) | Password via Pinentry |
 
 ### Data Storage
