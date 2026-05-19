@@ -9,7 +9,9 @@
 //! Optionally provides FIDO2 hardware key authentication via
 //! the `fido2` feature flag.
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub(crate) const SERVICE: &str = "quantumpurse";
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub(crate) const ACCOUNT: &str = "vault-encryption-key";
 pub(crate) const KEY_LEN: usize = 32;
 
