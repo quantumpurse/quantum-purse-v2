@@ -74,7 +74,7 @@ jobs:
 
     - name: Install system dependencies (Linux)
       if: runner.os == 'Linux'
-      run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev
+      run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev libtss2-dev libudev-dev
 
     - name: Build release binary
       run: cargo build --package qpv2-cli --release --target ${{ matrix.target }} --verbose
@@ -182,7 +182,7 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
 
     - name: Install build dependencies
-      run: sudo apt-get update && sudo apt-get install -y gettext libgtk2.0-dev libdbus-1-dev
+      run: sudo apt-get update && sudo apt-get install -y gettext libgtk2.0-dev libdbus-1-dev libtss2-dev libudev-dev
 
     - name: Build pinentry-gtk-2
       run: vendor/build-pinentry.sh
