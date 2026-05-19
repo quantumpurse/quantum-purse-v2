@@ -237,7 +237,7 @@ impl App {
     /// `Screen::Unlocked`. Cancellation surfaces as a quiet info
     /// banner; nothing else changes.
     pub(crate) fn create_wallet_with_password(&mut self, variant: SpxVariant) {
-        let pw = match crate::pinentry::prompt_password_with_confirmation(
+        let pw = match qpv2_core::pinentry::prompt_password_with_confirmation(
             "Choose a password for your wallet. You'll be prompted for it \
              again on every signing operation.",
             "Password:",
@@ -302,7 +302,7 @@ impl App {
     /// Synchronous: blocks the egui update loop while the pinentry
     /// dialog is up.
     pub(crate) fn create_new_account_with_password(&mut self) {
-        let pw = match crate::pinentry::prompt_password(
+        let pw = match qpv2_core::pinentry::prompt_password(
             "Enter your wallet password to create a new account.",
             "Password:",
         ) {
@@ -473,7 +473,7 @@ impl App {
     /// via pinentry, registers a credential, then derives the encryption
     /// key via hmac-secret.
     pub(crate) fn create_wallet_with_fido2(&mut self, variant: SpxVariant) {
-        let pin = match crate::pinentry::prompt_password(
+        let pin = match qpv2_core::pinentry::prompt_password(
             "Enter your FIDO2 security key PIN to register a new credential.",
             "PIN:",
         ) {
@@ -558,7 +558,7 @@ impl App {
             }
         };
 
-        let pin = match crate::pinentry::prompt_password(
+        let pin = match qpv2_core::pinentry::prompt_password(
             "Enter your FIDO2 security key PIN to unlock.",
             "PIN:",
         ) {
@@ -602,7 +602,7 @@ impl App {
             }
         };
 
-        let pin = match crate::pinentry::prompt_password(
+        let pin = match qpv2_core::pinentry::prompt_password(
             "Enter your FIDO2 security key PIN to create a new account.",
             "PIN:",
         ) {

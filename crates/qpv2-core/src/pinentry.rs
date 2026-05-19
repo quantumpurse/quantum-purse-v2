@@ -21,7 +21,7 @@
 //! of pause.
 
 use pinentry::{Error as PinentryError, PassphraseInput};
-use qpv2_core::SecureString;
+use crate::SecureString;
 use secrecy::ExposeSecret;
 use std::path::PathBuf;
 
@@ -88,7 +88,7 @@ fn map_err(e: PinentryError) -> String {
 /// the field, `prompt` immediately to the left of it. The returned
 /// `SecureString` is zeroize-on-drop; the caller is responsible for
 /// not cloning it into unmanaged buffers.
-pub(crate) fn prompt_password(description: &str, prompt: &str) -> Result<SecureString, String> {
+pub fn prompt_password(description: &str, prompt: &str) -> Result<SecureString, String> {
     let path = pinentry_path()?;
     let mut input = PassphraseInput::with_binary(&path)
         .ok_or_else(|| format!("{} not executable at {}", PINENTRY_NAME, path.display()))?;
@@ -109,7 +109,7 @@ pub(crate) fn prompt_password(description: &str, prompt: &str) -> Result<SecureS
 /// `SETREPEAT` makes the binary itself enforce match — we receive a
 /// single `SecretString` only after both fields agree. `mismatch_error`
 /// is what the dialog shows in-place when they don't.
-pub(crate) fn prompt_password_with_confirmation(
+pub fn prompt_password_with_confirmation(
     description: &str,
     prompt: &str,
     confirm_prompt: &str,

@@ -384,7 +384,7 @@ impl App {
         input_cells: Vec<(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)>,
         lock_args: String,
     ) {
-        let pw = match crate::pinentry::prompt_password(
+        let pw = match qpv2_core::pinentry::prompt_password(
             "Enter your wallet password to authorize this transaction.",
             "Password:",
         ) {
@@ -447,7 +447,7 @@ impl App {
             }
         };
 
-        let pin = match crate::pinentry::prompt_password(
+        let pin = match qpv2_core::pinentry::prompt_password(
             "Enter your FIDO2 security key PIN to sign this transaction.",
             "PIN:",
         ) {

@@ -1,7 +1,6 @@
 //! GUI for SPHINCS+ key vault with Passkey PRF / Touch ID support.
 
 mod ckb;
-mod pinentry;
 mod poller;
 mod transactor;
 mod tx_history_store;

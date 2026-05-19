@@ -11,10 +11,11 @@
 //! leaves the TPM in plaintext except during the unseal operation, and
 //! the sealed blob is useless on another machine.
 //!
-//! Unlike macOS (Touch ID) and Windows (Windows Hello), Linux TPM
-//! seal/unseal has no per-operation biometric or PIN gate — access is
-//! controlled by `/dev/tpmrm0` file permissions (typically the `tss`
-//! group). Any process that can reach the device file can unseal.
+//! A PIN is required for both seal and unseal. The PIN is set as the
+//! TPM object's authValue during `TPM2_Create` and verified on-chip
+//! during `TPM2_Unseal`. Failed PIN attempts count toward the TPM's
+//! dictionary attack lockout. The caller collects the PIN (via
+//! pinentry or terminal input) and passes it in.
 //!
 //! Requires `/dev/tpmrm0` (kernel resource manager).
 
@@ -30,9 +31,10 @@ use tss_esapi::{
 		resource_handles::Hierarchy,
 	},
 	structures::{
-		KeyedHashScheme, ObjectAttributesBuilder, Private, Public, PublicBuilder,
-		PublicKeyRsa, PublicKeyedHashParameters, PublicRsaParametersBuilder,
-		RsaExponent, SensitiveData, SymmetricDefinitionObject,
+		Auth, KeyedHashScheme, ObjectAttributesBuilder, Private, Public,
+		PublicBuilder, PublicKeyRsa, PublicKeyedHashParameters,
+		PublicRsaParametersBuilder, RsaExponent, SensitiveData,
+		SymmetricDefinitionObject,
 	},
 	tcti_ldr::TctiNameConf,
 	traits::{Marshall, UnMarshall},
@@ -87,7 +89,6 @@ fn sealed_object_template() -> Public {
 		.with_fixed_tpm(true)
 		.with_fixed_parent(true)
 		.with_user_with_auth(true)
-		.with_no_da(true)
 		.build()
 		.expect("sealed object attributes");
 
@@ -124,9 +125,18 @@ pub fn store_key(key: &[u8]) -> Result<(), String> {
 		return Err(format!("Expected {KEY_LEN}-byte key, got {}.", key.len()));
 	}
 
+	let pin = qpv2_core::pinentry::prompt_password_with_confirmation(
+		"Set a PIN for your wallet.",
+		"PIN:",
+		"Confirm PIN:",
+		"PINs do not match.",
+	)?;
+	let auth = Auth::try_from(pin.as_bytes().to_vec())
+		.map_err(|e| format!("Invalid PIN: {}.", e))?;
+
 	let mut context = open_context()?;
 	let srk_handle = create_srk(&mut context)?;
-	let result = seal_to_srk(&mut context, srk_handle, key);
+	let result = seal_to_srk(&mut context, srk_handle, key, auth);
 	context.flush_context(srk_handle.into()).ok();
 	result
 }
@@ -135,6 +145,7 @@ fn seal_to_srk(
 	context: &mut Context,
 	srk_handle: KeyHandle,
 	key: &[u8],
+	auth: Auth,
 ) -> Result<(), String> {
 	let sensitive = SensitiveData::try_from(key.to_vec())
 		.map_err(|e| format!("Invalid sensitive data: {}.", e))?;
@@ -144,7 +155,7 @@ fn seal_to_srk(
 			ctx.create(
 				srk_handle,
 				sealed_object_template(),
-				None,
+				Some(auth),
 				Some(sensitive),
 				None,
 				None,
@@ -169,9 +180,13 @@ pub fn retrieve_key() -> Result<SecureVec, String> {
 	let public = Public::unmarshall(&public_bytes)
 		.map_err(|e| format!("Invalid public blob: {}.", e))?;
 
+	let pin = qpv2_core::pinentry::prompt_password("Enter your PIN.", "PIN:")?;
+	let auth = Auth::try_from(pin.as_bytes().to_vec())
+		.map_err(|e| format!("Invalid PIN: {}.", e))?;
+
 	let mut context = open_context()?;
 	let srk_handle = create_srk(&mut context)?;
-	let result = load_and_unseal(&mut context, srk_handle, private, public);
+	let result = load_and_unseal(&mut context, srk_handle, private, public, auth);
 	context.flush_context(srk_handle.into()).ok();
 	result
 }
@@ -181,10 +196,15 @@ fn load_and_unseal(
 	srk_handle: KeyHandle,
 	private: Private,
 	public: Public,
+	auth: Auth,
 ) -> Result<SecureVec, String> {
 	let loaded = context
 		.execute_with_nullauth_session(|ctx| ctx.load(srk_handle, private, public))
 		.map_err(|e| format!("Failed to load sealed object: {}.", e))?;
+
+	context
+		.tr_set_auth(loaded.into(), auth)
+		.map_err(|e| format!("Failed to set auth: {}.", e))?;
 
 	let unseal_result = context
 		.execute_with_nullauth_session(|ctx| ctx.unseal(loaded.into()))
