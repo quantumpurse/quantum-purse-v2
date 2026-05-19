@@ -24,6 +24,7 @@ use qpv2_core::SecureVec;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use tss_esapi::{
+    attributes::ObjectAttributesBuilder,
     handles::KeyHandle,
     interface_types::{
         algorithm::{HashingAlgorithm, PublicAlgorithm},
@@ -31,9 +32,9 @@ use tss_esapi::{
         resource_handles::Hierarchy,
     },
     structures::{
-        Auth, KeyedHashScheme, ObjectAttributesBuilder, Private, Public, PublicBuilder,
-        PublicKeyRsa, PublicKeyedHashParameters, PublicRsaParametersBuilder, RsaExponent,
-        SensitiveData, SymmetricDefinitionObject,
+        Auth, KeyedHashScheme, Private, Public, PublicBuilder, PublicKeyRsa,
+        PublicKeyedHashParameters, PublicRsaParametersBuilder, RsaExponent, SensitiveData,
+        SymmetricDefinitionObject,
     },
     tcti_ldr::TctiNameConf,
     traits::{Marshall, UnMarshall},
