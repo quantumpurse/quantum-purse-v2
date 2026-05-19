@@ -176,7 +176,7 @@ impl App {
                             ui,
                             self.colors.accent2_tint,
                             match info.auth_method {
-                                AuthMethod::Keychain => keychain::keystore_short_name().into(),
+                                AuthMethod::Keychain => credential_gate::short_name().into(),
                                 AuthMethod::Password => "Password".into(),
                                 AuthMethod::Fido2 { .. } => "FIDO2 Key".into(),
                             },

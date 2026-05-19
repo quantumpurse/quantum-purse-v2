@@ -1651,6 +1651,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "credential-gate"
+version = "0.1.0"
+dependencies = [
+ "ctap-hid-fido2",
+ "dbus-secret-service",
+ "qpv2-core",
+ "security-framework",
+ "tss-esapi",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "crossbeam-utils"
 version = "0.8.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3188,18 +3200,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "keychain"
-version = "0.1.0"
-dependencies = [
- "ctap-hid-fido2",
- "dbus-secret-service",
- "qpv2-core",
- "security-framework",
- "tss-esapi",
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "khronos-egl"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4566,8 +4566,8 @@ name = "qpv2-cli"
 version = "1.0.0"
 dependencies = [
  "clap",
+ "credential-gate",
  "hex",
- "keychain",
  "qpv2-core",
  "rpassword",
 ]
@@ -4608,9 +4608,9 @@ dependencies = [
  "ckb-node",
  "ckb-sdk",
  "ckb-types",
+ "credential-gate",
  "eframe",
  "hex",
- "keychain",
  "qpv2-core",
  "serde",
  "serde_json",
