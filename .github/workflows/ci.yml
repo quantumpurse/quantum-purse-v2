@@ -56,7 +56,7 @@ jobs:
 
     - name: Install system dependencies (Linux)
       if: runner.os == 'Linux'
-      run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev libtss2-dev
+      run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev libtss2-dev libudev-dev
 
     - name: Run tests
       run: cargo test --workspace --verbose
@@ -80,7 +80,7 @@ jobs:
         components: rustfmt, clippy
 
     - name: Install system dependencies
-      run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev libtss2-dev
+      run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev libtss2-dev libudev-dev
 
     - name: Check formatting
       run: cargo fmt --all -- --check
