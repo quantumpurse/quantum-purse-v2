@@ -162,7 +162,7 @@ qpv2-cli clear
 qpv2-cli --help
 ```
 
-Commands that require authentication (export, new account, sign, etc.) auto-detect the wallet's auth method. Password wallets prompt for a password; keychain wallets use the platform's native credential store (Touch ID on macOS, Credential Manager on Windows, Secret Service on Linux).
+Commands that require authentication (export, new account, sign, etc.) auto-detect the wallet's auth method. Password wallets prompt for a password; keychain wallets use the platform's native credential store (Touch ID on macOS, Windows Hello on Windows, TPM on Linux).
 
 ### Use GUI
 ```shell
@@ -332,18 +332,21 @@ the TPM releases the private key. The RSA private key never leaves
 the TPM.
 
 The previous DPAPI Credential Manager implementation is preserved in
-`windows_dpapi.rs` for reference.
+`sw_backed/windows_dpapi.rs` for reference.
 
 #### Linux — TPM seal via `tss-esapi`
 
 The 32-byte vault encryption key is sealed under the TPM's Storage
-Root Key (SRK) using `TPM2_Create`. The sealed blobs (Private +
-Public) are persisted to `tpm_sealed_blob.bin` on disk. On unlock,
-the SRK is recreated from a well-known template (deterministic — same
-template always produces the same SRK on the same TPM), the blobs are
-loaded, and `TPM2_Unseal` returns the 32 bytes. The key never leaves
-the TPM in plaintext except during the unseal operation, and the
-sealed blob is useless on another machine.
+Root Key (SRK) using `TPM2_Create`. A user-chosen PIN is set as the
+sealed object's `authValue` during creation and verified on-chip
+during every unseal — failed attempts count toward the TPM's
+dictionary attack lockout. The sealed blobs (Private + Public) are
+persisted to `tpm_sealed_blob.bin` on disk. On unlock, the SRK is
+recreated from a well-known template (deterministic — same template
+always produces the same SRK on the same TPM), the blobs are loaded,
+the PIN is verified by the TPM, and `TPM2_Unseal` returns the
+32 bytes. The key never leaves the TPM in plaintext except during the
+unseal operation, and the sealed blob is useless on another machine.
 
 Binary blob format: `[u32 LE: private_len][private bytes][public bytes]`.
 
@@ -352,7 +355,7 @@ or `tpm2-tss` (Arch) at build time. Device access via `/dev/tpmrm0`
 (kernel resource manager).
 
 The previous Secret Service D-Bus implementation is preserved in
-`linux_secret_service.rs` for reference.
+`sw_backed/linux_secret_service.rs` for reference.
 
 #### Platform comparison
 
