@@ -477,7 +477,13 @@ impl App {
             }
         };
 
-        self.sign_and_send(kind, AuthKey::CryptoKey(key), unsigned_tx, input_cells, lock_args);
+        self.sign_and_send(
+            kind,
+            AuthKey::CryptoKey(key),
+            unsigned_tx,
+            input_cells,
+            lock_args,
+        );
     }
 
     /// Auth-mechanism-agnostic signing core. Used by both the Keychain

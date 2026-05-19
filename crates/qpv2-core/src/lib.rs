@@ -18,8 +18,8 @@ pub mod constants;
 mod containers;
 pub mod db;
 mod macros;
-pub mod types;
 pub mod pinentry;
+pub mod types;
 pub mod utilities;
 
 use crate::constants::{

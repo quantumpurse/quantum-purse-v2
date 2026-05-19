@@ -64,13 +64,16 @@ impl App {
                     Some(AuthMethod::Fido2 { credential_id }) => {
                         let cred_id = credential_id.clone();
                         self.sign_and_send_with_fido2(
-                            &cred_id, kind, unsigned_tx, input_cells, lock_args,
+                            &cred_id,
+                            kind,
+                            unsigned_tx,
+                            input_cells,
+                            lock_args,
                         );
                     }
                     None => {
-                        self.tx_status = TransactionStatus::Error(
-                            "No authentication method set.".to_string(),
-                        );
+                        self.tx_status =
+                            TransactionStatus::Error("No authentication method set.".to_string());
                     }
                 }
             }

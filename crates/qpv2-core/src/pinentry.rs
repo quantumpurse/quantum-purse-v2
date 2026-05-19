@@ -20,8 +20,8 @@
 //! drive any time-critical work that would suffer from a few seconds
 //! of pause.
 
-use pinentry::{Error as PinentryError, PassphraseInput};
 use crate::SecureString;
+use pinentry::{Error as PinentryError, PassphraseInput};
 use secrecy::ExposeSecret;
 use std::path::PathBuf;
 

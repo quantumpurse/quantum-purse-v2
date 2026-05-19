@@ -178,8 +178,8 @@ fn get_auth_key() -> Result<AuthKey, String> {
             Ok(AuthKey::CryptoKey(key))
         }
         AuthMethod::Fido2 { ref credential_id } => {
-            let cred_bytes = hex::decode(credential_id)
-                .map_err(|e| format!("Invalid credential ID: {}", e))?;
+            let cred_bytes =
+                hex::decode(credential_id).map_err(|e| format!("Invalid credential ID: {}", e))?;
             let pin = prompt_for_input("Enter security key PIN: ")?;
             let hmac_output = credential_gate::fido2::authenticate(&cred_bytes, &pin)?;
             let key = qpv2_core::utilities::derive_vault_enc_key(&hmac_output)?;
