@@ -146,6 +146,11 @@ impl LightClient {
         self.set_scripts(statuses, Some(SetScriptsCommand::Partial))
     }
 
+    /// Removes all tracked scripts from the light client.
+    pub fn clear_all_scripts(&self) -> Result<(), NodeManagerError> {
+        self.set_scripts(vec![], Some(SetScriptsCommand::All))
+    }
+
     /// Force-applies a `set_scripts(Partial)` call for every entry,
     /// **without** filtering. The user's intent is to deliberately
     /// reset (rewind or advance) the LC's stored sync cursor for these

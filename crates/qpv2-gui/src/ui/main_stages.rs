@@ -391,6 +391,9 @@ impl App {
                         if ui.add(remove_btn).clicked() {
                             if self.confirm_remove {
                                 let _ = credential_gate::delete_key();
+                                let _ = ckb_node::wallet_helpers::lc::clear_all_scripts(
+                                    &self.qp_client,
+                                );
 
                                 match KeyVault::clear_database() {
                                     Ok(()) => {

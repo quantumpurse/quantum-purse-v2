@@ -80,6 +80,15 @@ pub fn register_lock_scripts(
     light.register_lock_scripts(&scripts, qp_client.network())
 }
 
+/// Removes all tracked scripts from the light client. No-op when the
+/// backend isn't LightClient.
+pub fn clear_all_scripts(qp_client: &QpClient) -> Result<(), NodeManagerError> {
+    let Some(light) = qp_client.as_any().downcast_ref::<LightClient>() else {
+        return Ok(());
+    };
+    light.clear_all_scripts()
+}
+
 /// Forces every given lock script to `start_block` on the LC,
 /// **without** the cursor-preservation filter. Use only from a manual
 /// "set scan from block" UI control where the user explicitly asked
