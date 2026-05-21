@@ -138,7 +138,11 @@ impl App {
                     // full-width section.
                     let metrics = self.metric_cells(backend, active);
                     ui.columns(2, |cols| {
-                        self.draw_metric(&mut cols[0], metrics[0].0, metrics[0].1.clone());
+                        if backend == NodeType::LightClient && active {
+                            self.draw_sync_metric(&mut cols[0], metrics[0].1.clone());
+                        } else {
+                            self.draw_metric(&mut cols[0], metrics[0].0, metrics[0].1.clone());
+                        }
                         self.draw_metric(&mut cols[1], metrics[1].0, metrics[1].1.clone());
                         cols[0].add_space(METRIC_ROW_GAP);
                         cols[1].add_space(METRIC_ROW_GAP);
@@ -324,33 +328,19 @@ impl App {
             });
     }
 
-    /// Footer "Sync" section for both local-node cards (FullNode +
+    /// Footer sync progress bar for both local-node cards (FullNode +
     /// LightClient). Always rendered — even when the backend isn't
     /// active — so both cards stay equal height across the top row.
-    ///
-    /// Progress source differs by backend:
-    /// - LightClient: `synced_block / tip_block`. LC has no IBD
-    ///   concept — sync is per-script, so we report the min cursor
-    ///   across registered scripts against the chain tip.
-    /// - FullNode: `tip_number / best_known_block_number` from the
-    ///   `sync_state` RPC.
-    ///
-    /// Inactive cards stay at 0% / "—". The bar is painted by hand
-    /// (4px) instead of `egui::ProgressBar` to keep the footer thin.
-    ///
-    /// LightClient adds a pencil at the end — clicking it swaps the
-    /// row in-place for the rescan editor (input + Set / Cancel /
-    /// Auto). FullNode and inactive cards omit the pencil.
-    fn draw_sync_section(&mut self, ui: &mut egui::Ui, backend: NodeType, active: bool) {
+    /// The bar is painted by hand (4px) instead of `egui::ProgressBar`
+    /// to keep the footer thin.
+    fn draw_sync_section(&self, ui: &mut egui::Ui, backend: NodeType, active: bool) {
         let muted = self.colors.text_muted;
         let accent = self.colors.accent;
         let tip = self.node_status.tip_block;
         let synced = self.node_status.synced_block;
 
-        // Per-backend progress. Inactive cards (and PublicRpc) stay at
-        // 0% / "—".
         let (pct, percent_text): (f32, String) = if !active || backend == NodeType::PublicRpc {
-            (0.0, "—".to_string())
+            (0.0, "\u{2014}".to_string())
         } else {
             match backend {
                 NodeType::LightClient => match (synced, tip) {
@@ -358,128 +348,50 @@ impl App {
                         let p = (s as f64 / t as f64).clamp(0.0, 1.0) as f32;
                         (p, format!("{:.1}%", p * 100.0))
                     }
-                    _ => (0.0, "—".to_string()),
+                    _ => (0.0, "\u{2014}".to_string()),
                 },
                 NodeType::FullNode => full_node_sync_view(self.node_status.sync_state.as_ref()),
                 NodeType::PublicRpc => unreachable!(),
             }
         };
 
-        // Pencil only on the active LC — editing the sync cursor on a
-        // non-running backend is a no-op and would be misleading.
-        let show_pencil = backend == NodeType::LightClient && active;
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("Sync")
+                    .size(11.0)
+                    .family(egui::FontFamily::Monospace)
+                    .color(muted),
+            );
 
-        // The `set_block_editing` flag lives on `App` (one per process),
-        // but `draw_sync_section` is called for every local-node card.
-        // Gate the edit UI on the same predicate as the pencil so toggling
-        // edit mode from the LC card doesn't simultaneously render the
-        // editor on the Full Node card sitting next to it.
-        let in_edit_mode = show_pencil && self.set_block_editing;
+            let bar_width = (ui.available_width() - 50.0).max(40.0);
+            let bar_height = 4.0;
+            let (rect, _) =
+                ui.allocate_exact_size(egui::vec2(bar_width, bar_height), egui::Sense::hover());
+            let radius = bar_height * 0.5;
+            let painter = ui.painter();
+            painter.rect_filled(rect, radius, self.colors.surface2);
+            let fill_w = rect.width() * pct;
+            if fill_w > 0.0 {
+                let fill_rect =
+                    egui::Rect::from_min_size(rect.min, egui::vec2(fill_w, rect.height()));
+                let right_color = lerp_color(accent, self.colors.accent2, pct);
+                let mut mesh = egui::Mesh::default();
+                mesh.colored_vertex(fill_rect.left_top(), accent);
+                mesh.colored_vertex(fill_rect.right_top(), right_color);
+                mesh.colored_vertex(fill_rect.right_bottom(), right_color);
+                mesh.colored_vertex(fill_rect.left_bottom(), accent);
+                mesh.add_triangle(0, 1, 2);
+                mesh.add_triangle(0, 2, 3);
+                painter.add(egui::Shape::mesh(mesh));
+            }
 
-        if !in_edit_mode {
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new("Sync")
-                        .size(11.0)
-                        .family(egui::FontFamily::Monospace)
-                        .color(muted),
-                );
-
-                // Reserve trailing room for percentage (+ pencil on LC)
-                // before the bar so it stretches between label and trailing
-                // controls without wrapping.
-                let trailing_reserve = if show_pencil { 70.0 } else { 50.0 };
-                let bar_width = (ui.available_width() - trailing_reserve).max(40.0);
-                let bar_height = 4.0;
-                let (rect, _) =
-                    ui.allocate_exact_size(egui::vec2(bar_width, bar_height), egui::Sense::hover());
-                let radius = bar_height * 0.5;
-                let painter = ui.painter();
-                painter.rect_filled(rect, radius, self.colors.surface2);
-                let fill_w = rect.width() * pct;
-                if fill_w > 0.0 {
-                    // Gradient fill (`accent` → `accent2`) over the
-                    // filled portion. Painted as a 2-triangle mesh
-                    // because `Painter::rect_filled` only takes a
-                    // single colour.
-                    let fill_rect =
-                        egui::Rect::from_min_size(rect.min, egui::vec2(fill_w, rect.height()));
-                    let right_color = lerp_color(accent, self.colors.accent2, pct);
-                    let mut mesh = egui::Mesh::default();
-                    mesh.colored_vertex(fill_rect.left_top(), accent);
-                    mesh.colored_vertex(fill_rect.right_top(), right_color);
-                    mesh.colored_vertex(fill_rect.right_bottom(), right_color);
-                    mesh.colored_vertex(fill_rect.left_bottom(), accent);
-                    mesh.add_triangle(0, 1, 2);
-                    mesh.add_triangle(0, 2, 3);
-                    painter.add(egui::Shape::mesh(mesh));
-                }
-
-                ui.label(
-                    egui::RichText::new(percent_text)
-                        .size(11.0)
-                        .family(egui::FontFamily::Monospace)
-                        .color(self.colors.text),
-                );
-
-                if show_pencil {
-                    let pencil =
-                        egui::Label::new(egui::RichText::new("\u{270E}").size(12.0).color(muted))
-                            .sense(egui::Sense::click());
-                    let resp = ui
-                        .add(pencil)
-                        .on_hover_cursor(egui::CursorIcon::PointingHand);
-                    if resp.clicked() {
-                        self.set_block_editing = true;
-                        self.set_block_input = synced.map(|b| b.to_string()).unwrap_or_default();
-                    }
-                }
-            });
-        } else {
-            // Edit mode: input + Set / Cancel / Auto, replacing the bar.
-            ui.horizontal(|ui| {
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.set_block_input)
-                        .desired_width(120.0)
-                        .font(egui::FontId::monospace(13.0))
-                        .text_color(self.colors.text_muted),
-                );
-
-                // Validate: numeric and ≤ known tip (when tip is known).
-                let parsed = self.set_block_input.trim().replace(',', "").parse::<u64>();
-                let valid = matches!(&parsed, Ok(b) if tip.is_none_or(|t| *b <= t));
-
-                let set_clicked = ui.add_enabled(valid, egui::Button::new("Set")).clicked();
-                let cancel_clicked = ui.button("Cancel").clicked();
-                // Auto-detect via a one-shot FullNodeClient against the
-                // network's public endpoint. Disabled while a detection
-                // is in flight or there are no accounts to look up.
-                let auto_enabled =
-                    self.earliest_funding_block_rx.is_none() && !self.accounts.is_empty();
-                let auto_label = if self.earliest_funding_block_rx.is_some() {
-                    "Auto…"
-                } else {
-                    "Auto"
-                };
-                let auto_clicked = ui
-                    .add_enabled(auto_enabled, egui::Button::new(auto_label))
-                    .clicked();
-                let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
-
-                if set_clicked {
-                    if let Ok(block) = parsed {
-                        self.set_all_accounts_lock_script_block(block);
-                        self.set_block_editing = false;
-                        self.set_block_input.clear();
-                    }
-                } else if cancel_clicked || escape {
-                    self.set_block_editing = false;
-                    self.set_block_input.clear();
-                } else if auto_clicked {
-                    self.detect_earliest_funding_block_async();
-                }
-            });
-        }
+            ui.label(
+                egui::RichText::new(percent_text)
+                    .size(11.0)
+                    .family(egui::FontFamily::Monospace)
+                    .color(self.colors.text),
+            );
+        });
     }
 
     /// Renders one metric as a rounded tile spanning its column. The
@@ -510,6 +422,98 @@ impl App {
                             .family(egui::FontFamily::Monospace)
                             .color(self.colors.text),
                     );
+                });
+            });
+    }
+
+    /// Renders the Sync metric tile for an active LightClient with an
+    /// inline pencil to edit the starting block number.
+    fn draw_sync_metric(&mut self, ui: &mut egui::Ui, value: String) {
+        let tip = self.node_status.tip_block;
+        let synced = self.node_status.synced_block;
+
+        egui::Frame::new()
+            .fill(self.colors.surface2)
+            .corner_radius(10.0)
+            .inner_margin(egui::Margin::symmetric(14, 12))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.vertical(|ui| {
+                    ui.label(
+                        egui::RichText::new("SYNC")
+                            .size(9.0)
+                            .family(egui::FontFamily::Monospace)
+                            .color(self.colors.text_muted),
+                    );
+                    ui.add_space(3.0);
+
+                    if !self.set_block_editing {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new(value)
+                                    .size(12.5)
+                                    .strong()
+                                    .family(egui::FontFamily::Monospace)
+                                    .color(self.colors.text),
+                            );
+                            let pencil = egui::Label::new(
+                                egui::RichText::new("\u{270E}")
+                                    .size(12.0)
+                                    .color(self.colors.text_muted),
+                            )
+                            .sense(egui::Sense::click());
+                            let resp = ui
+                                .add(pencil)
+                                .on_hover_cursor(egui::CursorIcon::PointingHand);
+                            if resp.clicked() {
+                                self.set_block_editing = true;
+                                self.set_block_input =
+                                    synced.map(|b| b.to_string()).unwrap_or_default();
+                            }
+                        });
+                    } else {
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.set_block_input)
+                                .desired_width(ui.available_width())
+                                .font(egui::FontId::monospace(13.0))
+                                .text_color(self.colors.text_muted),
+                        );
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            let parsed =
+                                self.set_block_input.trim().replace(',', "").parse::<u64>();
+                            let valid =
+                                matches!(&parsed, Ok(b) if tip.is_none_or(|t| *b <= t));
+
+                            let set_clicked =
+                                ui.add_enabled(valid, egui::Button::new("Set")).clicked();
+                            let cancel_clicked = ui.button("Cancel").clicked();
+                            let auto_enabled = self.earliest_funding_block_rx.is_none()
+                                && !self.accounts.is_empty();
+                            let auto_label = if self.earliest_funding_block_rx.is_some() {
+                                "Auto\u{2026}"
+                            } else {
+                                "Auto"
+                            };
+                            let auto_clicked = ui
+                                .add_enabled(auto_enabled, egui::Button::new(auto_label))
+                                .clicked();
+                            let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
+
+                            if set_clicked {
+                                if let Ok(block) = parsed {
+                                    self.set_all_accounts_lock_script_block(block);
+                                    self.set_block_editing = false;
+                                    self.set_block_input.clear();
+                                }
+                            } else if cancel_clicked || escape {
+                                self.set_block_editing = false;
+                                self.set_block_input.clear();
+                            } else if auto_clicked {
+                                self.detect_earliest_funding_block_async();
+                            }
+                        });
+                    }
                 });
             });
     }
