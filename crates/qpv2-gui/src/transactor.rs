@@ -412,7 +412,7 @@ impl App {
         input_cells: Vec<(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)>,
         lock_args: String,
     ) {
-        let key = match credential_gate::retrieve_key() {
+        let key = match keychain::retrieve_key() {
             Ok(k) => k,
             Err(e) => {
                 self.tx_status = TransactionStatus::Idle;
@@ -459,7 +459,7 @@ impl App {
             }
         };
 
-        let hmac_output = match credential_gate::fido2::authenticate(&cred_bytes, &pin) {
+        let hmac_output = match keychain::fido2::authenticate(&cred_bytes, &pin) {
             Ok(h) => h,
             Err(e) => {
                 self.tx_status = TransactionStatus::Idle;

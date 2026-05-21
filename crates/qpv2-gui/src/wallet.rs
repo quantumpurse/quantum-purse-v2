@@ -364,7 +364,7 @@ impl App {
             }
         };
 
-        if let Err(e) = credential_gate::store_key(&key) {
+        if let Err(e) = keychain::store_key(&key) {
             self.status = Status::Error(format!("Failed to store key in Keychain: {}", e));
             return;
         }
@@ -373,7 +373,7 @@ impl App {
 
         let vault = KeyVault::new(variant);
         if let Err(e) = vault.generate_master_seed(AuthKey::CryptoKey(key), AuthMethod::Keychain) {
-            let _ = credential_gate::delete_key();
+            let _ = keychain::delete_key();
             self.status = Status::Error(format!("Failed to create wallet: {}", e));
             return;
         }
@@ -392,7 +392,7 @@ impl App {
                 self.screen = Screen::Unlocked;
                 self.status = Status::Info(format!(
                     "Wallet created with {}!",
-                    credential_gate::short_name()
+                    keychain::short_name()
                 ));
                 self.last_poll_time = std::time::Instant::now();
                 self.load_tx_history_from_disk();
@@ -411,7 +411,7 @@ impl App {
     /// Unlock via the platform credential store, then transition to
     /// Unlocked.
     pub(crate) fn unlock_with_keychain(&mut self) {
-        match credential_gate::retrieve_key() {
+        match keychain::retrieve_key() {
             Ok(_) => match KeyVault::get_all_sphincs_lock_args() {
                 Ok(lock_args) => {
                     self.accounts = lock_args;
@@ -436,7 +436,7 @@ impl App {
 
     /// Derive a new account using the platform credential store.
     pub(crate) fn create_new_account_with_keychain(&mut self) {
-        let key = match credential_gate::retrieve_key() {
+        let key = match keychain::retrieve_key() {
             Ok(k) => k,
             Err(e) => {
                 self.status = Status::Error(e);
@@ -491,7 +491,7 @@ impl App {
             }
         };
 
-        let credential = match credential_gate::fido2::register(&pin) {
+        let credential = match keychain::fido2::register(&pin) {
             Ok(c) => c,
             Err(e) => {
                 self.status = Status::Error(format!("FIDO2 registration failed: {}", e));
@@ -502,7 +502,7 @@ impl App {
         let credential_id = hex::encode(&credential.credential_id);
 
         let hmac_output =
-            match credential_gate::fido2::authenticate(&credential.credential_id, &pin) {
+            match keychain::fido2::authenticate(&credential.credential_id, &pin) {
                 Ok(h) => h,
                 Err(e) => {
                     self.status = Status::Error(format!("FIDO2 authentication failed: {}", e));
@@ -577,7 +577,7 @@ impl App {
             }
         };
 
-        match credential_gate::fido2::authenticate(&cred_bytes, &pin) {
+        match keychain::fido2::authenticate(&cred_bytes, &pin) {
             Ok(_) => match KeyVault::get_all_sphincs_lock_args() {
                 Ok(lock_args) => {
                     self.accounts = lock_args;
@@ -621,7 +621,7 @@ impl App {
             }
         };
 
-        let hmac_output = match credential_gate::fido2::authenticate(&cred_bytes, &pin) {
+        let hmac_output = match keychain::fido2::authenticate(&cred_bytes, &pin) {
             Ok(h) => h,
             Err(e) => {
                 self.status = Status::Error(e);

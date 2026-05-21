@@ -173,15 +173,15 @@ fn get_auth_key() -> Result<AuthKey, String> {
             Ok(AuthKey::Password(password))
         }
         AuthMethod::Keychain => {
-            println!("Authenticate with {}...", credential_gate::short_name());
-            let key = credential_gate::retrieve_key()?;
+            println!("Authenticate with {}...", keychain::short_name());
+            let key = keychain::retrieve_key()?;
             Ok(AuthKey::CryptoKey(key))
         }
         AuthMethod::Fido2 { ref credential_id } => {
             let cred_bytes =
                 hex::decode(credential_id).map_err(|e| format!("Invalid credential ID: {}", e))?;
             let pin = prompt_for_input("Enter security key PIN: ")?;
-            let hmac_output = credential_gate::fido2::authenticate(&cred_bytes, &pin)?;
+            let hmac_output = keychain::fido2::authenticate(&cred_bytes, &pin)?;
             let key = qpv2_core::utilities::derive_vault_enc_key(&hmac_output)?;
             Ok(AuthKey::CryptoKey(key))
         }
@@ -191,9 +191,9 @@ fn get_auth_key() -> Result<AuthKey, String> {
 fn init_with_keychain(vault: &KeyVault) -> Result<(), String> {
     let key = qpv2_core::utilities::get_random_bytes(32)
         .map_err(|e| format!("Failed to generate key: {}", e))?;
-    credential_gate::store_key(&key)?;
+    keychain::store_key(&key)?;
     if let Err(e) = vault.generate_master_seed(AuthKey::CryptoKey(key), AuthMethod::Keychain) {
-        let _ = credential_gate::delete_key();
+        let _ = keychain::delete_key();
         return Err(e);
     }
     Ok(())
@@ -202,11 +202,11 @@ fn init_with_keychain(vault: &KeyVault) -> Result<(), String> {
 fn import_with_keychain(vault: &KeyVault, seed_phrase: SecureString) -> Result<(), String> {
     let key = qpv2_core::utilities::get_random_bytes(32)
         .map_err(|e| format!("Failed to generate key: {}", e))?;
-    credential_gate::store_key(&key)?;
+    keychain::store_key(&key)?;
     if let Err(e) =
         vault.import_seed_phrase(seed_phrase, AuthKey::CryptoKey(key), AuthMethod::Keychain)
     {
-        let _ = credential_gate::delete_key();
+        let _ = keychain::delete_key();
         return Err(e);
     }
     Ok(())
@@ -215,11 +215,11 @@ fn import_with_keychain(vault: &KeyVault, seed_phrase: SecureString) -> Result<(
 fn init_with_fido2(vault: &KeyVault) -> Result<(), String> {
     let pin = prompt_for_input("Enter security key PIN: ")?;
     println!("Registering credential...");
-    let credential = credential_gate::fido2::register(&pin)?;
+    let credential = keychain::fido2::register(&pin)?;
     let credential_id = hex::encode(&credential.credential_id);
 
     println!("Deriving encryption key...");
-    let hmac_output = credential_gate::fido2::authenticate(&credential.credential_id, &pin)?;
+    let hmac_output = keychain::fido2::authenticate(&credential.credential_id, &pin)?;
     let key = qpv2_core::utilities::derive_vault_enc_key(&hmac_output)?;
 
     let auth_method = AuthMethod::Fido2 { credential_id };
@@ -230,11 +230,11 @@ fn init_with_fido2(vault: &KeyVault) -> Result<(), String> {
 fn import_with_fido2(vault: &KeyVault, seed_phrase: SecureString) -> Result<(), String> {
     let pin = prompt_for_input("Enter security key PIN: ")?;
     println!("Registering credential...");
-    let credential = credential_gate::fido2::register(&pin)?;
+    let credential = keychain::fido2::register(&pin)?;
     let credential_id = hex::encode(&credential.credential_id);
 
     println!("Deriving encryption key...");
-    let hmac_output = credential_gate::fido2::authenticate(&credential.credential_id, &pin)?;
+    let hmac_output = keychain::fido2::authenticate(&credential.credential_id, &pin)?;
     let key = qpv2_core::utilities::derive_vault_enc_key(&hmac_output)?;
 
     let auth_method = AuthMethod::Fido2 { credential_id };
@@ -471,7 +471,7 @@ fn main() -> Result<(), String> {
                 .map_err(|e| e.to_string())?;
 
             if confirmation.trim().to_lowercase() == "yes" {
-                let _ = credential_gate::delete_key();
+                let _ = keychain::delete_key();
                 KeyVault::clear_database()?;
                 println!("✓ All wallet data cleared");
             } else {
@@ -489,7 +489,7 @@ fn main() -> Result<(), String> {
             let (auth_method_display, compatible_frontends) = match wallet_info.auth_method {
                 AuthMethod::Password => ("Password".to_string(), "CLI and GUI"),
                 AuthMethod::Keychain => {
-                    (credential_gate::display_name().to_string(), "CLI and GUI")
+                    (keychain::display_name().to_string(), "CLI and GUI")
                 }
                 AuthMethod::Fido2 { .. } => ("FIDO2 Security Key".to_string(), "CLI and GUI"),
             };

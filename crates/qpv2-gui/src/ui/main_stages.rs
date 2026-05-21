@@ -80,7 +80,7 @@ impl App {
                     ui.add_space(32.0);
 
                     {
-                        let label = format!("Create with {}", credential_gate::short_name());
+                        let label = format!("Create with {}", keychain::short_name());
                         let pk_button = egui::Button::new(
                             egui::RichText::new(label).size(16.0).color(self.colors.bg),
                         )
@@ -390,7 +390,7 @@ impl App {
 
                         if ui.add(remove_btn).clicked() {
                             if self.confirm_remove {
-                                let _ = credential_gate::delete_key();
+                                let _ = keychain::delete_key();
                                 let _ = ckb_node::wallet_helpers::lc::clear_all_scripts(
                                     &self.qp_client,
                                 );
@@ -527,7 +527,7 @@ impl App {
                     }
                 }
                 Some(AuthMethod::Keychain) => {
-                    let label = format!("Unlock with {}", credential_gate::short_name());
+                    let label = format!("Unlock with {}", keychain::short_name());
                     let button = egui::Button::new(
                         egui::RichText::new(label).size(16.0).color(self.colors.bg),
                     )

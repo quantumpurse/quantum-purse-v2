@@ -1,5 +1,5 @@
 [package]
-name = "credential-gate"
+name = "keychain"
 version = "0.1.0"
 edition = "2021"
 description = "Multi-platform credential storage for QuantumPurse."

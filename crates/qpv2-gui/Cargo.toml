@@ -12,7 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 qpv2-core = { path = "../qpv2-core" }
-credential-gate = { path = "../credential-gate", features = ["fido2"] }
+keychain = { path = "../keychain", features = ["fido2"] }
 ckb-node = { path = "../ckb-node" }
 ckb-fips205-utils = { path = "../ckb-fips205-utils", features = ["signing"] }
 ckb-gen-types = { version = "1.0.2", default-features = false }
