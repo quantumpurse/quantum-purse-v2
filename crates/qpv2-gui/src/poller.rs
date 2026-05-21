@@ -320,14 +320,28 @@ impl App {
         // is one cheap RPC per ~10 s tick until `Ok(true)` latches the
         // flag. Errors are logged, not banner'd — by definition we'll
         // try again next tick.
-        if !self.lc_qr_dep_warmup_done
-            && self.node_status.online
+        if self.node_status.online
             && self.qp_client.config().node_type == ckb_node::NodeType::LightClient
         {
-            match ckb_node::wallet_helpers::lc::fetch_qr_lock_dep(&self.qp_client) {
-                Ok(true) => self.lc_qr_dep_warmup_done = true,
-                Ok(false) => {} // pending — retry next tick
-                Err(e) => eprintln!("lc warmup: fetch_qr_lock_dep: {}", e),
+            if !self.lc_qr_dep_warmup_done {
+                match ckb_node::wallet_helpers::lc::fetch_qr_lock_dep(&self.qp_client) {
+                    Ok(true) => self.lc_qr_dep_warmup_done = true,
+                    Ok(false) => {} // pending — retry next tick
+                    Err(e) => eprintln!("lc warmup: fetch_qr_lock_dep: {}", e),
+                }
+            }
+
+            // Register all accounts' lock scripts with the LC once it
+            // is online. Covers the case where accounts were created on
+            // a different backend and the user then switches to LC.
+            if !self.lc_scripts_registered && !self.accounts.is_empty() {
+                match ckb_node::wallet_helpers::lc::register_lock_scripts(
+                    &self.qp_client,
+                    &self.accounts,
+                ) {
+                    Ok(()) => self.lc_scripts_registered = true,
+                    Err(e) => eprintln!("lc warmup: register_lock_scripts: {}", e),
+                }
             }
         }
     }
