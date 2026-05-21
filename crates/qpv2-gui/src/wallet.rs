@@ -25,8 +25,15 @@ impl App {
         {
             return;
         }
+        let start_block = match self.qp_client.get_tip_header() {
+            Ok(h) => h.inner.number.value(),
+            Err(e) => {
+                self.status = Status::Error(format!("Failed to get tip header: {}", e));
+                return;
+            }
+        };
         if let Err(e) =
-            ckb_node::wallet_helpers::lc::register_lock_scripts(&self.qp_client, lock_args_list)
+            ckb_node::wallet_helpers::lc::register_lock_scripts(&self.qp_client, lock_args_list, start_block)
         {
             self.status = Status::Error(format!("Failed to register scripts: {}", e));
         }

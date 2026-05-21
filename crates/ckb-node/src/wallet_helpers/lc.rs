@@ -43,17 +43,16 @@ pub fn fetch_qr_lock_dep(qp_client: &QpClient) -> Result<bool, NodeManagerError>
     light.fetch_transaction(tx_hash)
 }
 
-/// Registers wallet lock scripts with the LC's indexer, anchored at
-/// the current tip. Empty input is a no-op.
+/// Registers wallet lock scripts with the LC's indexer at the given
+/// `start_block`. Empty input is a no-op.
 ///
-/// Use this for additive registrations — wallet creation, new
-/// account. The LC's `set_scripts(Partial)` skips
-/// already-tracked scripts so existing sync cursors are preserved.
-/// For deliberate cursor reset (manual rescan), call
-/// [`register_all_lock_scripts`] instead.
+/// The LC's `set_scripts(Partial)` skips already-tracked scripts so
+/// existing sync cursors are preserved. For deliberate cursor reset
+/// (manual rescan), call [`register_all_lock_scripts`] instead.
 pub fn register_lock_scripts(
     qp_client: &QpClient,
     lock_args_list: &[String],
+    start_block: u64,
 ) -> Result<(), NodeManagerError> {
     let Some(light) = qp_client.as_any().downcast_ref::<LightClient>() else {
         return Err(NodeManagerError::UnsupportedOperation {
@@ -64,8 +63,6 @@ pub fn register_lock_scripts(
     if lock_args_list.is_empty() {
         return Ok(());
     }
-
-    let start_block = qp_client.get_tip_header()?.inner.number.value();
 
     let scripts: Vec<(&str, u64)> = lock_args_list
         .iter()
