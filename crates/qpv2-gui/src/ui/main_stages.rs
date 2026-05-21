@@ -14,22 +14,20 @@ impl App {
         ui.vertical_centered(|ui| {
             ui.add_space(60.0);
 
-            // Logo
-            ui.heading(
-                egui::RichText::new("\u{1f52e} Quantum Purse")
-                    .size(32.0)
+            ui.label(
+                egui::RichText::new("QUANTUM PURSE")
+                    .size(24.0)
                     .color(self.colors.accent)
                     .strong(),
             );
-
-            ui.add_space(8.0);
+            ui.add_space(4.0);
             ui.label(
-                egui::RichText::new("Post-Quantum Secure Wallet")
-                    .size(14.0)
+                egui::RichText::new("Post-quantum secure wallet for Nervos Network.")
+                    .size(13.0)
                     .color(self.colors.text_muted),
             );
 
-            ui.add_space(40.0);
+            ui.add_space(32.0);
 
             // Setup card
             egui::Frame::new()
@@ -41,13 +39,32 @@ impl App {
                     ui.set_max_width(400.0);
 
                     ui.vertical_centered(|ui| {
-                        ui.label(egui::RichText::new("Create New Wallet").size(20.0).strong());
+                        ui.label(
+                            egui::RichText::new("Create New Wallet")
+                                .size(18.0)
+                                .color(self.colors.text)
+                                .strong(),
+                        );
                     });
 
-                    ui.add_space(24.0);
+                    ui.add_space(20.0);
 
-                    ui.label("Select SPHINCS+ variant:");
-                    ui.add_space(8.0);
+                    // Divider
+                    let divider_rect = ui.available_rect_before_wrap();
+                    ui.painter().line_segment(
+                        [divider_rect.left_top(), egui::pos2(divider_rect.right(), divider_rect.top())],
+                        egui::Stroke::new(1.0, self.colors.border),
+                    );
+                    ui.add_space(1.0);
+
+                    ui.add_space(20.0);
+
+                    ui.label(
+                        egui::RichText::new("SPHINCS+ VARIANT")
+                            .size(10.0)
+                            .color(self.colors.text_muted),
+                    );
+                    ui.add_space(6.0);
 
                     let field_width = ui.available_width();
 
@@ -77,55 +94,98 @@ impl App {
                             }
                         });
 
-                    ui.add_space(32.0);
+                    ui.add_space(8.0);
+
+                    // Variant info pills
+                    let (security, speed) = variant_info(self.selected_variant);
+                    ui.horizontal(|ui| {
+                        let pill = |ui: &mut egui::Ui, text: &str, color: egui::Color32| {
+                            let galley = ui.painter().layout_no_wrap(
+                                text.to_string(),
+                                egui::FontId::proportional(10.0),
+                                color,
+                            );
+                            let pad = egui::vec2(8.0, 3.0);
+                            let size = galley.size() + pad * 2.0;
+                            let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+                            let tint = egui::Color32::from_rgba_unmultiplied(
+                                color.r(), color.g(), color.b(), 20,
+                            );
+                            ui.painter().rect_filled(rect, 4.0, tint);
+                            ui.painter().galley(rect.min + pad, galley, color);
+                        };
+                        pill(ui, security, self.colors.accent);
+                        pill(ui, speed, self.colors.accent2);
+                    });
+
+                    ui.add_space(24.0);
+
+                    // Divider
+                    let divider_rect = ui.available_rect_before_wrap();
+                    ui.painter().line_segment(
+                        [divider_rect.left_top(), egui::pos2(divider_rect.right(), divider_rect.top())],
+                        egui::Stroke::new(1.0, self.colors.border),
+                    );
+                    ui.add_space(1.0);
+
+                    ui.add_space(20.0);
+
+                    ui.label(
+                        egui::RichText::new("AUTHENTICATION")
+                            .size(10.0)
+                            .color(self.colors.text_muted),
+                    );
+                    ui.add_space(10.0);
 
                     {
                         let label = format!("Create with {}", keychain::short_name());
                         let pk_button = egui::Button::new(
-                            egui::RichText::new(label).size(16.0).color(self.colors.bg),
+                            egui::RichText::new(label).size(15.0).color(self.colors.bg),
                         )
                         .fill(self.colors.accent)
-                        .min_size(egui::vec2(field_width, 48.0));
+                        .corner_radius(10.0)
+                        .min_size(egui::vec2(field_width, 44.0));
 
                         if ui.add(pk_button).clicked() {
                             self.create_wallet_with_keychain(self.selected_variant);
                         }
 
-                        ui.add_space(10.0);
+                        ui.add_space(8.0);
                     }
 
                     {
                         let fido2_btn = egui::Button::new(
                             egui::RichText::new("Create with Security Key")
-                                .size(16.0)
+                                .size(15.0)
                                 .color(self.colors.text),
                         )
                         .fill(self.colors.surface)
                         .stroke(egui::Stroke::new(1.0, self.colors.accent2))
-                        .min_size(egui::vec2(field_width, 48.0));
+                        .corner_radius(10.0)
+                        .min_size(egui::vec2(field_width, 44.0));
 
                         if ui.add(fido2_btn).clicked() {
                             self.create_wallet_with_fido2(self.selected_variant);
                         }
 
-                        ui.add_space(10.0);
+                        ui.add_space(8.0);
                     }
 
                     let pw_btn = egui::Button::new(
                         egui::RichText::new("Create with Password")
-                            .size(16.0)
-                            .color(self.colors.text),
+                            .size(15.0)
+                            .color(self.colors.text_muted),
                     )
-                    .fill(self.colors.surface)
+                    .fill(egui::Color32::TRANSPARENT)
                     .stroke(egui::Stroke::new(1.0, self.colors.border2))
-                    .min_size(egui::vec2(field_width, 48.0));
+                    .corner_radius(10.0)
+                    .min_size(egui::vec2(field_width, 44.0));
                     if ui.add(pw_btn).clicked() {
                         self.create_wallet_with_password(self.selected_variant);
                     }
                 });
 
             ui.add_space(24.0);
-            // Center the status row to match the rest of the page.
             ui.vertical_centered(|ui| self.show_status(ui));
         });
     }
@@ -545,4 +605,21 @@ impl App {
             ui.vertical_centered(|ui| self.show_status(ui));
         });
     }
+}
+
+fn variant_info(v: SpxVariant) -> (&'static str, &'static str) {
+    let security = match v {
+        SpxVariant::Sha2128S | SpxVariant::Sha2128F
+        | SpxVariant::Shake128S | SpxVariant::Shake128F => "128-bit security",
+        SpxVariant::Sha2192S | SpxVariant::Sha2192F
+        | SpxVariant::Shake192S | SpxVariant::Shake192F => "192-bit security",
+        SpxVariant::Sha2256S | SpxVariant::Sha2256F
+        | SpxVariant::Shake256S | SpxVariant::Shake256F => "256-bit security",
+    };
+    let speed = match v {
+        SpxVariant::Sha2128S | SpxVariant::Sha2192S | SpxVariant::Sha2256S
+        | SpxVariant::Shake128S | SpxVariant::Shake192S | SpxVariant::Shake256S => "Compact signatures",
+        _ => "Fast signing",
+    };
+    (security, speed)
 }
