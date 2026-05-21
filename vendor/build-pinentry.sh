@@ -45,6 +45,10 @@ fi
 
 NPROC="$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)"
 
+if [ "$OS" = "Darwin" ]; then
+	export LDFLAGS="${LDFLAGS:-} -Wl,-reproducible"
+fi
+
 # ─── Step 1: Build libgpg-error (static) ──────────────────────────
 
 echo "==> [1/3] Building libgpg-error..."
