@@ -390,12 +390,6 @@ impl App {
 
                         if ui.add(remove_btn).clicked() {
                             if self.confirm_remove {
-                                // Stop the local node before wiping its data
-                                // directory — otherwise a still-running child
-                                // would race against `clear_database()` and
-                                // leave scraps behind.
-                                self.local_node.stop();
-
                                 let _ = credential_gate::delete_key();
 
                                 match KeyVault::clear_database() {
