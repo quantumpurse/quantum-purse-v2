@@ -2,7 +2,7 @@
 
 use eframe::egui;
 
-use crate::types::{Status, Tab, TransactionStatus};
+use crate::types::{AppColors, Status, Tab, TransactionStatus};
 use crate::App;
 
 impl App {
@@ -264,6 +264,51 @@ impl App {
                     ui.label(egui::RichText::new(msg).color(self.colors.danger));
                 });
             }
+        }
+    }
+}
+
+pub(crate) struct CardHover {
+    id: egui::Id,
+    pub(crate) lift: f32,
+    pub(crate) fill: egui::Color32,
+    pub(crate) stroke: egui::Stroke,
+}
+
+impl CardHover {
+    pub(crate) fn new(ui: &egui::Ui, tag: impl std::hash::Hash, colors: &AppColors) -> Self {
+        let id = ui.id().with(tag);
+        let prev_hovered = ui
+            .ctx()
+            .memory(|m| m.data.get_temp::<bool>(id).unwrap_or(false));
+        let lift = ui.ctx().animate_bool_with_time(id, prev_hovered, 0.2);
+
+        let accent_tint = egui::Color32::from_rgba_unmultiplied(
+            colors.accent.r(),
+            colors.accent.g(),
+            colors.accent.b(),
+            10,
+        );
+
+        let fill = if prev_hovered { accent_tint } else { colors.surface };
+        let stroke = if prev_hovered {
+            egui::Stroke::new(1.0, colors.border2)
+        } else {
+            egui::Stroke::new(1.0, colors.border)
+        };
+
+        Self { id, lift, fill, stroke }
+    }
+
+    pub(crate) fn apply_lift(&self, ui: &mut egui::Ui) {
+        ui.add_space(-3.0 * self.lift);
+    }
+
+    pub(crate) fn commit(&self, response: &egui::Response) {
+        let hovered = response.hovered();
+        response.ctx.memory_mut(|m| m.data.insert_temp(self.id, hovered));
+        if hovered {
+            response.ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
         }
     }
 }

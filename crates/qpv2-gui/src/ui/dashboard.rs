@@ -2,6 +2,7 @@
 
 use eframe::egui;
 
+use super::common::CardHover;
 use crate::types::{
     format_ckb_balance, format_relative_time, format_with_commas, Tab, TxKind, TxRecord,
 };
@@ -258,13 +259,17 @@ impl App {
                     ];
 
                     for (i, (icon, label, target_tab)) in actions.iter().enumerate() {
+                        let hover =
+                            CardHover::new(&cols[i], ("dash-action", i), &self.colors);
+
                         let response = egui::Frame::new()
-                            .fill(self.colors.surface)
+                            .fill(hover.fill)
                             .corner_radius(16.0)
                             .inner_margin(egui::Margin::symmetric(10, 16))
-                            .stroke(egui::Stroke::new(1.0, self.colors.border))
+                            .stroke(hover.stroke)
                             .show(&mut cols[i], |ui| {
                                 ui.vertical_centered(|ui| {
+                                    hover.apply_lift(ui);
                                     ui.label(
                                         egui::RichText::new(*icon)
                                             .size(20.0)
@@ -279,6 +284,8 @@ impl App {
                                 });
                             })
                             .response;
+
+                        hover.commit(&response);
 
                         if response.interact(egui::Sense::click()).clicked() {
                             self.active_tab = *target_tab;

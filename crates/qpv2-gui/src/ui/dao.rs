@@ -2,6 +2,7 @@
 
 use eframe::egui;
 
+use super::common::CardHover;
 use crate::types::{
     format_ckb, format_ckb_balance, DaoView, SpendableCapacityTarget, TransactionStatus,
 };
@@ -106,29 +107,34 @@ impl App {
                         // 3-column action cards
                         ui.columns(3, |cols| {
                             // Deposit card
-                            let deposit_card = egui::Frame::new()
-                                .fill(self.colors.surface)
+                            let hover = CardHover::new(&cols[0], "dao-deposit", &self.colors);
+
+                            let deposit_resp = egui::Frame::new()
+                                .fill(hover.fill)
                                 .corner_radius(18.0)
                                 .inner_margin(egui::Margin::symmetric(20, 22))
-                                .stroke(egui::Stroke::new(1.0, self.colors.border));
-                            let deposit_resp = deposit_card.show(&mut cols[0], |ui| {
-                                ui.label(egui::RichText::new("\u{1f4e5}").size(26.0));
-                                ui.add_space(8.0);
-                                ui.label(
-                                    egui::RichText::new("DAO Deposit")
-                                        .size(14.0)
-                                        .strong()
-                                        .color(self.colors.text),
-                                );
-                                ui.add_space(4.0);
-                                ui.label(
-                            egui::RichText::new(
-                                "Lock CKB to earn compensation against secondary issuance inflation.",
-                            )
-                            .size(11.0)
-                            .color(self.colors.text_muted),
-                        );
-                            });
+                                .stroke(hover.stroke)
+                                .show(&mut cols[0], |ui| {
+                                    hover.apply_lift(ui);
+                                    ui.label(egui::RichText::new("\u{1f4e5}").size(26.0));
+                                    ui.add_space(8.0);
+                                    ui.label(
+                                        egui::RichText::new("DAO Deposit")
+                                            .size(14.0)
+                                            .strong()
+                                            .color(self.colors.text),
+                                    );
+                                    ui.add_space(4.0);
+                                    ui.label(
+                                        egui::RichText::new(
+                                            "Lock CKB to earn compensation against secondary issuance inflation.",
+                                        )
+                                        .size(11.0)
+                                        .color(self.colors.text_muted),
+                                    );
+                                });
+
+                            hover.commit(&deposit_resp.response);
                             if deposit_resp
                                 .response
                                 .interact(egui::Sense::click())
@@ -140,12 +146,15 @@ impl App {
                             }
 
                             // Request Withdrawal card
-                            egui::Frame::new()
-                                .fill(self.colors.surface)
+                            let hover = CardHover::new(&cols[1], "dao-request", &self.colors);
+
+                            let request_resp = egui::Frame::new()
+                                .fill(hover.fill)
                                 .corner_radius(18.0)
                                 .inner_margin(egui::Margin::symmetric(20, 22))
-                                .stroke(egui::Stroke::new(1.0, self.colors.border))
+                                .stroke(hover.stroke)
                                 .show(&mut cols[1], |ui| {
+                                    hover.apply_lift(ui);
                                     ui.label(egui::RichText::new("\u{23f3}").size(26.0));
                                     ui.add_space(8.0);
                                     ui.label(
@@ -156,21 +165,26 @@ impl App {
                                     );
                                     ui.add_space(4.0);
                                     ui.label(
-                                egui::RichText::new(
-                                    "Begin the unlock process. Wait for an epoch boundary to complete.",
-                                )
-                                .size(11.0)
-                                .color(self.colors.text_muted),
-                            );
+                                        egui::RichText::new(
+                                            "Begin the unlock process. Wait for an epoch boundary to complete.",
+                                        )
+                                        .size(11.0)
+                                        .color(self.colors.text_muted),
+                                    );
                                 });
 
+                            hover.commit(&request_resp.response);
+
                             // Withdraw card
-                            egui::Frame::new()
-                                .fill(self.colors.surface)
+                            let hover = CardHover::new(&cols[2], "dao-withdraw", &self.colors);
+
+                            let withdraw_resp = egui::Frame::new()
+                                .fill(hover.fill)
                                 .corner_radius(18.0)
                                 .inner_margin(egui::Margin::symmetric(20, 22))
-                                .stroke(egui::Stroke::new(1.0, self.colors.border))
+                                .stroke(hover.stroke)
                                 .show(&mut cols[2], |ui| {
+                                    hover.apply_lift(ui);
                                     ui.label(egui::RichText::new("\u{1f4e4}").size(26.0));
                                     ui.add_space(8.0);
                                     ui.label(
@@ -181,13 +195,15 @@ impl App {
                                     );
                                     ui.add_space(4.0);
                                     ui.label(
-                                egui::RichText::new(
-                                    "Claim CKB + compensation after the epoch boundary is reached.",
-                                )
-                                .size(11.0)
-                                .color(self.colors.text_muted),
-                            );
+                                        egui::RichText::new(
+                                            "Claim CKB + compensation after the epoch boundary is reached.",
+                                        )
+                                        .size(11.0)
+                                        .color(self.colors.text_muted),
+                                    );
                                 });
+
+                            hover.commit(&withdraw_resp.response);
                         });
 
                         ui.add_space(22.0);

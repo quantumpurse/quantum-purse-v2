@@ -4,6 +4,7 @@ use eframe::egui;
 use qpv2_core::types::AuthMethod;
 use qpv2_core::KeyVault;
 
+use super::common::CardHover;
 use crate::types::{format_ckb_balance, Status};
 use crate::App;
 
@@ -31,20 +32,23 @@ impl App {
                 // ── Action cards (3-column grid) ──
                 ui.columns(3, |cols| {
                     // New Account
+                    let hover = CardHover::new(&cols[0], "acct-new", &self.colors);
+
                     let new_card = egui::Frame::new()
-                        .fill(self.colors.surface)
+                        .fill(hover.fill)
                         .corner_radius(18.0)
                         .inner_margin(egui::Margin::symmetric(20, 24))
-                        .stroke(egui::Stroke::new(1.0, self.colors.border))
+                        .stroke(hover.stroke)
                         .show(&mut cols[0], |ui| {
                             ui.vertical_centered(|ui| {
+                                hover.apply_lift(ui);
                                 ui.label(egui::RichText::new("\u{2726}").size(30.0));
                                 ui.add_space(8.0);
                                 ui.label(
                                     egui::RichText::new("New Account")
                                         .size(14.0)
                                         .strong()
-                                        .color(self.colors.text_muted),
+                                        .color(self.colors.text),
                                 );
                                 ui.add_space(4.0);
                                 ui.label(
@@ -57,6 +61,8 @@ impl App {
                             });
                         })
                         .response;
+
+                    hover.commit(&new_card);
 
                     if new_card.interact(egui::Sense::click()).clicked() {
                         match &self.auth_method {
@@ -78,13 +84,16 @@ impl App {
                     }
 
                     // Import (CLI only)
-                    egui::Frame::new()
-                        .fill(self.colors.surface)
+                    let hover = CardHover::new(&cols[1], "acct-import", &self.colors);
+
+                    let import_card = egui::Frame::new()
+                        .fill(hover.fill)
                         .corner_radius(18.0)
                         .inner_margin(egui::Margin::symmetric(20, 24))
-                        .stroke(egui::Stroke::new(1.0, self.colors.border))
+                        .stroke(hover.stroke)
                         .show(&mut cols[1], |ui| {
                             ui.vertical_centered(|ui| {
+                                hover.apply_lift(ui);
                                 ui.label(egui::RichText::new("\u{2b07}").size(30.0));
                                 ui.add_space(8.0);
                                 ui.label(
@@ -100,16 +109,22 @@ impl App {
                                         .color(self.colors.text_muted),
                                 );
                             });
-                        });
+                        })
+                        .response;
+
+                    hover.commit(&import_card);
 
                     // Export Seed
+                    let hover = CardHover::new(&cols[2], "acct-export", &self.colors);
+
                     let export_card = egui::Frame::new()
-                        .fill(self.colors.surface)
+                        .fill(hover.fill)
                         .corner_radius(18.0)
                         .inner_margin(egui::Margin::symmetric(20, 24))
-                        .stroke(egui::Stroke::new(1.0, self.colors.border))
+                        .stroke(hover.stroke)
                         .show(&mut cols[2], |ui| {
                             ui.vertical_centered(|ui| {
+                                hover.apply_lift(ui);
                                 ui.label(egui::RichText::new("\u{2b06}").size(30.0));
                                 ui.add_space(8.0);
                                 ui.label(
@@ -127,6 +142,8 @@ impl App {
                             });
                         })
                         .response;
+
+                    hover.commit(&export_card);
 
                     if export_card.interact(egui::Sense::click()).clicked() {
                         match &self.auth_method {
@@ -237,11 +254,13 @@ impl App {
 
                         let (av_bg, av_fg) = avatar_colors[i % avatar_colors.len()];
 
-                        egui::Frame::new()
-                            .fill(self.colors.surface)
+                        let hover = CardHover::new(ui, ("acct-row", i), &self.colors);
+
+                        let row_resp = egui::Frame::new()
+                            .fill(hover.fill)
                             .corner_radius(9.0)
                             .inner_margin(egui::Margin::symmetric(18, 14))
-                            .stroke(egui::Stroke::new(1.0, self.colors.border))
+                            .stroke(hover.stroke)
                             .show(ui, |ui| {
                                 ui.horizontal(|ui| {
                                     // Avatar circle
@@ -312,6 +331,8 @@ impl App {
                                     );
                                 });
                             });
+
+                        hover.commit(&row_resp.response);
 
                         ui.add_space(6.0);
                     }
