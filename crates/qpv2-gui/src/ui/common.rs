@@ -548,6 +548,80 @@ fn bilinear(
     lerp_color(top, bot, v)
 }
 
+/// Builds a radial glow mesh whose outer perimeter traces a rounded
+/// rect. Each perimeter vertex is colored based on its actual distance
+/// from `center` relative to `max_radius`, so the glow fills the card
+/// without dimming at the edges (unlike `clamp_mesh_to_rounded_rect`
+/// which moves vertices inward but keeps their original transparent
+/// color).
+pub(crate) fn glow_mesh_clipped_to_rounded_rect(
+    center: egui::Pos2,
+    max_radius: f32,
+    base: egui::Color32,
+    peak_alpha: u8,
+    rect: egui::Rect,
+    corner_radius: f32,
+) -> egui::Mesh {
+    const ARC_SEGS: usize = 8;
+
+    let mut mesh = egui::Mesh::default();
+
+    // Center vertex at full brightness.
+    let center_color =
+        egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), peak_alpha);
+    let center_idx = mesh.vertices.len() as u32;
+    mesh.colored_vertex(center, center_color);
+
+    // Perimeter vertices tracing the rounded rect (clockwise from TL).
+    let mut perim: Vec<u32> = Vec::new();
+    let corners = [
+        (
+            egui::pos2(rect.left() + corner_radius, rect.top() + corner_radius),
+            std::f32::consts::PI,
+        ),
+        (
+            egui::pos2(rect.right() - corner_radius, rect.top() + corner_radius),
+            1.5 * std::f32::consts::PI,
+        ),
+        (
+            egui::pos2(rect.right() - corner_radius, rect.bottom() - corner_radius),
+            0.0,
+        ),
+        (
+            egui::pos2(rect.left() + corner_radius, rect.bottom() - corner_radius),
+            0.5 * std::f32::consts::PI,
+        ),
+    ];
+    for (arc_center, start_angle) in &corners {
+        for i in 0..=ARC_SEGS {
+            let t = i as f32 / ARC_SEGS as f32;
+            let angle = start_angle + t * std::f32::consts::FRAC_PI_2;
+            let p = egui::pos2(
+                arc_center.x + corner_radius * angle.cos(),
+                arc_center.y + corner_radius * angle.sin(),
+            );
+            // Color based on radial distance from glow center.
+            let dist = center.distance(p);
+            let falloff = (1.0 - (dist / max_radius).clamp(0.0, 1.0)).powi(2);
+            let alpha = (peak_alpha as f32 * falloff).round() as u8;
+            let color = egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), alpha);
+            let idx = mesh.vertices.len() as u32;
+            mesh.colored_vertex(p, color);
+            perim.push(idx);
+        }
+    }
+
+    // Fan triangles.
+    let n = perim.len();
+    for i in 0..n {
+        let v1 = perim[i];
+        let v2 = perim[(i + 1) % n];
+        mesh.add_triangle(center_idx, v1, v2);
+    }
+
+    mesh
+}
+
 /// Clamps every vertex in `mesh` to lie inside a rounded rect.
 /// Vertices outside the bounding rect are clamped to its edge;
 /// vertices in a corner region beyond the arc are projected onto the

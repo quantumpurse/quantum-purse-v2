@@ -130,6 +130,67 @@
   .badge-rpc { background: rgba(255,209,102,.12); color: var(--warn); }
   .badge-fiber { background: rgba(155,127,212,.18); color: var(--accent3); }
 
+  .wallet-selector {
+    margin: 10px 14px 0;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 9px 12px; cursor: pointer;
+    transition: border-color 0.2s;
+  }
+  .wallet-selector:hover { border-color: var(--border2); }
+  .wallet-label {
+    font-size: 8.5px; text-transform: uppercase;
+    letter-spacing: 1.5px; color: var(--muted);
+    margin-bottom: 4px; font-family: 'Space Mono', monospace;
+  }
+  .wallet-current {
+    display: flex; align-items: center;
+    justify-content: space-between;
+    font-size: 13px; font-weight: 500;
+  }
+  .wallet-current .wallet-icon {
+    margin-right: 7px; font-size: 13px;
+  }
+  .wallet-meta {
+    font-size: 8.5px; color: var(--muted);
+    font-family: 'Space Mono', monospace;
+    margin-top: 2px; letter-spacing: .5px;
+  }
+  .wallet-dropdown {
+    display: none; margin: 4px 14px 0;
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius-sm); overflow: hidden;
+  }
+  .wallet-dropdown.open { display: block; animation: fadeIn .15s ease; }
+  .wallet-option {
+    padding: 9px 13px; cursor: pointer;
+    transition: background .15s;
+    border-bottom: 1px solid rgba(255,255,255,.04);
+  }
+  .wallet-option:last-child { border-bottom: none; }
+  .wallet-option:hover { background: rgba(0,255,180,.07); }
+  .wallet-option.active { color: var(--accent); }
+  .wallet-option-name {
+    font-size: 12.5px; font-weight: 500;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .wallet-option-meta {
+    font-size: 8.5px; color: var(--muted);
+    font-family: 'Space Mono', monospace;
+    margin-top: 2px; letter-spacing: .5px;
+  }
+  .wallet-action {
+    padding: 9px 13px; cursor: pointer;
+    font-size: 11.5px; color: var(--muted);
+    transition: background .15s; display: flex; align-items: center; gap: 7px;
+    border-top: 1px solid var(--border);
+  }
+  .wallet-action:hover { background: rgba(0,255,180,.07); color: var(--text); }
+  .wallet-action.danger { color: var(--danger); }
+  .wallet-action.danger:hover { background: rgba(255,77,109,.07); }
+
   nav { padding: 18px 10px; flex: 1; }
   .nav-section {
     font-size: 8.5px; text-transform: uppercase;
@@ -566,6 +627,31 @@
     <div class="node-option" onclick="selNode('Light Node',this)">💡 Light Node <span class="node-badge badge-light">LIGHT</span></div>
     <div class="node-option" onclick="selNode('Public RPC',this)">🌐 Public RPC <span class="node-badge badge-rpc">RPC</span></div>
     <div class="node-option" onclick="selNode('Fiber Node',this)">⚡ Fiber Node <span class="node-badge badge-fiber">FIBER</span></div>
+  </div>
+
+  <div class="wallet-selector" onclick="toggleWalletDD()">
+    <div class="wallet-label">Active Wallet</div>
+    <div class="wallet-current">
+      <span><span class="wallet-icon">🔑</span><span id="active-wallet">My Wallet</span></span>
+      <span style="color:var(--muted);font-size:10px">▾</span>
+    </div>
+    <div class="wallet-meta">Sha2128S · Touch ID</div>
+  </div>
+  <div class="wallet-dropdown" id="wdd">
+    <div class="wallet-option active" onclick="selWallet('My Wallet','Sha2128S · Touch ID',this)">
+      <div class="wallet-option-name">🔑 My Wallet <span style="font-size:11px">✓</span></div>
+      <div class="wallet-option-meta">Sha2128S · Touch ID</div>
+    </div>
+    <div class="wallet-option" onclick="selWallet('Cold Storage','Sha2256S · FIDO2',this)">
+      <div class="wallet-option-name">🔑 Cold Storage</div>
+      <div class="wallet-option-meta">Sha2256S · FIDO2</div>
+    </div>
+    <div class="wallet-option" onclick="selWallet('Imported','Sha2192S · Password',this)">
+      <div class="wallet-option-name">🔑 Imported</div>
+      <div class="wallet-option-meta">Sha2192S · Password</div>
+    </div>
+    <div class="wallet-action" onclick="alert('Rename wallet')">✏️ Rename</div>
+    <div class="wallet-action danger" onclick="alert('Remove wallet')">🗑️ Remove Wallet</div>
   </div>
 
   <nav>
@@ -1088,9 +1174,25 @@
     el.classList.add('active');
     document.getElementById('ndd').classList.remove('open');
   }
+  function toggleWalletDD(){
+    document.getElementById('wdd').classList.toggle('open');
+  }
+  function selWallet(name,meta,el){
+    document.getElementById('active-wallet').textContent=name;
+    document.querySelector('.wallet-meta').textContent=meta;
+    document.querySelectorAll('.wallet-option').forEach(o=>{
+      o.classList.remove('active');
+      o.querySelector('.wallet-option-name').innerHTML=o.querySelector('.wallet-option-name').textContent.replace(' ✓','');
+    });
+    el.classList.add('active');
+    el.querySelector('.wallet-option-name').innerHTML=el.querySelector('.wallet-option-name').textContent+' <span style="font-size:11px">✓</span>';
+    document.getElementById('wdd').classList.remove('open');
+  }
   document.addEventListener('click',function(e){
     if(!e.target.closest('.node-selector')&&!e.target.closest('#ndd'))
       document.getElementById('ndd').classList.remove('open');
+    if(!e.target.closest('.wallet-selector')&&!e.target.closest('#wdd'))
+      document.getElementById('wdd').classList.remove('open');
   });
   function openM(id){ document.getElementById(id).classList.add('open'); }
   function closeM(id){

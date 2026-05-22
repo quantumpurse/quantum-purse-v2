@@ -217,19 +217,15 @@ impl App {
         }
 
         if let Some(idx) = spotlight_idx {
-            // Top-left spotlight — lights the balance number from
-            // behind. Not part of the mockup CSS strictly (the
-            // mockup only has the top-right ::after bloom), but the
-            // reference screenshot shows a clear accent halo around
-            // the balance, which gives the panel its sense of
-            // depth. Centered roughly behind the start of the
-            // balance digits, broader than the corner glow so it
-            // reads as ambient illumination rather than a localized
-            // highlight.
-            let spot_center = egui::pos2(card_rect.left() + 120.0, card_rect.top() + 80.0);
-            let mut mesh =
-                crate::ui::common::smooth_glow_mesh(spot_center, 170.0, self.colors.accent, 26);
-            crate::ui::common::clamp_mesh_to_rounded_rect(&mut mesh, card_rect, 20.0);
+            let spot_center = egui::pos2(card_rect.left() + 15.0, card_rect.top() + 10.0);
+            let mesh = crate::ui::common::glow_mesh_clipped_to_rounded_rect(
+                spot_center,
+                200.0,
+                self.colors.accent,
+                26,
+                card_rect,
+                20.0,
+            );
             painter.set(idx, egui::Shape::mesh(mesh));
         }
 
