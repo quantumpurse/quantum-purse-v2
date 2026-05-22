@@ -205,7 +205,7 @@ impl App {
 
                         if ui.add(pk_button).clicked() {
                             if self.import_mode {
-                                self.import_wallet_with_keychain(self.selected_variant);
+                                self.import_seed_phrase_with_keychain(self.selected_variant);
                             } else {
                                 self.create_wallet_with_keychain(self.selected_variant);
                             }
@@ -227,7 +227,7 @@ impl App {
 
                         if ui.add(fido2_btn).clicked() {
                             if self.import_mode {
-                                self.import_wallet_with_fido2(self.selected_variant);
+                                self.import_seed_phrase_with_fido2(self.selected_variant);
                             } else {
                                 self.create_wallet_with_fido2(self.selected_variant);
                             }
@@ -247,7 +247,7 @@ impl App {
                     .min_size(egui::vec2(field_width, 44.0));
                     if ui.add(pw_btn).clicked() {
                         if self.import_mode {
-                            self.import_wallet_with_password(self.selected_variant);
+                            self.import_seed_phrase_with_password(self.selected_variant);
                         } else {
                             self.create_wallet_with_password(self.selected_variant);
                         }

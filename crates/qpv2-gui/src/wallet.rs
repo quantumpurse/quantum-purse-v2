@@ -363,7 +363,7 @@ impl App {
         }
     }
 
-    pub(crate) fn import_wallet_with_password(&mut self, variant: SpxVariant) {
+    pub(crate) fn import_seed_phrase_with_password(&mut self, variant: SpxVariant) {
         let seed_phrase = match qpv2_core::pinentry::prompt_seed_phrase(variant) {
             Ok(s) => s,
             Err(e) => {
@@ -414,6 +414,38 @@ impl App {
             AuthMethod::Password,
             &format!("Wallet imported successfully!{}", strength_str),
         );
+    }
+
+    pub(crate) fn export_seed_phrase_with_password(&mut self) {
+        let pw = match qpv2_core::pinentry::prompt_password(
+            "Enter your wallet password to export the seed phrase.",
+            "Password:",
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+
+        let variant = match KeyVault::get_spx_variant() {
+            Ok(v) => v,
+            Err(e) => {
+                self.status = Status::Error(format!("Failed to read wallet variant: {}", e));
+                return;
+            }
+        };
+        let vault = KeyVault::new(variant);
+        match vault.export_seed_phrase(AuthKey::Password(pw)) {
+            Ok(phrase) => {
+                if let Err(e) = qpv2_core::pinentry::show_seed_phrase(&phrase) {
+                    self.status = Status::Error(e);
+                }
+            }
+            Err(e) => {
+                self.status = Status::Error(format!("Failed to export seed phrase: {}", e));
+            }
+        }
     }
 
     /// Create a Keychain wallet. Generates a random 32-byte key,
@@ -522,7 +554,7 @@ impl App {
         }
     }
 
-    pub(crate) fn import_wallet_with_keychain(&mut self, variant: SpxVariant) {
+    pub(crate) fn import_seed_phrase_with_keychain(&mut self, variant: SpxVariant) {
         let seed_phrase = match qpv2_core::pinentry::prompt_seed_phrase(variant) {
             Ok(s) => s,
             Err(e) => {
@@ -565,6 +597,35 @@ impl App {
             AuthMethod::Keychain,
             &format!("Wallet imported with {}!", keychain::short_name()),
         );
+    }
+
+    pub(crate) fn export_seed_phrase_with_keychain(&mut self) {
+        let key = match keychain::retrieve_key() {
+            Ok(k) => k,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+
+        let variant = match KeyVault::get_spx_variant() {
+            Ok(v) => v,
+            Err(e) => {
+                self.status = Status::Error(format!("Failed to read wallet variant: {}", e));
+                return;
+            }
+        };
+        let vault = KeyVault::new(variant);
+        match vault.export_seed_phrase(AuthKey::CryptoKey(key)) {
+            Ok(phrase) => {
+                if let Err(e) = qpv2_core::pinentry::show_seed_phrase(&phrase) {
+                    self.status = Status::Error(e);
+                }
+            }
+            Err(e) => {
+                self.status = Status::Error(format!("Failed to export seed phrase: {}", e));
+            }
+        }
     }
 
     /// Create a FIDO2-authenticated wallet. Prompts for the device PIN
@@ -745,7 +806,7 @@ impl App {
         }
     }
 
-    pub(crate) fn import_wallet_with_fido2(&mut self, variant: SpxVariant) {
+    pub(crate) fn import_seed_phrase_with_fido2(&mut self, variant: SpxVariant) {
         let seed_phrase = match qpv2_core::pinentry::prompt_seed_phrase(variant) {
             Ok(s) => s,
             Err(e) => {
@@ -814,5 +875,61 @@ impl App {
             AuthMethod::Fido2 { credential_id },
             "Wallet imported with FIDO2 security key!",
         );
+    }
+
+    pub(crate) fn export_seed_phrase_with_fido2(&mut self, credential_id: &str) {
+        let pin = match qpv2_core::pinentry::prompt_password(
+            "Enter your FIDO2 security key PIN to export the seed phrase.",
+            "PIN:",
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+
+        let cred_bytes = match hex::decode(credential_id) {
+            Ok(b) => b,
+            Err(e) => {
+                self.status = Status::Error(format!("Invalid credential ID: {}", e));
+                return;
+            }
+        };
+
+        let hmac_output = match keychain::fido2::authenticate(&cred_bytes, &pin) {
+            Ok(h) => h,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+
+        let key = match qpv2_core::utilities::derive_vault_enc_key(&hmac_output) {
+            Ok(k) => k,
+            Err(e) => {
+                self.status = Status::Error(format!("Key derivation failed: {}", e));
+                return;
+            }
+        };
+
+        let variant = match KeyVault::get_spx_variant() {
+            Ok(v) => v,
+            Err(e) => {
+                self.status = Status::Error(format!("Failed to read wallet variant: {}", e));
+                return;
+            }
+        };
+        let vault = KeyVault::new(variant);
+        match vault.export_seed_phrase(AuthKey::CryptoKey(key)) {
+            Ok(phrase) => {
+                if let Err(e) = qpv2_core::pinentry::show_seed_phrase(&phrase) {
+                    self.status = Status::Error(e);
+                }
+            }
+            Err(e) => {
+                self.status = Status::Error(format!("Failed to export seed phrase: {}", e));
+            }
+        }
     }
 }

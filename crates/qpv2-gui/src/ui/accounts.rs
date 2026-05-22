@@ -102,8 +102,8 @@ impl App {
                             });
                         });
 
-                    // Export (CLI only)
-                    egui::Frame::new()
+                    // Export Seed
+                    let export_card = egui::Frame::new()
                         .fill(self.colors.surface)
                         .corner_radius(18.0)
                         .inner_margin(egui::Margin::symmetric(20, 24))
@@ -116,16 +116,36 @@ impl App {
                                     egui::RichText::new("Export Seed")
                                         .size(14.0)
                                         .strong()
-                                        .color(self.colors.text_muted),
+                                        .color(self.colors.text),
                                 );
                                 ui.add_space(4.0);
                                 ui.label(
-                                    egui::RichText::new("CLI only: qpv2 export-seed")
+                                    egui::RichText::new("Make sure no one is watching.")
                                         .size(11.0)
-                                        .color(self.colors.text_muted),
+                                        .color(self.colors.warn),
                                 );
                             });
-                        });
+                        })
+                        .response;
+
+                    if export_card.interact(egui::Sense::click()).clicked() {
+                        match &self.auth_method {
+                            Some(AuthMethod::Password) => {
+                                self.export_seed_phrase_with_password();
+                            }
+                            Some(AuthMethod::Keychain) => {
+                                self.export_seed_phrase_with_keychain();
+                            }
+                            Some(AuthMethod::Fido2 { credential_id }) => {
+                                let cred_id = credential_id.clone();
+                                self.export_seed_phrase_with_fido2(&cred_id);
+                            }
+                            None => {
+                                self.status =
+                                    Status::Error("No authentication method set.".to_string());
+                            }
+                        }
+                    }
                 });
 
                 ui.add_space(18.0);

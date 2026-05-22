@@ -21,7 +21,7 @@
 //! of pause.
 
 use crate::SecureString;
-use pinentry::{Error as PinentryError, PassphraseInput};
+use pinentry::{Error as PinentryError, MessageDialog, PassphraseInput};
 use secrecy::ExposeSecret;
 use std::path::PathBuf;
 
@@ -155,4 +155,18 @@ pub fn prompt_password_with_confirmation(
     Ok(SecureString::from_string(
         secret.expose_secret().to_string(),
     ))
+}
+
+/// Display a seed phrase in a one-button pinentry dialog.
+/// The text is rendered by the pinentry process — never enters
+/// egui's address space or GPU texture cache.
+pub fn show_seed_phrase(seed_phrase: &str) -> Result<(), String> {
+    let path = pinentry_path()?;
+    let mut dialog = MessageDialog::with_binary(&path)
+        .ok_or_else(|| format!("{} not executable at {}", PINENTRY_NAME, path.display()))?;
+    dialog
+        .with_title("Quantum Purse")
+        .with_ok("Done")
+        .show_message(seed_phrase)
+        .map_err(map_err)
 }
