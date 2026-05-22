@@ -324,6 +324,70 @@ impl CardHover {
     }
 }
 
+/// Paints a quarter-circle accent in the top-right corner of `rect`,
+/// respecting the card's rounded corner. The shape's boundary follows
+/// the card's corner arc where they overlap, so no fill bleeds past
+/// the rounded edge.
+pub(crate) fn paint_corner_accent(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    corner_radius: f32,
+    color: egui::Color32,
+) {
+    const SIZE: f32 = 70.0;
+    const ARC_SEGS: usize = 16;
+
+    let tinted = egui::Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 18);
+
+    let mut perimeter: Vec<egui::Pos2> = Vec::new();
+
+    // 1. Card's TR corner arc: from (right - r, top) curving to (right, top + r).
+    let arc_cx = rect.right() - corner_radius;
+    let arc_cy = rect.top() + corner_radius;
+    for i in 0..=ARC_SEGS {
+        let t = i as f32 / ARC_SEGS as f32;
+        let angle = -std::f32::consts::FRAC_PI_2 + t * std::f32::consts::FRAC_PI_2;
+        perimeter.push(egui::pos2(
+            arc_cx + corner_radius * angle.cos(),
+            arc_cy + corner_radius * angle.sin(),
+        ));
+    }
+
+    // 2. Right edge down to where the accent arc begins.
+    perimeter.push(egui::pos2(rect.right(), rect.top() + SIZE));
+
+    // 3. Accent quarter-circle arc (70px, centered at top-right corner):
+    //    from (right, top + 70) curving to (right - 70, top).
+    for i in 1..=ARC_SEGS {
+        let t = i as f32 / ARC_SEGS as f32;
+        let angle = std::f32::consts::FRAC_PI_2 + t * std::f32::consts::FRAC_PI_2;
+        perimeter.push(egui::pos2(
+            rect.right() + SIZE * angle.cos(),
+            rect.top() + SIZE * angle.sin(),
+        ));
+    }
+
+    // 4. Top edge back to start (right - 70, top) → (right - r, top)
+    //    Only needed if SIZE > corner_radius (always true: 70 > 18).
+    // perimeter closes back to first vertex via the fan.
+
+    // Triangulate as fan from centroid.
+    let cx: f32 = perimeter.iter().map(|p| p.x).sum::<f32>() / perimeter.len() as f32;
+    let cy: f32 = perimeter.iter().map(|p| p.y).sum::<f32>() / perimeter.len() as f32;
+
+    let mut mesh = egui::Mesh::default();
+    mesh.colored_vertex(egui::pos2(cx, cy), tinted);
+    for p in &perimeter {
+        mesh.colored_vertex(*p, tinted);
+    }
+    let n = perimeter.len();
+    for i in 0..n {
+        mesh.add_triangle(0, (i + 1) as u32, ((i + 1) % n + 1) as u32);
+    }
+
+    painter.add(egui::Shape::mesh(mesh));
+}
+
 /// Builds a radial-glow triangle-fan mesh (center at `peak_alpha`, 48
 /// transparent edge vertices on a circle of `max_radius`) and returns
 /// it. Callers either pass it to `Painter::add` directly via

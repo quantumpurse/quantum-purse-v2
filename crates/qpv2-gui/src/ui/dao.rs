@@ -2,7 +2,7 @@
 
 use eframe::egui;
 
-use super::common::CardHover;
+use super::common::{paint_corner_accent, CardHover};
 use crate::types::{
     format_ckb, format_ckb_balance, DaoView, SpendableCapacityTarget, TransactionStatus,
 };
@@ -134,6 +134,12 @@ impl App {
                                     );
                                 });
 
+                            paint_corner_accent(
+                                cols[0].painter(),
+                                deposit_resp.response.rect,
+                                18.0,
+                                self.colors.accent,
+                            );
                             hover.commit(&deposit_resp.response);
                             if deposit_resp
                                 .response
@@ -173,6 +179,12 @@ impl App {
                                     );
                                 });
 
+                            paint_corner_accent(
+                                cols[1].painter(),
+                                request_resp.response.rect,
+                                18.0,
+                                self.colors.warn,
+                            );
                             hover.commit(&request_resp.response);
 
                             // Withdraw card
@@ -203,6 +215,12 @@ impl App {
                                     );
                                 });
 
+                            paint_corner_accent(
+                                cols[2].painter(),
+                                withdraw_resp.response.rect,
+                                18.0,
+                                self.colors.accent2,
+                            );
                             hover.commit(&withdraw_resp.response);
                         });
 
