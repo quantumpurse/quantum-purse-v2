@@ -110,14 +110,24 @@ pub fn prompt_password(description: &str, prompt: &str) -> Result<SecureString, 
 /// description so the user knows what to enter.
 pub fn prompt_seed_phrase(variant: crate::types::SpxVariant) -> Result<SecureString, String> {
     let word_count = variant.required_bip39_size_in_word_total();
-    prompt_password(
-        &format!(
+    let path = pinentry_path()?;
+    let mut input = PassphraseInput::with_binary(&path)
+        .ok_or_else(|| format!("{} not executable at {}", PINENTRY_NAME, path.display()))?;
+    let secret = input
+        .with_title("Quantum Purse")
+        .with_description(&format!(
             "Enter your seed phrase to import.\n\
              The selected variant ({}) expects {} words separated by spaces.",
             variant, word_count
-        ),
-        "Seed phrase:",
-    )
+        ))
+        .with_prompt("Seed phrase:")
+        .with_ok("Import")
+        .with_cancel("Cancel")
+        .interact()
+        .map_err(map_err)?;
+    Ok(SecureString::from_string(
+        secret.expose_secret().to_string(),
+    ))
 }
 
 /// Open a password dialog with a confirmation field. pinentry's
