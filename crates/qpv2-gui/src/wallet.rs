@@ -363,6 +363,59 @@ impl App {
         }
     }
 
+    pub(crate) fn import_wallet_with_password(&mut self, variant: SpxVariant) {
+        let seed_phrase = match qpv2_core::pinentry::prompt_seed_phrase(variant) {
+            Ok(s) => s,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+
+        let pw = match qpv2_core::pinentry::prompt_password_with_confirmation(
+            "Choose a password for your imported wallet. You'll be prompted for it \
+             again on every signing operation.",
+            "Password:",
+            "Confirm:",
+            "Passwords do not match.",
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+
+        let strength_str = match qpv2_core::utilities::password_checker(&pw) {
+            Ok(bits) => format!(" Password strength: {} bits.", bits),
+            Err(e) => {
+                self.status = Status::Error(format!("Weak password: {}", e));
+                return;
+            }
+        };
+
+        let pw_for_account = pw.clone();
+        let vault = KeyVault::new(variant);
+
+        if let Err(e) =
+            vault.import_seed_phrase(seed_phrase, AuthKey::Password(pw), AuthMethod::Password)
+        {
+            self.status = Status::Error(format!("Failed to import wallet: {}", e));
+            return;
+        }
+
+        if let Err(e) = vault.gen_new_account(AuthKey::Password(pw_for_account)) {
+            self.status = Status::Error(format!("Failed to create first account: {}", e));
+            self.auth_method = Some(AuthMethod::Password);
+            return;
+        }
+
+        self.finalize_wallet_setup(
+            AuthMethod::Password,
+            &format!("Wallet imported successfully!{}", strength_str),
+        );
+    }
+
     /// Create a Keychain wallet. Generates a random 32-byte key,
     /// stores it in the platform credential store, then creates the
     /// wallet and first account.
@@ -469,6 +522,51 @@ impl App {
         }
     }
 
+    pub(crate) fn import_wallet_with_keychain(&mut self, variant: SpxVariant) {
+        let seed_phrase = match qpv2_core::pinentry::prompt_seed_phrase(variant) {
+            Ok(s) => s,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+
+        let key = match qpv2_core::utilities::get_random_bytes(32) {
+            Ok(b) => b,
+            Err(e) => {
+                self.status = Status::Error(format!("Failed to generate key: {}", e));
+                return;
+            }
+        };
+
+        if let Err(e) = keychain::store_key(&key) {
+            self.status = Status::Error(format!("Failed to store key in Keychain: {}", e));
+            return;
+        }
+
+        let key_for_account = key.clone();
+        let vault = KeyVault::new(variant);
+
+        if let Err(e) =
+            vault.import_seed_phrase(seed_phrase, AuthKey::CryptoKey(key), AuthMethod::Keychain)
+        {
+            let _ = keychain::delete_key();
+            self.status = Status::Error(format!("Failed to import wallet: {}", e));
+            return;
+        }
+
+        if let Err(e) = vault.gen_new_account(AuthKey::CryptoKey(key_for_account)) {
+            self.status = Status::Error(format!("Failed to create first account: {}", e));
+            self.auth_method = Some(AuthMethod::Keychain);
+            return;
+        }
+
+        self.finalize_wallet_setup(
+            AuthMethod::Keychain,
+            &format!("Wallet imported with {}!", keychain::short_name()),
+        );
+    }
+
     /// Create a FIDO2-authenticated wallet. Prompts for the device PIN
     /// via pinentry, registers a credential, then derives the encryption
     /// key via hmac-secret.
@@ -531,177 +629,6 @@ impl App {
         self.finalize_wallet_setup(
             AuthMethod::Fido2 { credential_id },
             "Wallet created with FIDO2 security key!",
-        );
-    }
-
-    // ── Import wallet ────────────────────────────────────────────
-
-    pub(crate) fn import_wallet_with_keychain(&mut self, variant: SpxVariant) {
-        let seed_phrase = match qpv2_core::pinentry::prompt_seed_phrase(variant) {
-            Ok(s) => s,
-            Err(e) => {
-                self.status = Status::Error(e);
-                return;
-            }
-        };
-
-        let key = match qpv2_core::utilities::get_random_bytes(32) {
-            Ok(b) => b,
-            Err(e) => {
-                self.status = Status::Error(format!("Failed to generate key: {}", e));
-                return;
-            }
-        };
-
-        if let Err(e) = keychain::store_key(&key) {
-            self.status = Status::Error(format!("Failed to store key in Keychain: {}", e));
-            return;
-        }
-
-        let key_for_account = key.clone();
-        let vault = KeyVault::new(variant);
-
-        if let Err(e) =
-            vault.import_seed_phrase(seed_phrase, AuthKey::CryptoKey(key), AuthMethod::Keychain)
-        {
-            let _ = keychain::delete_key();
-            self.status = Status::Error(format!("Failed to import wallet: {}", e));
-            return;
-        }
-
-        if let Err(e) = vault.gen_new_account(AuthKey::CryptoKey(key_for_account)) {
-            self.status = Status::Error(format!("Failed to create first account: {}", e));
-            self.auth_method = Some(AuthMethod::Keychain);
-            return;
-        }
-
-        self.finalize_wallet_setup(
-            AuthMethod::Keychain,
-            &format!("Wallet imported with {}!", keychain::short_name()),
-        );
-    }
-
-    pub(crate) fn import_wallet_with_fido2(&mut self, variant: SpxVariant) {
-        let seed_phrase = match qpv2_core::pinentry::prompt_seed_phrase(variant) {
-            Ok(s) => s,
-            Err(e) => {
-                self.status = Status::Error(e);
-                return;
-            }
-        };
-
-        let pin = match qpv2_core::pinentry::prompt_password(
-            "Enter your FIDO2 security key PIN to register a new credential.",
-            "PIN:",
-        ) {
-            Ok(s) => s,
-            Err(e) => {
-                self.status = Status::Error(e);
-                return;
-            }
-        };
-
-        let credential = match keychain::fido2::register(&pin) {
-            Ok(c) => c,
-            Err(e) => {
-                self.status = Status::Error(format!("FIDO2 registration failed: {}", e));
-                return;
-            }
-        };
-
-        let credential_id = hex::encode(&credential.credential_id);
-
-        let hmac_output = match keychain::fido2::authenticate(&credential.credential_id, &pin) {
-            Ok(h) => h,
-            Err(e) => {
-                self.status = Status::Error(format!("FIDO2 authentication failed: {}", e));
-                return;
-            }
-        };
-
-        let key = match qpv2_core::utilities::derive_vault_enc_key(&hmac_output) {
-            Ok(k) => k,
-            Err(e) => {
-                self.status = Status::Error(format!("Key derivation failed: {}", e));
-                return;
-            }
-        };
-
-        let key_for_account = key.clone();
-        let auth_method = AuthMethod::Fido2 {
-            credential_id: credential_id.clone(),
-        };
-        let vault = KeyVault::new(variant);
-
-        if let Err(e) =
-            vault.import_seed_phrase(seed_phrase, AuthKey::CryptoKey(key), auth_method.clone())
-        {
-            self.status = Status::Error(format!("Failed to import wallet: {}", e));
-            return;
-        }
-
-        if let Err(e) = vault.gen_new_account(AuthKey::CryptoKey(key_for_account)) {
-            self.status = Status::Error(format!("Failed to create first account: {}", e));
-            self.auth_method = Some(auth_method);
-            return;
-        }
-
-        self.finalize_wallet_setup(
-            AuthMethod::Fido2 { credential_id },
-            "Wallet imported with FIDO2 security key!",
-        );
-    }
-
-    pub(crate) fn import_wallet_with_password(&mut self, variant: SpxVariant) {
-        let seed_phrase = match qpv2_core::pinentry::prompt_seed_phrase(variant) {
-            Ok(s) => s,
-            Err(e) => {
-                self.status = Status::Error(e);
-                return;
-            }
-        };
-
-        let pw = match qpv2_core::pinentry::prompt_password_with_confirmation(
-            "Choose a password for your imported wallet. You'll be prompted for it \
-             again on every signing operation.",
-            "Password:",
-            "Confirm:",
-            "Passwords do not match.",
-        ) {
-            Ok(s) => s,
-            Err(e) => {
-                self.status = Status::Error(e);
-                return;
-            }
-        };
-
-        let strength_str = match qpv2_core::utilities::password_checker(&pw) {
-            Ok(bits) => format!(" Password strength: {} bits.", bits),
-            Err(e) => {
-                self.status = Status::Error(format!("Weak password: {}", e));
-                return;
-            }
-        };
-
-        let pw_for_account = pw.clone();
-        let vault = KeyVault::new(variant);
-
-        if let Err(e) =
-            vault.import_seed_phrase(seed_phrase, AuthKey::Password(pw), AuthMethod::Password)
-        {
-            self.status = Status::Error(format!("Failed to import wallet: {}", e));
-            return;
-        }
-
-        if let Err(e) = vault.gen_new_account(AuthKey::Password(pw_for_account)) {
-            self.status = Status::Error(format!("Failed to create first account: {}", e));
-            self.auth_method = Some(AuthMethod::Password);
-            return;
-        }
-
-        self.finalize_wallet_setup(
-            AuthMethod::Password,
-            &format!("Wallet imported successfully!{}", strength_str),
         );
     }
 
@@ -816,5 +743,76 @@ impl App {
                 self.status = Status::Error(format!("Failed to create account: {}", e));
             }
         }
+    }
+
+    pub(crate) fn import_wallet_with_fido2(&mut self, variant: SpxVariant) {
+        let seed_phrase = match qpv2_core::pinentry::prompt_seed_phrase(variant) {
+            Ok(s) => s,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+
+        let pin = match qpv2_core::pinentry::prompt_password(
+            "Enter your FIDO2 security key PIN to register a new credential.",
+            "PIN:",
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+
+        let credential = match keychain::fido2::register(&pin) {
+            Ok(c) => c,
+            Err(e) => {
+                self.status = Status::Error(format!("FIDO2 registration failed: {}", e));
+                return;
+            }
+        };
+
+        let credential_id = hex::encode(&credential.credential_id);
+
+        let hmac_output = match keychain::fido2::authenticate(&credential.credential_id, &pin) {
+            Ok(h) => h,
+            Err(e) => {
+                self.status = Status::Error(format!("FIDO2 authentication failed: {}", e));
+                return;
+            }
+        };
+
+        let key = match qpv2_core::utilities::derive_vault_enc_key(&hmac_output) {
+            Ok(k) => k,
+            Err(e) => {
+                self.status = Status::Error(format!("Key derivation failed: {}", e));
+                return;
+            }
+        };
+
+        let key_for_account = key.clone();
+        let auth_method = AuthMethod::Fido2 {
+            credential_id: credential_id.clone(),
+        };
+        let vault = KeyVault::new(variant);
+
+        if let Err(e) =
+            vault.import_seed_phrase(seed_phrase, AuthKey::CryptoKey(key), auth_method.clone())
+        {
+            self.status = Status::Error(format!("Failed to import wallet: {}", e));
+            return;
+        }
+
+        if let Err(e) = vault.gen_new_account(AuthKey::CryptoKey(key_for_account)) {
+            self.status = Status::Error(format!("Failed to create first account: {}", e));
+            self.auth_method = Some(auth_method);
+            return;
+        }
+
+        self.finalize_wallet_setup(
+            AuthMethod::Fido2 { credential_id },
+            "Wallet imported with FIDO2 security key!",
+        );
     }
 }
