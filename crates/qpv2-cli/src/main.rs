@@ -488,9 +488,7 @@ fn main() -> Result<(), String> {
 
             let (auth_method_display, compatible_frontends) = match wallet_info.auth_method {
                 AuthMethod::Password => ("Password".to_string(), "CLI and GUI"),
-                AuthMethod::Keychain => {
-                    (keychain::display_name().to_string(), "CLI and GUI")
-                }
+                AuthMethod::Keychain => (keychain::display_name().to_string(), "CLI and GUI"),
                 AuthMethod::Fido2 { .. } => ("FIDO2 Security Key".to_string(), "CLI and GUI"),
             };
 

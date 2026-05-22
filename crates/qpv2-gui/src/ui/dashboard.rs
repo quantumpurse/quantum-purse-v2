@@ -259,8 +259,7 @@ impl App {
                     ];
 
                     for (i, (icon, label, target_tab)) in actions.iter().enumerate() {
-                        let hover =
-                            CardHover::new(&cols[i], ("dash-action", i), &self.colors);
+                        let hover = CardHover::new(&cols[i], ("dash-action", i), &self.colors);
 
                         let response = egui::Frame::new()
                             .fill(hover.fill)

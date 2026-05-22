@@ -32,9 +32,11 @@ impl App {
                 return;
             }
         };
-        if let Err(e) =
-            ckb_node::wallet_helpers::lc::register_lock_scripts(&self.qp_client, lock_args_list, start_block)
-        {
+        if let Err(e) = ckb_node::wallet_helpers::lc::register_lock_scripts(
+            &self.qp_client,
+            lock_args_list,
+            start_block,
+        ) {
             self.status = Status::Error(format!("Failed to register scripts: {}", e));
         }
     }
@@ -653,14 +655,13 @@ impl App {
 
         let credential_id = hex::encode(&credential.credential_id);
 
-        let hmac_output =
-            match keychain::fido2::authenticate(&credential.credential_id, &pin) {
-                Ok(h) => h,
-                Err(e) => {
-                    self.status = Status::Error(format!("FIDO2 authentication failed: {}", e));
-                    return;
-                }
-            };
+        let hmac_output = match keychain::fido2::authenticate(&credential.credential_id, &pin) {
+            Ok(h) => h,
+            Err(e) => {
+                self.status = Status::Error(format!("FIDO2 authentication failed: {}", e));
+                return;
+            }
+        };
 
         let key = match qpv2_core::utilities::derive_vault_enc_key(&hmac_output) {
             Ok(k) => k,

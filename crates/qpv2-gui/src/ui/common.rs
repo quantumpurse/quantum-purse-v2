@@ -290,14 +290,23 @@ impl CardHover {
             10,
         );
 
-        let fill = if prev_hovered { accent_tint } else { colors.surface };
+        let fill = if prev_hovered {
+            accent_tint
+        } else {
+            colors.surface
+        };
         let stroke = if prev_hovered {
             egui::Stroke::new(1.0, colors.border2)
         } else {
             egui::Stroke::new(1.0, colors.border)
         };
 
-        Self { id, lift, fill, stroke }
+        Self {
+            id,
+            lift,
+            fill,
+            stroke,
+        }
     }
 
     pub(crate) fn apply_lift(&self, ui: &mut egui::Ui) {
@@ -306,7 +315,9 @@ impl CardHover {
 
     pub(crate) fn commit(&self, response: &egui::Response) {
         let hovered = response.hovered();
-        response.ctx.memory_mut(|m| m.data.insert_temp(self.id, hovered));
+        response
+            .ctx
+            .memory_mut(|m| m.data.insert_temp(self.id, hovered));
         if hovered {
             response.ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
         }

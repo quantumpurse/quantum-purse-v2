@@ -482,8 +482,7 @@ impl App {
                         ui.horizontal(|ui| {
                             let parsed =
                                 self.set_block_input.trim().replace(',', "").parse::<u64>();
-                            let valid =
-                                matches!(&parsed, Ok(b) if tip.is_none_or(|t| *b <= t));
+                            let valid = matches!(&parsed, Ok(b) if tip.is_none_or(|t| *b <= t));
 
                             let set_clicked =
                                 ui.add_enabled(valid, egui::Button::new("Set")).clicked();

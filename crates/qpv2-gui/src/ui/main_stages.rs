@@ -42,10 +42,8 @@ impl App {
                     let seg_width = ui.available_width();
                     let seg_height = 36.0;
                     let seg_radius = 8.0;
-                    let response = ui.allocate_response(
-                        egui::vec2(seg_width, seg_height),
-                        egui::Sense::click(),
-                    );
+                    let response = ui
+                        .allocate_response(egui::vec2(seg_width, seg_height), egui::Sense::click());
                     let rect = response.rect;
                     let mid = rect.center().x;
                     let painter = ui.painter();
@@ -58,13 +56,23 @@ impl App {
                         egui::StrokeKind::Outside,
                     );
 
-                    let left_rect = egui::Rect::from_min_max(rect.left_top(), egui::pos2(mid, rect.bottom()));
-                    let right_rect = egui::Rect::from_min_max(egui::pos2(mid, rect.top()), rect.right_bottom());
+                    let left_rect =
+                        egui::Rect::from_min_max(rect.left_top(), egui::pos2(mid, rect.bottom()));
+                    let right_rect =
+                        egui::Rect::from_min_max(egui::pos2(mid, rect.top()), rect.right_bottom());
 
                     if !self.import_mode {
-                        painter.rect_filled(left_rect.shrink(2.0), seg_radius - 2.0, self.colors.accent);
+                        painter.rect_filled(
+                            left_rect.shrink(2.0),
+                            seg_radius - 2.0,
+                            self.colors.accent,
+                        );
                     } else {
-                        painter.rect_filled(right_rect.shrink(2.0), seg_radius - 2.0, self.colors.accent);
+                        painter.rect_filled(
+                            right_rect.shrink(2.0),
+                            seg_radius - 2.0,
+                            self.colors.accent,
+                        );
                     }
 
                     let (left_text_color, right_text_color) = if !self.import_mode {
@@ -103,7 +111,10 @@ impl App {
                     // Divider
                     let divider_rect = ui.available_rect_before_wrap();
                     ui.painter().line_segment(
-                        [divider_rect.left_top(), egui::pos2(divider_rect.right(), divider_rect.top())],
+                        [
+                            divider_rect.left_top(),
+                            egui::pos2(divider_rect.right(), divider_rect.top()),
+                        ],
                         egui::Stroke::new(1.0, self.colors.border),
                     );
                     ui.add_space(1.0);
@@ -160,7 +171,10 @@ impl App {
                             let size = galley.size() + pad * 2.0;
                             let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
                             let tint = egui::Color32::from_rgba_unmultiplied(
-                                color.r(), color.g(), color.b(), 20,
+                                color.r(),
+                                color.g(),
+                                color.b(),
+                                20,
                             );
                             ui.painter().rect_filled(rect, 4.0, tint);
                             ui.painter().galley(rect.min + pad, galley, color);
@@ -168,8 +182,13 @@ impl App {
                         pill(ui, security, self.colors.accent);
                         pill(ui, speed, self.colors.accent2);
                         if self.import_mode {
-                            let word_count = self.selected_variant.required_bip39_size_in_word_total();
-                            pill(ui, &format!("Requires {} words", word_count), self.colors.text_muted);
+                            let word_count =
+                                self.selected_variant.required_bip39_size_in_word_total();
+                            pill(
+                                ui,
+                                &format!("Requires {} words", word_count),
+                                self.colors.text_muted,
+                            );
                         }
                     });
 
@@ -178,7 +197,10 @@ impl App {
                     // Divider
                     let divider_rect = ui.available_rect_before_wrap();
                     ui.painter().line_segment(
-                        [divider_rect.left_top(), egui::pos2(divider_rect.right(), divider_rect.top())],
+                        [
+                            divider_rect.left_top(),
+                            egui::pos2(divider_rect.right(), divider_rect.top()),
+                        ],
                         egui::Stroke::new(1.0, self.colors.border),
                     );
                     ui.add_space(1.0);
@@ -678,16 +700,26 @@ impl App {
 
 fn variant_info(v: SpxVariant) -> (&'static str, &'static str) {
     let security = match v {
-        SpxVariant::Sha2128S | SpxVariant::Sha2128F
-        | SpxVariant::Shake128S | SpxVariant::Shake128F => "128-bit security",
-        SpxVariant::Sha2192S | SpxVariant::Sha2192F
-        | SpxVariant::Shake192S | SpxVariant::Shake192F => "192-bit security",
-        SpxVariant::Sha2256S | SpxVariant::Sha2256F
-        | SpxVariant::Shake256S | SpxVariant::Shake256F => "256-bit security",
+        SpxVariant::Sha2128S
+        | SpxVariant::Sha2128F
+        | SpxVariant::Shake128S
+        | SpxVariant::Shake128F => "128-bit security",
+        SpxVariant::Sha2192S
+        | SpxVariant::Sha2192F
+        | SpxVariant::Shake192S
+        | SpxVariant::Shake192F => "192-bit security",
+        SpxVariant::Sha2256S
+        | SpxVariant::Sha2256F
+        | SpxVariant::Shake256S
+        | SpxVariant::Shake256F => "256-bit security",
     };
     let speed = match v {
-        SpxVariant::Sha2128S | SpxVariant::Sha2192S | SpxVariant::Sha2256S
-        | SpxVariant::Shake128S | SpxVariant::Shake192S | SpxVariant::Shake256S => "Compact signatures",
+        SpxVariant::Sha2128S
+        | SpxVariant::Sha2192S
+        | SpxVariant::Sha2256S
+        | SpxVariant::Shake128S
+        | SpxVariant::Shake192S
+        | SpxVariant::Shake256S => "Compact signatures",
         _ => "Fast signing",
     };
     (security, speed)
