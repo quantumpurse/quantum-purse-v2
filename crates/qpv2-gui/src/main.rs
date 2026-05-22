@@ -35,6 +35,7 @@ pub(crate) struct App {
 
     // Setup screen state.
     pub(crate) selected_variant: SpxVariant,
+    pub(crate) import_mode: bool,
 
     // Unlocked screen state.
     pub(crate) active_tab: Tab,
@@ -281,6 +282,7 @@ impl App {
             status: startup_status,
             colors,
             selected_variant: SpxVariant::Sha2128S,
+            import_mode: false,
             active_tab: Tab::Dashboard,
             accounts,
             confirm_remove: false,

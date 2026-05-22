@@ -105,6 +105,21 @@ pub fn prompt_password(description: &str, prompt: &str) -> Result<SecureString, 
     ))
 }
 
+/// Prompt for a BIP39 seed phrase via pinentry. The `variant`
+/// determines the expected word count, which is shown in the dialog
+/// description so the user knows what to enter.
+pub fn prompt_seed_phrase(variant: crate::types::SpxVariant) -> Result<SecureString, String> {
+    let word_count = variant.required_bip39_size_in_word_total();
+    prompt_password(
+        &format!(
+            "Enter your seed phrase to import.\n\
+             The selected variant ({}) expects {} words separated by spaces.",
+            variant, word_count
+        ),
+        "Seed phrase:",
+    )
+}
+
 /// Open a password dialog with a confirmation field. pinentry's
 /// `SETREPEAT` makes the binary itself enforce match — we receive a
 /// single `SecretString` only after both fields agree. `mismatch_error`

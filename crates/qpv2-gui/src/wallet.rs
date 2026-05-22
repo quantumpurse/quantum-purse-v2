@@ -39,6 +39,31 @@ impl App {
         }
     }
 
+    /// Common transition from Setup to Unlocked after successful wallet
+    /// creation or import. Loads accounts, registers LC scripts, sets
+    /// the screen, and kicks off all background fetches.
+    fn finalize_wallet_setup(&mut self, auth_method: AuthMethod, success_msg: &str) {
+        match KeyVault::get_all_sphincs_lock_args() {
+            Ok(lock_args) => {
+                self.accounts = lock_args;
+                self.auth_method = Some(auth_method);
+                self.register_lock_scripts_with_light_client(&self.accounts.clone());
+                self.screen = Screen::Unlocked;
+                self.status = Status::Info(success_msg.to_string());
+                self.last_poll_time = std::time::Instant::now();
+                self.load_tx_history_from_disk();
+                self.fetch_all_balances();
+                self.fetch_tx_history(true);
+                self.fetch_dao_cells();
+                self.fetch_node_status();
+            }
+            Err(e) => {
+                self.status = Status::Error(format!("Failed to read accounts: {}", e));
+                self.auth_method = Some(auth_method);
+            }
+        }
+    }
+
     /// Kicks off a background detection of the earliest funding block
     /// across all accounts via an ad-hoc `FullNodeClient` against the
     /// public RPC endpoint for the active network. Result lands in
@@ -113,6 +138,7 @@ impl App {
         self.accounts.clear();
         self.balances.clear();
         self.confirm_remove = false;
+        self.import_mode = false;
         self.active_tab = Tab::Dashboard;
         self.screen = Screen::Locked;
         self.status = Status::None;
@@ -284,25 +310,10 @@ impl App {
             return;
         }
 
-        match KeyVault::get_all_sphincs_lock_args() {
-            Ok(lock_args) => {
-                self.accounts = lock_args;
-                self.auth_method = Some(AuthMethod::Password);
-                self.register_lock_scripts_with_light_client(&self.accounts.clone());
-                self.screen = Screen::Unlocked;
-                self.status = Status::Info(format!("Wallet created successfully!{}", strength_str));
-                self.last_poll_time = std::time::Instant::now();
-                self.load_tx_history_from_disk();
-                self.fetch_all_balances();
-                self.fetch_tx_history(true);
-                self.fetch_dao_cells();
-                self.fetch_node_status();
-            }
-            Err(e) => {
-                self.status = Status::Error(format!("Failed to read accounts: {}", e));
-                self.auth_method = Some(AuthMethod::Password);
-            }
-        }
+        self.finalize_wallet_setup(
+            AuthMethod::Password,
+            &format!("Wallet created successfully!{}", strength_str),
+        );
     }
 
     /// Prompt for the wallet password and derive a new account.
@@ -384,28 +395,10 @@ impl App {
             return;
         }
 
-        match KeyVault::get_all_sphincs_lock_args() {
-            Ok(lock_args) => {
-                self.accounts = lock_args;
-                self.auth_method = Some(AuthMethod::Keychain);
-                self.register_lock_scripts_with_light_client(&self.accounts.clone());
-                self.screen = Screen::Unlocked;
-                self.status = Status::Info(format!(
-                    "Wallet created with {}!",
-                    keychain::short_name()
-                ));
-                self.last_poll_time = std::time::Instant::now();
-                self.load_tx_history_from_disk();
-                self.fetch_all_balances();
-                self.fetch_tx_history(true);
-                self.fetch_dao_cells();
-                self.fetch_node_status();
-            }
-            Err(e) => {
-                self.status = Status::Error(format!("Failed to read accounts: {}", e));
-                self.auth_method = Some(AuthMethod::Keychain);
-            }
-        }
+        self.finalize_wallet_setup(
+            AuthMethod::Keychain,
+            &format!("Wallet created with {}!", keychain::short_name()),
+        );
     }
 
     /// Unlock via the platform credential store, then transition to
@@ -535,25 +528,181 @@ impl App {
             return;
         }
 
-        match KeyVault::get_all_sphincs_lock_args() {
-            Ok(lock_args) => {
-                self.accounts = lock_args;
-                self.auth_method = Some(AuthMethod::Fido2 { credential_id });
-                self.register_lock_scripts_with_light_client(&self.accounts.clone());
-                self.screen = Screen::Unlocked;
-                self.status = Status::Info("Wallet created with FIDO2 security key!".to_string());
-                self.last_poll_time = std::time::Instant::now();
-                self.load_tx_history_from_disk();
-                self.fetch_all_balances();
-                self.fetch_tx_history(true);
-                self.fetch_dao_cells();
-                self.fetch_node_status();
-            }
+        self.finalize_wallet_setup(
+            AuthMethod::Fido2 { credential_id },
+            "Wallet created with FIDO2 security key!",
+        );
+    }
+
+    // ── Import wallet ────────────────────────────────────────────
+
+    pub(crate) fn import_wallet_with_keychain(&mut self, variant: SpxVariant) {
+        let seed_phrase = match qpv2_core::pinentry::prompt_seed_phrase(variant) {
+            Ok(s) => s,
             Err(e) => {
-                self.status = Status::Error(format!("Failed to read accounts: {}", e));
-                self.auth_method = Some(AuthMethod::Fido2 { credential_id });
+                self.status = Status::Error(e);
+                return;
             }
+        };
+
+        let key = match qpv2_core::utilities::get_random_bytes(32) {
+            Ok(b) => b,
+            Err(e) => {
+                self.status = Status::Error(format!("Failed to generate key: {}", e));
+                return;
+            }
+        };
+
+        if let Err(e) = keychain::store_key(&key) {
+            self.status = Status::Error(format!("Failed to store key in Keychain: {}", e));
+            return;
         }
+
+        let key_for_account = key.clone();
+        let vault = KeyVault::new(variant);
+
+        if let Err(e) =
+            vault.import_seed_phrase(seed_phrase, AuthKey::CryptoKey(key), AuthMethod::Keychain)
+        {
+            let _ = keychain::delete_key();
+            self.status = Status::Error(format!("Failed to import wallet: {}", e));
+            return;
+        }
+
+        if let Err(e) = vault.gen_new_account(AuthKey::CryptoKey(key_for_account)) {
+            self.status = Status::Error(format!("Failed to create first account: {}", e));
+            self.auth_method = Some(AuthMethod::Keychain);
+            return;
+        }
+
+        self.finalize_wallet_setup(
+            AuthMethod::Keychain,
+            &format!("Wallet imported with {}!", keychain::short_name()),
+        );
+    }
+
+    pub(crate) fn import_wallet_with_fido2(&mut self, variant: SpxVariant) {
+        let seed_phrase = match qpv2_core::pinentry::prompt_seed_phrase(variant) {
+            Ok(s) => s,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+
+        let pin = match qpv2_core::pinentry::prompt_password(
+            "Enter your FIDO2 security key PIN to register a new credential.",
+            "PIN:",
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+
+        let credential = match keychain::fido2::register(&pin) {
+            Ok(c) => c,
+            Err(e) => {
+                self.status = Status::Error(format!("FIDO2 registration failed: {}", e));
+                return;
+            }
+        };
+
+        let credential_id = hex::encode(&credential.credential_id);
+
+        let hmac_output = match keychain::fido2::authenticate(&credential.credential_id, &pin) {
+            Ok(h) => h,
+            Err(e) => {
+                self.status = Status::Error(format!("FIDO2 authentication failed: {}", e));
+                return;
+            }
+        };
+
+        let key = match qpv2_core::utilities::derive_vault_enc_key(&hmac_output) {
+            Ok(k) => k,
+            Err(e) => {
+                self.status = Status::Error(format!("Key derivation failed: {}", e));
+                return;
+            }
+        };
+
+        let key_for_account = key.clone();
+        let auth_method = AuthMethod::Fido2 {
+            credential_id: credential_id.clone(),
+        };
+        let vault = KeyVault::new(variant);
+
+        if let Err(e) =
+            vault.import_seed_phrase(seed_phrase, AuthKey::CryptoKey(key), auth_method.clone())
+        {
+            self.status = Status::Error(format!("Failed to import wallet: {}", e));
+            return;
+        }
+
+        if let Err(e) = vault.gen_new_account(AuthKey::CryptoKey(key_for_account)) {
+            self.status = Status::Error(format!("Failed to create first account: {}", e));
+            self.auth_method = Some(auth_method);
+            return;
+        }
+
+        self.finalize_wallet_setup(
+            AuthMethod::Fido2 { credential_id },
+            "Wallet imported with FIDO2 security key!",
+        );
+    }
+
+    pub(crate) fn import_wallet_with_password(&mut self, variant: SpxVariant) {
+        let seed_phrase = match qpv2_core::pinentry::prompt_seed_phrase(variant) {
+            Ok(s) => s,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+
+        let pw = match qpv2_core::pinentry::prompt_password_with_confirmation(
+            "Choose a password for your imported wallet. You'll be prompted for it \
+             again on every signing operation.",
+            "Password:",
+            "Confirm:",
+            "Passwords do not match.",
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+
+        let strength_str = match qpv2_core::utilities::password_checker(&pw) {
+            Ok(bits) => format!(" Password strength: {} bits.", bits),
+            Err(e) => {
+                self.status = Status::Error(format!("Weak password: {}", e));
+                return;
+            }
+        };
+
+        let pw_for_account = pw.clone();
+        let vault = KeyVault::new(variant);
+
+        if let Err(e) =
+            vault.import_seed_phrase(seed_phrase, AuthKey::Password(pw), AuthMethod::Password)
+        {
+            self.status = Status::Error(format!("Failed to import wallet: {}", e));
+            return;
+        }
+
+        if let Err(e) = vault.gen_new_account(AuthKey::Password(pw_for_account)) {
+            self.status = Status::Error(format!("Failed to create first account: {}", e));
+            self.auth_method = Some(AuthMethod::Password);
+            return;
+        }
+
+        self.finalize_wallet_setup(
+            AuthMethod::Password,
+            &format!("Wallet imported successfully!{}", strength_str),
+        );
     }
 
     /// Unlock via FIDO2 hmac-secret, then transition to Unlocked.

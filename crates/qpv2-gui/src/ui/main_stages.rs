@@ -38,14 +38,65 @@ impl App {
                 .show(ui, |ui| {
                     ui.set_max_width(400.0);
 
-                    ui.vertical_centered(|ui| {
-                        ui.label(
-                            egui::RichText::new("Create New Wallet")
-                                .size(18.0)
-                                .color(self.colors.text)
-                                .strong(),
-                        );
-                    });
+                    // Segmented toggle: New Wallet | Import Wallet
+                    let seg_width = ui.available_width();
+                    let seg_height = 36.0;
+                    let seg_radius = 8.0;
+                    let response = ui.allocate_response(
+                        egui::vec2(seg_width, seg_height),
+                        egui::Sense::click(),
+                    );
+                    let rect = response.rect;
+                    let mid = rect.center().x;
+                    let painter = ui.painter();
+
+                    painter.rect_filled(rect, seg_radius, self.colors.surface);
+                    painter.rect_stroke(
+                        rect,
+                        seg_radius,
+                        egui::Stroke::new(1.0, self.colors.border),
+                        egui::StrokeKind::Outside,
+                    );
+
+                    let left_rect = egui::Rect::from_min_max(rect.left_top(), egui::pos2(mid, rect.bottom()));
+                    let right_rect = egui::Rect::from_min_max(egui::pos2(mid, rect.top()), rect.right_bottom());
+
+                    if !self.import_mode {
+                        painter.rect_filled(left_rect.shrink(2.0), seg_radius - 2.0, self.colors.accent);
+                    } else {
+                        painter.rect_filled(right_rect.shrink(2.0), seg_radius - 2.0, self.colors.accent);
+                    }
+
+                    let (left_text_color, right_text_color) = if !self.import_mode {
+                        (self.colors.bg, self.colors.text_muted)
+                    } else {
+                        (self.colors.text_muted, self.colors.bg)
+                    };
+
+                    painter.text(
+                        left_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "New Wallet",
+                        egui::FontId::proportional(13.0),
+                        left_text_color,
+                    );
+                    painter.text(
+                        right_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "Import Wallet",
+                        egui::FontId::proportional(13.0),
+                        right_text_color,
+                    );
+
+                    if response.clicked() {
+                        if let Some(pos) = response.interact_pointer_pos() {
+                            self.import_mode = pos.x >= mid;
+                        }
+                    }
+
+                    if response.hovered() {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                    }
 
                     ui.add_space(20.0);
 
@@ -116,6 +167,10 @@ impl App {
                         };
                         pill(ui, security, self.colors.accent);
                         pill(ui, speed, self.colors.accent2);
+                        if self.import_mode {
+                            let word_count = self.selected_variant.required_bip39_size_in_word_total();
+                            pill(ui, &format!("Requires {} words", word_count), self.colors.text_muted);
+                        }
                     });
 
                     ui.add_space(24.0);
@@ -137,8 +192,10 @@ impl App {
                     );
                     ui.add_space(10.0);
 
+                    let verb = if self.import_mode { "Import" } else { "Create" };
+
                     {
-                        let label = format!("Create with {}", keychain::short_name());
+                        let label = format!("{} with {}", verb, keychain::short_name());
                         let pk_button = egui::Button::new(
                             egui::RichText::new(label).size(15.0).color(self.colors.bg),
                         )
@@ -147,7 +204,11 @@ impl App {
                         .min_size(egui::vec2(field_width, 44.0));
 
                         if ui.add(pk_button).clicked() {
-                            self.create_wallet_with_keychain(self.selected_variant);
+                            if self.import_mode {
+                                self.import_wallet_with_keychain(self.selected_variant);
+                            } else {
+                                self.create_wallet_with_keychain(self.selected_variant);
+                            }
                         }
 
                         ui.add_space(8.0);
@@ -155,7 +216,7 @@ impl App {
 
                     {
                         let fido2_btn = egui::Button::new(
-                            egui::RichText::new("Create with Security Key")
+                            egui::RichText::new(format!("{} with Security Key", verb))
                                 .size(15.0)
                                 .color(self.colors.text),
                         )
@@ -165,14 +226,18 @@ impl App {
                         .min_size(egui::vec2(field_width, 44.0));
 
                         if ui.add(fido2_btn).clicked() {
-                            self.create_wallet_with_fido2(self.selected_variant);
+                            if self.import_mode {
+                                self.import_wallet_with_fido2(self.selected_variant);
+                            } else {
+                                self.create_wallet_with_fido2(self.selected_variant);
+                            }
                         }
 
                         ui.add_space(8.0);
                     }
 
                     let pw_btn = egui::Button::new(
-                        egui::RichText::new("Create with Password")
+                        egui::RichText::new(format!("{} with Password", verb))
                             .size(15.0)
                             .color(self.colors.text_muted),
                     )
@@ -181,7 +246,11 @@ impl App {
                     .corner_radius(10.0)
                     .min_size(egui::vec2(field_width, 44.0));
                     if ui.add(pw_btn).clicked() {
-                        self.create_wallet_with_password(self.selected_variant);
+                        if self.import_mode {
+                            self.import_wallet_with_password(self.selected_variant);
+                        } else {
+                            self.create_wallet_with_password(self.selected_variant);
+                        }
                     }
                 });
 
