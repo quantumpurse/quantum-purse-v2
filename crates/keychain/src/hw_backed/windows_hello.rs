@@ -11,6 +11,7 @@ use crate::{ACCOUNT, KEY_LEN, SERVICE};
 use qpv2_core::SecureVec;
 use std::path::PathBuf;
 use std::ptr;
+use windows_sys::Win32::Foundation::{NTE_BAD_KEYSET, NTE_USER_CANCELLED};
 use windows_sys::Win32::Security::Cryptography::{
     NCryptCreatePersistedKey, NCryptDecrypt, NCryptDeleteKey, NCryptEncrypt, NCryptFinalizeKey,
     NCryptFreeObject, NCryptOpenKey, NCryptOpenStorageProvider, NCryptSetProperty,
@@ -20,9 +21,6 @@ use windows_sys::Win32::Security::Cryptography::{
 };
 
 const WRAPPED_KEY_FILE: &str = "wrapped_key.bin";
-
-const NTE_BAD_KEYSET: i32 = -2146893802_i32; // 0x80090016
-const NTE_USER_CANCELLED: i32 = -2146893770_i32; // 0x80090036
 
 fn passport_provider() -> Vec<u16> {
     "Microsoft Passport Key Storage Provider"
