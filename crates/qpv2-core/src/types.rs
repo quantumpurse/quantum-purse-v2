@@ -49,7 +49,7 @@ pub enum AuthMethod {
 }
 
 /// Authentication key used to encrypt/decrypt the vault.
-/// Unifies password-based and PRF-derived key paths so that all core functions
+/// Unifies password-based and crypto key paths so that all core functions
 /// accept a single parameter regardless of how the key was obtained.
 pub enum AuthKey {
     /// Password to be hashed with Scrypt before use as AES-256 key.
