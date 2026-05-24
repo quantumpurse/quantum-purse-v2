@@ -103,7 +103,10 @@ fn require_hardware_backed(hkey: NCRYPT_KEY_HANDLE) -> Result<(), String> {
         )
     };
     if status != 0 {
-        return Err(status_to_err(status, "Failed to query key implementation type"));
+        return Err(status_to_err(
+            status,
+            "Failed to query key implementation type",
+        ));
     }
     if impl_type & NCRYPT_IMPL_HARDWARE_FLAG == 0 {
         return Err(
