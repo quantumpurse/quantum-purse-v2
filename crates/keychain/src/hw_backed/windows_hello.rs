@@ -14,8 +14,9 @@ use std::ptr;
 use windows_sys::Win32::Foundation::{NTE_BAD_KEYSET, NTE_USER_CANCELLED};
 use windows_sys::Win32::Security::Cryptography::{
     NCryptCreatePersistedKey, NCryptDecrypt, NCryptDeleteKey, NCryptEncrypt, NCryptFinalizeKey,
-    NCryptFreeObject, NCryptOpenKey, NCryptOpenStorageProvider, NCryptSetProperty,
-    BCRYPT_OAEP_PADDING_INFO, BCRYPT_RSA_ALGORITHM, BCRYPT_SHA256_ALGORITHM, NCRYPT_KEY_HANDLE,
+    NCryptFreeObject, NCryptGetProperty, NCryptOpenKey, NCryptOpenStorageProvider,
+    NCryptSetProperty, BCRYPT_OAEP_PADDING_INFO, BCRYPT_RSA_ALGORITHM, BCRYPT_SHA256_ALGORITHM,
+    NCRYPT_IMPL_HARDWARE_FLAG, NCRYPT_IMPL_TYPE_PROPERTY, NCRYPT_KEY_HANDLE,
     NCRYPT_OVERWRITE_KEY_FLAG, NCRYPT_PAD_OAEP_FLAG, NCRYPT_PERSIST_FLAG, NCRYPT_PROV_HANDLE,
     NCRYPT_SILENT_FLAG,
 };
@@ -88,13 +89,41 @@ fn open_provider() -> Result<ProvHandle, String> {
     Ok(ProvHandle(hprov))
 }
 
+fn require_hardware_backed(hkey: NCRYPT_KEY_HANDLE) -> Result<(), String> {
+    let mut impl_type: u32 = 0;
+    let mut result_len: u32 = 0;
+    let status = unsafe {
+        NCryptGetProperty(
+            hkey,
+            NCRYPT_IMPL_TYPE_PROPERTY,
+            &mut impl_type as *mut u32 as *mut u8,
+            std::mem::size_of::<u32>() as u32,
+            &mut result_len,
+            0,
+        )
+    };
+    if status != 0 {
+        return Err(status_to_err(status, "Failed to query key implementation type"));
+    }
+    if impl_type & NCRYPT_IMPL_HARDWARE_FLAG == 0 {
+        return Err(
+            "Hardware-backed key storage requires TPM 2.0. Your system does not \
+             have a compatible TPM, or Windows Hello is not configured to use it."
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
 fn open_or_create_key(hprov: NCRYPT_PROV_HANDLE) -> Result<KeyHandle, String> {
     let name = key_name();
     let mut hkey: NCRYPT_KEY_HANDLE = 0;
 
     let status = unsafe { NCryptOpenKey(hprov, &mut hkey, name.as_ptr(), 0, 0) };
     if status == 0 {
-        return Ok(KeyHandle(hkey));
+        let key = KeyHandle(hkey);
+        require_hardware_backed(key.0)?;
+        return Ok(key);
     }
     if status != NTE_BAD_KEYSET {
         return Err(status_to_err(status, "Failed to open existing key"));
@@ -184,6 +213,13 @@ fn open_or_create_key(hprov: NCRYPT_PROV_HANDLE) -> Result<KeyHandle, String> {
     let status = unsafe { NCryptFinalizeKey(key.0, 0) };
     if status != 0 {
         return Err(status_to_err(status, "Failed to finalize key"));
+    }
+
+    if let Err(e) = require_hardware_backed(key.0) {
+        let handle = key.0;
+        std::mem::forget(key);
+        unsafe { NCryptDeleteKey(handle, 0) };
+        return Err(e);
     }
 
     Ok(key)
