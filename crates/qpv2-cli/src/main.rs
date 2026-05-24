@@ -560,7 +560,7 @@ fn main() -> Result<(), String> {
         Commands::Info => {
             let (wallet_id, name) = find_wallet(&cli.wallet_name)?;
             let accounts = KeyVault::get_all_sphincs_lock_args(wallet_id)?;
-            let data_path = qpv2_core::db::get_data_dir().map_err(|e| e.to_string())?;
+            let data_path = qpv2_core::db::get_wallet_dir(wallet_id).map_err(|e| e.to_string())?;
 
             let wallet_info = KeyVault::read_wallet_info(wallet_id)?;
 
