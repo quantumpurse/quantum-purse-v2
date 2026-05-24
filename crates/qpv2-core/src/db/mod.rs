@@ -37,7 +37,7 @@ pub fn create_wallet_dir(wallet_id: u32) -> Result<PathBuf, KeyVaultDBError> {
 }
 
 fn get_master_seed_path(wallet_id: u32) -> Result<PathBuf, KeyVaultDBError> {
-    Ok(get_wallet_dir(wallet_id)?.join("master_seed.json"))
+    Ok(get_wallet_dir(wallet_id)?.join("seed.json"))
 }
 
 fn get_accounts_path(wallet_id: u32) -> Result<PathBuf, KeyVaultDBError> {
@@ -45,7 +45,7 @@ fn get_accounts_path(wallet_id: u32) -> Result<PathBuf, KeyVaultDBError> {
 }
 
 fn get_wallet_info_path(wallet_id: u32) -> Result<PathBuf, KeyVaultDBError> {
-    Ok(get_wallet_dir(wallet_id)?.join("wallet_info.json"))
+    Ok(get_wallet_dir(wallet_id)?.join("meta.json"))
 }
 
 pub fn get_tx_history_path(wallet_id: u32, network_tag: &str) -> Result<PathBuf, KeyVaultDBError> {

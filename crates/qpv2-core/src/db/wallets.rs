@@ -58,7 +58,7 @@ pub fn rename_wallet(wallet_id: u32, new_name: &str) -> Result<(), KeyVaultDBErr
 			KeyVaultDBError::DatabaseError(format!("Wallet '{}' not found.", wallet_id))
 		})?;
 	info.name = new_name.to_string();
-	let path = get_wallet_dir(wallet_id)?.join("wallet_info.json");
+	let path = get_wallet_dir(wallet_id)?.join("meta.json");
 	let json = serde_json::to_string_pretty(&info)?;
 	std::fs::write(path, json.as_bytes())?;
 	Ok(())

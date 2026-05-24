@@ -132,7 +132,7 @@ pub(crate) struct App {
     pub(crate) lc_scripts_registered: bool,
 
     // ── Auth state ──
-    // The auth method recorded in `wallet_info.json`, populated at
+    // The auth method recorded in `meta.json`, populated at
     // startup and after wallet creation. Drives Locked-screen rendering
     // (Touch ID button vs none) and per-op routing (Touch ID async
     // flow vs synchronous pinentry prompt).
@@ -325,7 +325,7 @@ impl App {
             earliest_funding_block_rx: None,
             lc_qr_dep_warmup_done: false,
             lc_scripts_registered: false,
-            // Auth method is read from wallet_info.json on demand by
+            // Auth method is read from meta.json on demand by
             // each flow that needs it; cached `None` here. Setup screen
             // doesn't need it; Locked screen reads it before rendering.
             auth_method,

@@ -44,7 +44,7 @@ pub fn list_devices() -> Vec<HidInfo> {
 /// Requires user interaction: touch the security key when it blinks.
 /// The PIN is the authenticator's client PIN (set during first use).
 ///
-/// Returns the credential ID to persist in `wallet_info.json`.
+/// Returns the credential ID to persist in `meta.json`.
 pub fn register(pin: &str) -> Result<Fido2Credential, String> {
     let cfg = LibCfg::init();
     let device = FidoKeyHidFactory::create(&cfg).map_err(map_err)?;

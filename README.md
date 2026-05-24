@@ -4,6 +4,15 @@ Quantum Purse version 2 built entirely in Rust. Secure and Performant. There are
 
 Developed in collaboration with Claude Opus (4.5 / 4.6): developer-led architecture, abstraction boundaries, and design decisions; Claude-authored implementation under review.
 
+### Crates
+
+- **`qpv2-core`** — Core library. Seed generation, AES-256-GCM encryption, HKDF-SHA256 key derivation, Scrypt password hashing, SPHINCS+ signing across all 12 parameter sets, and file-based JSON storage with multi-wallet support.
+- **`qpv2-cli`** — CLI binary built with `clap`. Supports all authentication methods (password, keychain, FIDO2). Multi-wallet management, account derivation, raw signing, and CKB transaction signing.
+- **`qpv2-gui`** — GUI binary built with `egui`/`eframe`. Supports all authentication methods. Provides node management, CKB transfers, NervosDAO operations (deposit/prepare/withdraw), and account overview with balance display.
+- **`keychain`** — Multi-platform credential storage. Touch ID via Data Protection Keychain (macOS), Windows Hello + TPM via Microsoft Passport KSP (Windows), TPM 2.0 seal/unseal with PIN (Linux), and FIDO2 hmac-secret extension for hardware security keys.
+- **`node-manager`** — CKB node lifecycle and RPC abstraction. Unified `Client` trait over public RPC endpoints, light client (header-only sync), and full node (complete chain verification). Transaction builders for transfers and NervosDAO operations.
+- **`ckb-fips205-utils`** — CKB transaction hashing utilities for SPHINCS+. Computes `CKB_TX_MESSAGE_ALL` signing message from mock transactions. Feature-gated for verifying, signing, message extraction, and serde support.
+
 ###### <u>Feature list</u>:
 
 | Feature               | Details              |
@@ -85,25 +94,11 @@ The GUI's password dialog (`pinentry`) is built from source via
 
 ### Build & Run
 ```shell
-# Build CLI (debug)
-./build.sh cli
+# Build
+./build.sh <cli|gui> [--release] [--sign] [--clean]
 
-# Build CLI (release, codesigned for keychain support)
-./build.sh cli --release
-
-# Build GUI (debug, macOS only)
-./build.sh gui
-
-# Build GUI (release, macOS only)
-./build.sh gui --release
-
-# Run CLI
-./launch.sh cli
-./launch.sh cli --release
-
-# Run GUI
-./launch.sh gui
-./launch.sh gui --release
+# Run
+./launch.sh <cli|gui> [--release]
 
 # Run tests
 cargo test --workspace
@@ -116,54 +111,6 @@ The CLI build includes codesigning with entitlements, which is required for keyc
 The CLI supports multiple wallets. The global `--wallet <name>` option selects which wallet to operate on. It is required for `init` and `mnemonic import` (to name the wallet being created). For other commands, it auto-selects if only one wallet exists; if multiple wallets exist, it must be specified.
 
 ```shell
-# Initialize a new wallet (password)
-qpv2-cli --wallet "Spending" init --variant <VARIANT>
-
-# Initialize a new wallet (platform credential store)
-qpv2-cli --wallet "Savings" init --variant <VARIANT> --keychain
-
-# Import mnemonic (password)
-qpv2-cli --wallet "Recovered" mnemonic import --variant <VARIANT>
-
-# Import mnemonic (platform credential store)
-qpv2-cli --wallet "Recovered" mnemonic import --variant <VARIANT> --keychain
-
-# Export mnemonic seed phrase
-qpv2-cli mnemonic export
-
-# Generate a new account
-qpv2-cli account new
-
-# List all accounts
-qpv2-cli account list
-
-# Recover accounts
-qpv2-cli account recover --count <COUNT>
-
-# Generate account batch for discovery
-qpv2-cli account try-gen-batch --start <START> --count <COUNT>
-
-# Sign a raw SPHINCS+ message
-qpv2-cli sign --identifier <IDENTIFIER> --message <MESSAGE>
-
-# Sign a CKB transaction message
-qpv2-cli ckb sign --lock-args <LOCK_ARGS> --message <MESSAGE>
-
-# Get CKB transaction message hash
-qpv2-cli ckb get-tx-message --tx-file <TX_FILE>
-
-# Display wallet information
-qpv2-cli info
-
-# Remove a wallet and all its data
-qpv2-cli clear
-
-# List all wallets
-qpv2-cli wallet list
-
-# Rename a wallet
-qpv2-cli --wallet "OldName" wallet rename --to "NewName"
-
 # Show help
 qpv2-cli --help
 ```
@@ -414,16 +361,16 @@ Directory layout:
 quantum-purse/
   wallets/
     0/                              # First wallet
-      master_seed.json              — encrypted master seed
+      seed.json              — encrypted master seed
       accounts.json                 — derived SPHINCS+ accounts
-      wallet_info.json              — name + variant + auth method
+      meta.json              — name + variant + auth method
       tx_history_<network>.json     — per-network tx-history cache
     1/                              # Second wallet
       ...
   node/                             — node-manager state (shared)
 ```
 
-Each wallet is identified by a numeric ID (auto-assigned). The display name is stored in `wallet_info.json`.
+Each wallet is identified by a numeric ID (auto-assigned). The display name is stored in `meta.json`.
 
 ### Supported SPHINCS+ Variants
 
