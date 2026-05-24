@@ -73,8 +73,6 @@ enum Commands {
     },
     /// Delete the selected wallet and all its data
     Delete,
-    /// Display wallet information
-    Info,
     /// Wallet management operations
     Wallet {
         #[command(subcommand)]
@@ -557,45 +555,31 @@ fn main() -> Result<(), String> {
             }
         }
 
-        Commands::Info => {
-            let (wallet_id, name) = find_wallet(&cli.wallet)?;
-            let accounts = KeyVault::get_all_sphincs_lock_args(wallet_id)?;
-            let data_path = qpv2_core::db::get_wallet_dir(wallet_id).map_err(|e| e.to_string())?;
-
-            let wallet_info = KeyVault::read_wallet_info(wallet_id)?;
-
-            let (auth_method_display, compatible_frontends) = match wallet_info.auth_method {
-                AuthMethod::Password => ("Password".to_string(), "CLI and GUI"),
-                AuthMethod::Keychain => (keychain::display_name().to_string(), "CLI and GUI"),
-                AuthMethod::Fido2 { .. } => ("FIDO2 Security Key".to_string(), "CLI and GUI"),
-            };
-
-            println!("\n╔════════════════════════════════════════════════════════════════╗");
-            println!("║                     Wallet Information                         ║");
-            println!("╚════════════════════════════════════════════════════════════════╝");
-            println!();
-            println!("  Wallet Name           : {}", name);
-            println!("  SPHINCS+ Variant      : {}", wallet_info.spx_variant);
-            println!(
-                "  Mnemonic Words        : {}",
-                wallet_info.spx_variant.required_bip39_size_in_word_total()
-            );
-            println!("  Authentication Method : {}", auth_method_display);
-            println!("  Compatible Frontends  : {}", compatible_frontends);
-            println!("  Total Accounts        : {}", accounts.len());
-            println!("  Data Storage Path     : {}", data_path.display());
-            println!();
-        }
-
         Commands::Wallet { command } => match command {
             WalletCommands::List => {
                 let wallets = KeyVault::list_wallets()?;
                 if wallets.is_empty() {
                     println!("No wallets found. Run 'init' to create one.");
                 } else {
-                    println!("Wallets ({}):", wallets.len());
+                    println!("Wallets ({}):\n", wallets.len());
                     for entry in &wallets {
+                        let wallet_info = KeyVault::read_wallet_info(entry.id)?;
+                        let accounts = KeyVault::get_all_sphincs_lock_args(entry.id)?;
+                        let data_path =
+                            qpv2_core::db::get_wallet_dir(entry.id).map_err(|e| e.to_string())?;
+
+                        let auth_method_display = match wallet_info.auth_method {
+                            AuthMethod::Password => "Password".to_string(),
+                            AuthMethod::Keychain => keychain::display_name().to_string(),
+                            AuthMethod::Fido2 { .. } => "FIDO2 Security Key".to_string(),
+                        };
+
                         println!("  [{}] {}", entry.id, entry.name);
+                        println!("      Variant        : {}", wallet_info.spx_variant);
+                        println!("      Authentication : {}", auth_method_display);
+                        println!("      Accounts       : {}", accounts.len());
+                        println!("      Path           : {}", data_path.display());
+                        println!();
                     }
                 }
             }
