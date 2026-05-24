@@ -113,20 +113,20 @@ The CLI build includes codesigning with entitlements, which is required for keyc
 
 ### Use CLI
 
-The CLI provides the following commands:
+The CLI supports multiple wallets. The global `--wallet <name>` option selects which wallet to operate on. It is required for `init` and `mnemonic import` (to name the wallet being created). For other commands, it auto-selects if only one wallet exists; if multiple wallets exist, it must be specified.
 
 ```shell
 # Initialize a new wallet (password)
-qpv2-cli init --variant <VARIANT>
+qpv2-cli --wallet "Spending" init --variant <VARIANT>
 
 # Initialize a new wallet (platform credential store)
-qpv2-cli init --variant <VARIANT> --keychain
+qpv2-cli --wallet "Savings" init --variant <VARIANT> --keychain
 
 # Import mnemonic (password)
-qpv2-cli mnemonic import --variant <VARIANT>
+qpv2-cli --wallet "Recovered" mnemonic import --variant <VARIANT>
 
 # Import mnemonic (platform credential store)
-qpv2-cli mnemonic import --variant <VARIANT> --keychain
+qpv2-cli --wallet "Recovered" mnemonic import --variant <VARIANT> --keychain
 
 # Export mnemonic seed phrase
 qpv2-cli mnemonic export
@@ -155,8 +155,14 @@ qpv2-cli ckb get-tx-message --tx-file <TX_FILE>
 # Display wallet information
 qpv2-cli info
 
-# Clear all vault data
+# Remove a wallet and all its data
 qpv2-cli clear
+
+# List all wallets
+qpv2-cli wallet list
+
+# Rename a wallet
+qpv2-cli --wallet "OldName" wallet rename --to "NewName"
 
 # Show help
 qpv2-cli --help
@@ -402,13 +408,22 @@ Wallet state lives in the platform-standard application data dir:
 - Linux:   `~/.local/share/quantum-purse/`
 - Windows: `%APPDATA%\quantum-purse\`
 
-Files:
+Directory layout:
 
-- `master_seed.json` — encrypted master seed
-- `accounts.json` — derived SPHINCS+ accounts
-- `wallet_info.json` — variant + auth method
-- `tx_history_<network>.json` — per-network tx-history cache
-- `node/` — node-manager state (config + per-backend chain dirs)
+```
+quantum-purse/
+  wallets/
+    0/                              # First wallet
+      master_seed.json              — encrypted master seed
+      accounts.json                 — derived SPHINCS+ accounts
+      wallet_info.json              — name + variant + auth method
+      tx_history_<network>.json     — per-network tx-history cache
+    1/                              # Second wallet
+      ...
+  node/                             — node-manager state (shared)
+```
+
+Each wallet is identified by a numeric ID (auto-assigned). The display name is stored in `wallet_info.json`.
 
 ### Supported SPHINCS+ Variants
 

@@ -10,9 +10,9 @@ use std::io::{self, Write};
 #[command(name = "qpv2")]
 #[command(about = "A SPHINCS+-based key management CLI with integrated CKB blockchain address resolution.", long_about = None)]
 struct Cli {
-    /// Wallet name
+    /// Wallet name (required for init and import, auto-selects if only one wallet exists)
     #[arg(long, global = true)]
-    wallet_name: Option<String>,
+    wallet: Option<String>,
 
     #[command(subcommand)]
     command: Commands,
@@ -25,7 +25,7 @@ enum Commands {
         /// SPHINCS+ variant (Sha2128F, Sha2128S, Sha2192F, Sha2192S, Sha2256F, Sha2256S, Shake128F, Shake128S, Shake192F, Shake192S, Shake256F, Shake256S)
         #[arg(short, long)]
         variant: String,
-        /// Use platform credential store (Touch ID on macOS, Credential Manager on Windows, Secret Service on Linux)
+        /// Use platform credential store (Touch ID on macOS, Windows Hello + TPM on Windows, TPM on Linux)
         #[arg(long)]
         keychain: bool,
         /// Use a FIDO2 security key with hmac-secret extension
@@ -71,8 +71,8 @@ enum Commands {
         #[command(subcommand)]
         command: CkbCommands,
     },
-    /// Remove the selected wallet and all its data
-    Clear,
+    /// Delete the selected wallet and all its data
+    Delete,
     /// Display wallet information
     Info,
     /// Wallet management operations
@@ -92,7 +92,7 @@ enum MnemonicCommands {
         #[arg(short, long)]
         seed_file: Option<String>,
 
-        /// Use platform credential store instead of password
+        /// Use platform credential store (Touch ID on macOS, Windows Hello + TPM on Windows, TPM on Linux)
         #[arg(long)]
         keychain: bool,
 
@@ -287,7 +287,7 @@ fn find_wallet(wallet_name: &Option<String>) -> Result<(u32, String), String> {
     } else if wallets.is_empty() {
         Err("No wallet found. Run 'init' first.".to_string())
     } else {
-        Err("Multiple wallets exist. Specify --wallet-name <name>.".to_string())
+        Err("Multiple wallets exist. Specify --wallet <name>. Run 'wallet list' to see all wallets.".to_string())
     }
 }
 
@@ -295,7 +295,7 @@ fn find_wallet(wallet_name: &Option<String>) -> Result<(u32, String), String> {
 fn prepare_new_wallet(wallet_name: &Option<String>) -> Result<(u32, String), String> {
     let name = wallet_name
         .as_ref()
-        .ok_or_else(|| "Wallet name is required. Specify --wallet-name <name>.".to_string())?
+        .ok_or_else(|| "Wallet name is required. Specify --wallet <name>.".to_string())?
         .clone();
     let wallets = KeyVault::list_wallets()?;
     if wallets.iter().any(|w| w.name == name) {
@@ -315,7 +315,7 @@ fn main() -> Result<(), String> {
             fido2,
         } => {
             let variant = parse_variant(&variant)?;
-            let (wallet_id, name) = prepare_new_wallet(&cli.wallet_name)?;
+            let (wallet_id, name) = prepare_new_wallet(&cli.wallet)?;
             let vault = KeyVault::new(variant, wallet_id);
 
             println!("Initializing wallet '{}' with variant: {}", name, variant);
@@ -364,7 +364,7 @@ fn main() -> Result<(), String> {
                 fido2,
             } => {
                 let variant = parse_variant(&variant)?;
-                let (wallet_id, name) = prepare_new_wallet(&cli.wallet_name)?;
+                let (wallet_id, name) = prepare_new_wallet(&cli.wallet)?;
                 let vault = KeyVault::new(variant, wallet_id);
 
                 let seed_phrase = if let Some(file_path) = seed_file {
@@ -406,7 +406,7 @@ fn main() -> Result<(), String> {
             }
 
             MnemonicCommands::Export { output } => {
-                let (wallet_id, _) = find_wallet(&cli.wallet_name)?;
+                let (wallet_id, _) = find_wallet(&cli.wallet)?;
                 let variant = KeyVault::get_spx_variant(wallet_id)?;
                 let vault = KeyVault::new(variant, wallet_id);
 
@@ -424,7 +424,7 @@ fn main() -> Result<(), String> {
         },
 
         Commands::Account { command } => {
-            let (wallet_id, _) = find_wallet(&cli.wallet_name)?;
+            let (wallet_id, _) = find_wallet(&cli.wallet)?;
 
             match command {
                 AccountCommands::New => {
@@ -483,7 +483,7 @@ fn main() -> Result<(), String> {
             identifier,
             message,
         } => {
-            let (wallet_id, _) = find_wallet(&cli.wallet_name)?;
+            let (wallet_id, _) = find_wallet(&cli.wallet)?;
             let variant = KeyVault::get_spx_variant(wallet_id)?;
             let vault = KeyVault::new(variant, wallet_id);
 
@@ -517,7 +517,7 @@ fn main() -> Result<(), String> {
 
         Commands::Ckb { command } => match command {
             CkbCommands::Sign { lock_args, message } => {
-                let (wallet_id, _) = find_wallet(&cli.wallet_name)?;
+                let (wallet_id, _) = find_wallet(&cli.wallet)?;
                 let variant = KeyVault::get_spx_variant(wallet_id)?;
                 let vault = KeyVault::new(variant, wallet_id);
 
@@ -535,8 +535,8 @@ fn main() -> Result<(), String> {
             }
         },
 
-        Commands::Clear => {
-            let (wallet_id, name) = find_wallet(&cli.wallet_name)?;
+        Commands::Delete => {
+            let (wallet_id, name) = find_wallet(&cli.wallet)?;
             print!(
                 "Are you sure you want to remove wallet '{}' and all its data? (yes/no): ",
                 name
@@ -558,7 +558,7 @@ fn main() -> Result<(), String> {
         }
 
         Commands::Info => {
-            let (wallet_id, name) = find_wallet(&cli.wallet_name)?;
+            let (wallet_id, name) = find_wallet(&cli.wallet)?;
             let accounts = KeyVault::get_all_sphincs_lock_args(wallet_id)?;
             let data_path = qpv2_core::db::get_wallet_dir(wallet_id).map_err(|e| e.to_string())?;
 
@@ -600,7 +600,7 @@ fn main() -> Result<(), String> {
                 }
             }
             WalletCommands::Rename { to } => {
-                let (wallet_id, old_name) = find_wallet(&cli.wallet_name)?;
+                let (wallet_id, old_name) = find_wallet(&cli.wallet)?;
                 let wallets = KeyVault::list_wallets()?;
                 if wallets.iter().any(|w| w.name == to) {
                     return Err(format!("Wallet '{}' already exists.", to));
