@@ -58,13 +58,17 @@ pub enum AuthKey {
     CryptoKey(SecureVec),
 }
 
-/// Represents wallet metadata information.
-///
-/// **Fields**:
-/// - `spx_variant: SpxVariant` - The SPHINCS+ variant used for this wallet.
-/// - `auth_method: AuthMethod` - The authentication method protecting this wallet.
+/// Lightweight wallet listing entry derived from scanning the filesystem.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct WalletEntry {
+    pub id: u32,
+    pub name: String,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct WalletInfo {
+    #[serde(default)]
+    pub name: String,
     pub spx_variant: SpxVariant,
     #[serde(default)]
     pub auth_method: AuthMethod,
