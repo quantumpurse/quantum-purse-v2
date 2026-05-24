@@ -514,12 +514,12 @@ impl KeyVault {
     /// **Returns**:
     /// - `Result<bool, String>` - A tuple of (signature, public_key) on success, or an error on failure.
     pub fn raw_verify(
-        &self,
+        variant: SpxVariant,
         public_key: &[u8],
         message: &[u8],
         signature: &[u8],
     ) -> Result<bool, String> {
-        match self.variant {
+        match variant {
             SpxVariant::Sha2128S => {
                 raw_spx_verify!(slh_dsa_sha2_128s, public_key, message, signature)
             }

@@ -506,9 +506,8 @@ fn main() -> Result<(), String> {
             let public_key_bytes = hex::decode(&public_key).map_err(|e| e.to_string())?;
             let signature_bytes = hex::decode(&signature).map_err(|e| e.to_string())?;
 
-            let vault = KeyVault::new(variant, 0);
-
-            let is_valid = vault.raw_verify(&public_key_bytes, &message_bytes, &signature_bytes)?;
+            let is_valid =
+                KeyVault::raw_verify(variant, &public_key_bytes, &message_bytes, &signature_bytes)?;
             if is_valid {
                 println!("✓ Signature is valid");
             } else {
