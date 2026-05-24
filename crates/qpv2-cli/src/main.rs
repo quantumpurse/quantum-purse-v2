@@ -10,13 +10,17 @@ use std::io::{self, Write};
 #[command(name = "qpv2")]
 #[command(about = "A SPHINCS+-based key management CLI with integrated CKB blockchain address resolution.", long_about = None)]
 struct Cli {
+    /// Wallet name
+    #[arg(short, long, global = true)]
+    name: Option<String>,
+
     #[command(subcommand)]
     command: Commands,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Initialize a new vault by generating a seed
+    /// Initialize a new wallet by generating a seed
     Init {
         /// SPHINCS+ variant (Sha2128F, Sha2128S, Sha2192F, Sha2192S, Sha2256F, Sha2256S, Shake128F, Shake128S, Shake192F, Shake192S, Shake256F, Shake256S)
         #[arg(short, long)]
@@ -67,10 +71,15 @@ enum Commands {
         #[command(subcommand)]
         command: CkbCommands,
     },
-    /// Clear all vault data
+    /// Remove the selected wallet and all its data
     Clear,
-    /// Display vault information
+    /// Display wallet information
     Info,
+    /// Wallet management operations
+    Wallet {
+        #[command(subcommand)]
+        command: WalletCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -139,6 +148,18 @@ enum CkbCommands {
     },
 }
 
+#[derive(Subcommand)]
+enum WalletCommands {
+    /// List all wallets
+    List,
+    /// Rename the selected wallet
+    Rename {
+        /// New display name for the wallet
+        #[arg(long)]
+        to: String,
+    },
+}
+
 fn parse_variant(variant_str: &str) -> Result<SpxVariant, String> {
     match variant_str.to_lowercase().as_str() {
         "sha2128f" => Ok(SpxVariant::Sha2128F),
@@ -165,8 +186,8 @@ fn prompt_for_input(prompt: &str) -> Result<SecureString, String> {
     Ok(result)
 }
 
-fn get_auth_key() -> Result<AuthKey, String> {
-    let wallet_info = KeyVault::read_wallet_info()?;
+fn get_auth_key(wallet_id: u32) -> Result<AuthKey, String> {
+    let wallet_info = KeyVault::read_wallet_info(wallet_id)?;
     match wallet_info.auth_method {
         AuthMethod::Password => {
             let password = prompt_for_input("Enter password: ")?;
@@ -188,23 +209,11 @@ fn get_auth_key() -> Result<AuthKey, String> {
     }
 }
 
-fn init_with_keychain(vault: &KeyVault) -> Result<(), String> {
+fn init_with_keychain(vault: &KeyVault, name: &str) -> Result<(), String> {
     let key = qpv2_core::utilities::get_random_bytes(32)
         .map_err(|e| format!("Failed to generate key: {}", e))?;
     keychain::store_key(&key)?;
-    if let Err(e) = vault.generate_master_seed(AuthKey::CryptoKey(key), AuthMethod::Keychain) {
-        let _ = keychain::delete_key();
-        return Err(e);
-    }
-    Ok(())
-}
-
-fn import_with_keychain(vault: &KeyVault, seed_phrase: SecureString) -> Result<(), String> {
-    let key = qpv2_core::utilities::get_random_bytes(32)
-        .map_err(|e| format!("Failed to generate key: {}", e))?;
-    keychain::store_key(&key)?;
-    if let Err(e) =
-        vault.import_seed_phrase(seed_phrase, AuthKey::CryptoKey(key), AuthMethod::Keychain)
+    if let Err(e) = vault.generate_master_seed(AuthKey::CryptoKey(key), AuthMethod::Keychain, name)
     {
         let _ = keychain::delete_key();
         return Err(e);
@@ -212,22 +221,24 @@ fn import_with_keychain(vault: &KeyVault, seed_phrase: SecureString) -> Result<(
     Ok(())
 }
 
-fn init_with_fido2(vault: &KeyVault) -> Result<(), String> {
-    let pin = prompt_for_input("Enter security key PIN: ")?;
-    println!("Registering credential...");
-    let credential = keychain::fido2::register(&pin)?;
-    let credential_id = hex::encode(&credential.credential_id);
-
-    println!("Deriving encryption key...");
-    let hmac_output = keychain::fido2::authenticate(&credential.credential_id, &pin)?;
-    let key = qpv2_core::utilities::derive_vault_enc_key(&hmac_output)?;
-
-    let auth_method = AuthMethod::Fido2 { credential_id };
-    vault.generate_master_seed(AuthKey::CryptoKey(key), auth_method)?;
+fn import_with_keychain(
+    vault: &KeyVault,
+    seed_phrase: SecureString,
+    name: &str,
+) -> Result<(), String> {
+    let key = qpv2_core::utilities::get_random_bytes(32)
+        .map_err(|e| format!("Failed to generate key: {}", e))?;
+    keychain::store_key(&key)?;
+    if let Err(e) =
+        vault.import_seed_phrase(seed_phrase, AuthKey::CryptoKey(key), AuthMethod::Keychain, name)
+    {
+        let _ = keychain::delete_key();
+        return Err(e);
+    }
     Ok(())
 }
 
-fn import_with_fido2(vault: &KeyVault, seed_phrase: SecureString) -> Result<(), String> {
+fn init_with_fido2(vault: &KeyVault, name: &str) -> Result<(), String> {
     let pin = prompt_for_input("Enter security key PIN: ")?;
     println!("Registering credential...");
     let credential = keychain::fido2::register(&pin)?;
@@ -238,8 +249,60 @@ fn import_with_fido2(vault: &KeyVault, seed_phrase: SecureString) -> Result<(), 
     let key = qpv2_core::utilities::derive_vault_enc_key(&hmac_output)?;
 
     let auth_method = AuthMethod::Fido2 { credential_id };
-    vault.import_seed_phrase(seed_phrase, AuthKey::CryptoKey(key), auth_method)?;
+    vault.generate_master_seed(AuthKey::CryptoKey(key), auth_method, name)?;
     Ok(())
+}
+
+fn import_with_fido2(
+    vault: &KeyVault,
+    seed_phrase: SecureString,
+    name: &str,
+) -> Result<(), String> {
+    let pin = prompt_for_input("Enter security key PIN: ")?;
+    println!("Registering credential...");
+    let credential = keychain::fido2::register(&pin)?;
+    let credential_id = hex::encode(&credential.credential_id);
+
+    println!("Deriving encryption key...");
+    let hmac_output = keychain::fido2::authenticate(&credential.credential_id, &pin)?;
+    let key = qpv2_core::utilities::derive_vault_enc_key(&hmac_output)?;
+
+    let auth_method = AuthMethod::Fido2 { credential_id };
+    vault.import_seed_phrase(seed_phrase, AuthKey::CryptoKey(key), auth_method, name)?;
+    Ok(())
+}
+
+/// Finds an existing wallet by name. Auto-selects if only one wallet exists.
+fn find_wallet(wallet_name: &Option<String>) -> Result<(u32, String), String> {
+    let wallets = KeyVault::list_wallets()?;
+    if let Some(name) = wallet_name {
+        let entry = wallets
+            .into_iter()
+            .find(|w| w.name == *name)
+            .ok_or_else(|| format!("Wallet '{}' not found.", name))?;
+        Ok((entry.id, entry.name))
+    } else if wallets.len() == 1 {
+        let entry = wallets.into_iter().next().unwrap();
+        Ok((entry.id, entry.name))
+    } else if wallets.is_empty() {
+        Err("No wallet found. Run 'init' first.".to_string())
+    } else {
+        Err("Multiple wallets exist. Specify --name <wallet_name>.".to_string())
+    }
+}
+
+/// Validates a wallet name for creation and returns the next available ID.
+fn prepare_new_wallet(wallet_name: &Option<String>) -> Result<(u32, String), String> {
+    let name = wallet_name
+        .as_ref()
+        .ok_or_else(|| "Wallet name is required. Specify --name <wallet_name>.".to_string())?
+        .clone();
+    let wallets = KeyVault::list_wallets()?;
+    if wallets.iter().any(|w| w.name == name) {
+        return Err(format!("Wallet '{}' already exists.", name));
+    }
+    let id = qpv2_core::db::wallets::next_wallet_id().map_err(|e| e.to_string())?;
+    Ok((id, name))
 }
 
 fn main() -> Result<(), String> {
@@ -252,9 +315,10 @@ fn main() -> Result<(), String> {
             fido2,
         } => {
             let variant = parse_variant(&variant)?;
-            let vault = KeyVault::new(variant);
+            let (wallet_id, name) = prepare_new_wallet(&cli.name)?;
+            let vault = KeyVault::new(variant, wallet_id);
 
-            println!("Initializing wallet with variant: {}", variant);
+            println!("Initializing wallet '{}' with variant: {}", name, variant);
             println!(
                 "Required mnemonic words: {}",
                 variant.required_bip39_size_in_word_total()
@@ -263,9 +327,9 @@ fn main() -> Result<(), String> {
             if keychain && fido2 {
                 return Err("Cannot use both --keychain and --fido2.".to_string());
             } else if fido2 {
-                init_with_fido2(&vault)?;
+                init_with_fido2(&vault, &name)?;
             } else if keychain {
-                init_with_keychain(&vault)?;
+                init_with_keychain(&vault, &name)?;
             } else {
                 let password = prompt_for_input("Enter password: ")?;
                 let confirm = prompt_for_input("Confirm password: ")?;
@@ -280,7 +344,11 @@ fn main() -> Result<(), String> {
                     }
                 }
 
-                vault.generate_master_seed(AuthKey::Password(password), AuthMethod::Password)?;
+                vault.generate_master_seed(
+                    AuthKey::Password(password),
+                    AuthMethod::Password,
+                    &name,
+                )?;
             }
             println!("✓ Master seed generated successfully");
             println!(
@@ -296,7 +364,8 @@ fn main() -> Result<(), String> {
                 fido2,
             } => {
                 let variant = parse_variant(&variant)?;
-                let vault = KeyVault::new(variant);
+                let (wallet_id, name) = prepare_new_wallet(&cli.name)?;
+                let vault = KeyVault::new(variant, wallet_id);
 
                 let seed_phrase = if let Some(file_path) = seed_file {
                     SecureString::from_string(
@@ -309,9 +378,9 @@ fn main() -> Result<(), String> {
                 if keychain && fido2 {
                     return Err("Cannot use both --keychain and --fido2.".to_string());
                 } else if fido2 {
-                    import_with_fido2(&vault, seed_phrase)?;
+                    import_with_fido2(&vault, seed_phrase, &name)?;
                 } else if keychain {
-                    import_with_keychain(&vault, seed_phrase)?;
+                    import_with_keychain(&vault, seed_phrase, &name)?;
                 } else {
                     let password = prompt_for_input("Enter password: ")?;
                     let confirm = prompt_for_input("Confirm password: ")?;
@@ -330,16 +399,18 @@ fn main() -> Result<(), String> {
                         seed_phrase,
                         AuthKey::Password(password),
                         AuthMethod::Password,
+                        &name,
                     )?;
                 }
                 println!("✓ Seed phrase imported successfully");
             }
 
             MnemonicCommands::Export { output } => {
-                let variant = KeyVault::get_spx_variant()?;
-                let vault = KeyVault::new(variant);
+                let (wallet_id, _) = find_wallet(&cli.name)?;
+                let variant = KeyVault::get_spx_variant(wallet_id)?;
+                let vault = KeyVault::new(variant, wallet_id);
 
-                let auth = get_auth_key()?;
+                let auth = get_auth_key(wallet_id)?;
                 let seed_phrase = vault.export_seed_phrase(auth)?;
 
                 if let Some(output_path) = output {
@@ -353,19 +424,21 @@ fn main() -> Result<(), String> {
         },
 
         Commands::Account { command } => {
+            let (wallet_id, _) = find_wallet(&cli.name)?;
+
             match command {
                 AccountCommands::New => {
-                    let variant = KeyVault::get_spx_variant()?;
-                    let vault = KeyVault::new(variant);
+                    let variant = KeyVault::get_spx_variant(wallet_id)?;
+                    let vault = KeyVault::new(variant, wallet_id);
 
-                    let auth = get_auth_key()?;
+                    let auth = get_auth_key(wallet_id)?;
                     let lock_args = vault.gen_new_account(auth)?;
                     println!("✓ New account created");
                     println!("Identifier(CKB quantum lock script args): {}", lock_args);
                 }
 
                 AccountCommands::List => {
-                    let accounts = KeyVault::get_all_sphincs_lock_args()?;
+                    let accounts = KeyVault::get_all_sphincs_lock_args(wallet_id)?;
                     if accounts.is_empty() {
                         println!("No accounts found. Run `qpv2-cli account new` to generate a new SPHINCS+ account");
                     } else {
@@ -379,10 +452,10 @@ fn main() -> Result<(), String> {
                 }
 
                 AccountCommands::Recover { count } => {
-                    let variant = KeyVault::get_spx_variant()?;
-                    let vault = KeyVault::new(variant);
+                    let variant = KeyVault::get_spx_variant(wallet_id)?;
+                    let vault = KeyVault::new(variant, wallet_id);
 
-                    let auth = get_auth_key()?;
+                    let auth = get_auth_key(wallet_id)?;
                     let accounts = vault.recover_accounts(auth, count)?;
 
                     println!("✓ Recovered {} accounts:", accounts.len());
@@ -392,10 +465,10 @@ fn main() -> Result<(), String> {
                 }
 
                 AccountCommands::TryGenBatch { start, count } => {
-                    let variant = KeyVault::get_spx_variant()?;
-                    let vault = KeyVault::new(variant);
+                    let variant = KeyVault::get_spx_variant(wallet_id)?;
+                    let vault = KeyVault::new(variant, wallet_id);
 
-                    let auth = get_auth_key()?;
+                    let auth = get_auth_key(wallet_id)?;
                     let accounts = vault.try_gen_account_batch(auth, start, count)?;
 
                     println!("Generated {} accounts:", accounts.len());
@@ -410,11 +483,12 @@ fn main() -> Result<(), String> {
             identifier,
             message,
         } => {
-            let variant = KeyVault::get_spx_variant()?;
-            let vault = KeyVault::new(variant);
+            let (wallet_id, _) = find_wallet(&cli.name)?;
+            let variant = KeyVault::get_spx_variant(wallet_id)?;
+            let vault = KeyVault::new(variant, wallet_id);
 
             let message_bytes = hex::decode(&message).map_err(|e| e.to_string())?;
-            let auth = get_auth_key()?;
+            let auth = get_auth_key(wallet_id)?;
 
             let (signature, pub_key) = vault.raw_sign(auth, identifier, message_bytes)?;
             println!("Signature: {}", hex::encode(signature));
@@ -432,7 +506,7 @@ fn main() -> Result<(), String> {
             let public_key_bytes = hex::decode(&public_key).map_err(|e| e.to_string())?;
             let signature_bytes = hex::decode(&signature).map_err(|e| e.to_string())?;
 
-            let vault = KeyVault::new(variant);
+            let vault = KeyVault::new(variant, 0);
 
             let is_valid = vault.raw_verify(&public_key_bytes, &message_bytes, &signature_bytes)?;
             if is_valid {
@@ -444,11 +518,12 @@ fn main() -> Result<(), String> {
 
         Commands::Ckb { command } => match command {
             CkbCommands::Sign { lock_args, message } => {
-                let variant = KeyVault::get_spx_variant()?;
-                let vault = KeyVault::new(variant);
+                let (wallet_id, _) = find_wallet(&cli.name)?;
+                let variant = KeyVault::get_spx_variant(wallet_id)?;
+                let vault = KeyVault::new(variant, wallet_id);
 
                 let message_bytes = hex::decode(&message).map_err(|e| e.to_string())?;
-                let auth = get_auth_key()?;
+                let auth = get_auth_key(wallet_id)?;
 
                 let signature = vault.ckb_sign(auth, lock_args, message_bytes)?;
                 println!("Signature: {}", hex::encode(signature));
@@ -462,7 +537,11 @@ fn main() -> Result<(), String> {
         },
 
         Commands::Clear => {
-            print!("Are you sure you want to clear all wallet data? (yes/no): ");
+            let (wallet_id, name) = find_wallet(&cli.name)?;
+            print!(
+                "Are you sure you want to remove wallet '{}' and all its data? (yes/no): ",
+                name
+            );
             io::stdout().flush().map_err(|e| e.to_string())?;
 
             let mut confirmation = String::new();
@@ -472,19 +551,19 @@ fn main() -> Result<(), String> {
 
             if confirmation.trim().to_lowercase() == "yes" {
                 let _ = keychain::delete_key();
-                KeyVault::clear_database()?;
-                println!("✓ All wallet data cleared");
+                KeyVault::remove_wallet(wallet_id)?;
+                println!("✓ Wallet '{}' removed", name);
             } else {
                 println!("Operation cancelled");
             }
         }
 
         Commands::Info => {
-            let accounts = KeyVault::get_all_sphincs_lock_args()?;
+            let (wallet_id, name) = find_wallet(&cli.name)?;
+            let accounts = KeyVault::get_all_sphincs_lock_args(wallet_id)?;
             let data_path = qpv2_core::db::get_data_dir().map_err(|e| e.to_string())?;
 
-            // Read wallet info to get authentication method
-            let wallet_info = KeyVault::read_wallet_info()?;
+            let wallet_info = KeyVault::read_wallet_info(wallet_id)?;
 
             let (auth_method_display, compatible_frontends) = match wallet_info.auth_method {
                 AuthMethod::Password => ("Password".to_string(), "CLI and GUI"),
@@ -496,6 +575,7 @@ fn main() -> Result<(), String> {
             println!("║                     Wallet Information                         ║");
             println!("╚════════════════════════════════════════════════════════════════╝");
             println!();
+            println!("  Wallet Name           : {}", name);
             println!("  SPHINCS+ Variant      : {}", wallet_info.spx_variant);
             println!(
                 "  Mnemonic Words        : {}",
@@ -507,6 +587,30 @@ fn main() -> Result<(), String> {
             println!("  Data Storage Path     : {}", data_path.display());
             println!();
         }
+
+        Commands::Wallet { command } => match command {
+            WalletCommands::List => {
+                let wallets = KeyVault::list_wallets()?;
+                if wallets.is_empty() {
+                    println!("No wallets found. Run 'init' to create one.");
+                } else {
+                    println!("Wallets ({}):", wallets.len());
+                    for entry in &wallets {
+                        println!("  [{}] {}", entry.id, entry.name);
+                    }
+                }
+            }
+            WalletCommands::Rename { to } => {
+                let (wallet_id, old_name) = find_wallet(&cli.name)?;
+                let wallets = KeyVault::list_wallets()?;
+                if wallets.iter().any(|w| w.name == to) {
+                    return Err(format!("Wallet '{}' already exists.", to));
+                }
+                qpv2_core::db::wallets::rename_wallet(wallet_id, &to)
+                    .map_err(|e| e.to_string())?;
+                println!("✓ Wallet renamed from '{}' to '{}'", old_name, to);
+            }
+        },
     }
 
     Ok(())
