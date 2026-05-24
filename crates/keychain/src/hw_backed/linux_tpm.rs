@@ -43,8 +43,8 @@ use tss_esapi::{
 
 const SEALED_BLOB_FILE: &str = "tpm_sealed_blob.bin";
 
-fn sealed_blob_path() -> Result<PathBuf, String> {
-    qpv2_core::db::get_data_dir()
+fn sealed_blob_path(wallet_id: u32) -> Result<PathBuf, String> {
+    qpv2_core::db::get_wallet_dir(wallet_id)
         .map(|d| d.join(SEALED_BLOB_FILE))
         .map_err(|e| e.to_string())
 }
@@ -111,7 +111,7 @@ fn create_srk(context: &mut Context) -> Result<KeyHandle, String> {
         .map_err(|e| format!("Failed to create SRK: {}.", e))
 }
 
-pub fn store_key(key: &[u8]) -> Result<(), String> {
+pub fn store_key(wallet_id: u32, key: &[u8]) -> Result<(), String> {
     if key.len() != KEY_LEN {
         return Err(format!("Expected {KEY_LEN}-byte key, got {}.", key.len()));
     }
@@ -127,7 +127,7 @@ pub fn store_key(key: &[u8]) -> Result<(), String> {
 
     let mut context = open_context()?;
     let srk_handle = create_srk(&mut context)?;
-    let result = seal_to_srk(&mut context, srk_handle, key, auth);
+    let result = seal_to_srk(&mut context, srk_handle, key, auth, wallet_id);
     context.flush_context(srk_handle.into()).ok();
     result
 }
@@ -137,6 +137,7 @@ fn seal_to_srk(
     srk_handle: KeyHandle,
     key: &[u8],
     auth: Auth,
+    wallet_id: u32,
 ) -> Result<(), String> {
     let sensitive = SensitiveData::try_from(key.to_vec())
         .map_err(|e| format!("Invalid sensitive data: {}.", e))?;
@@ -160,11 +161,11 @@ fn seal_to_srk(
         .marshall()
         .map_err(|e| format!("Failed to marshal public blob: {}.", e))?;
 
-    write_sealed_blob(&sealed_blob_path()?, &private_bytes, &public_bytes)
+    write_sealed_blob(&sealed_blob_path(wallet_id)?, &private_bytes, &public_bytes)
 }
 
-pub fn retrieve_key() -> Result<SecureVec, String> {
-    let (private_bytes, public_bytes) = read_sealed_blob(&sealed_blob_path()?)?;
+pub fn retrieve_key(wallet_id: u32) -> Result<SecureVec, String> {
+    let (private_bytes, public_bytes) = read_sealed_blob(&sealed_blob_path(wallet_id)?)?;
 
     let private =
         Private::try_from(private_bytes).map_err(|e| format!("Invalid private blob: {}.", e))?;
@@ -214,8 +215,8 @@ fn load_and_unseal(
     Ok(SecureVec::from_vec(bytes))
 }
 
-pub fn delete_key() -> Result<(), String> {
-    let path = sealed_blob_path()?;
+pub fn delete_key(wallet_id: u32) -> Result<(), String> {
+    let path = sealed_blob_path(wallet_id)?;
     match std::fs::remove_file(&path) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),

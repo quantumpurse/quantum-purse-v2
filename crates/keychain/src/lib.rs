@@ -12,7 +12,9 @@
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 pub(crate) const SERVICE: &str = "quantumpurse";
 #[cfg(any(target_os = "macos", target_os = "windows"))]
-pub(crate) const ACCOUNT: &str = "vault-encryption-key";
+pub(crate) fn account_name(wallet_id: u32) -> String {
+    format!("vault-encryption-key-{}", wallet_id)
+}
 pub(crate) const KEY_LEN: usize = 32;
 
 pub mod hw_backed;

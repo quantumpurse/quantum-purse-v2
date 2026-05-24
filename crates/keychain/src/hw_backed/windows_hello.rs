@@ -7,7 +7,7 @@
 //! The wrapped ciphertext (~256 bytes) is persisted to disk alongside
 //! the wallet files. The RSA private key never leaves the TPM.
 
-use crate::{ACCOUNT, KEY_LEN, SERVICE};
+use crate::{account_name, KEY_LEN, SERVICE};
 use qpv2_core::SecureVec;
 use std::path::PathBuf;
 use std::ptr;
@@ -30,15 +30,15 @@ fn passport_provider() -> Vec<u16> {
         .collect()
 }
 
-fn key_name() -> Vec<u16> {
-    format!("{}/{}", SERVICE, ACCOUNT)
+fn key_name(wallet_id: u32) -> Vec<u16> {
+    format!("{}/{}", SERVICE, account_name(wallet_id))
         .encode_utf16()
         .chain(Some(0))
         .collect()
 }
 
-fn wrapped_key_path() -> Result<PathBuf, String> {
-    qpv2_core::db::get_data_dir()
+fn wrapped_key_path(wallet_id: u32) -> Result<PathBuf, String> {
+    qpv2_core::db::get_wallet_dir(wallet_id)
         .map(|d| d.join(WRAPPED_KEY_FILE))
         .map_err(|e| e.to_string())
 }
@@ -118,8 +118,8 @@ fn require_hardware_backed(hkey: NCRYPT_KEY_HANDLE) -> Result<(), String> {
     Ok(())
 }
 
-fn open_or_create_key(hprov: NCRYPT_PROV_HANDLE) -> Result<KeyHandle, String> {
-    let name = key_name();
+fn open_or_create_key(hprov: NCRYPT_PROV_HANDLE, wallet_id: u32) -> Result<KeyHandle, String> {
+    let name = key_name(wallet_id);
     let mut hkey: NCRYPT_KEY_HANDLE = 0;
 
     let status = unsafe { NCryptOpenKey(hprov, &mut hkey, name.as_ptr(), 0, 0) };
@@ -236,13 +236,13 @@ fn oaep_padding() -> BCRYPT_OAEP_PADDING_INFO {
     }
 }
 
-pub fn store_key(key: &[u8]) -> Result<(), String> {
+pub fn store_key(wallet_id: u32, key: &[u8]) -> Result<(), String> {
     if key.len() != KEY_LEN {
         return Err(format!("Expected {KEY_LEN}-byte key, got {}.", key.len()));
     }
 
     let prov = open_provider()?;
-    let hkey = open_or_create_key(prov.0)?;
+    let hkey = open_or_create_key(prov.0, wallet_id)?;
 
     let padding = oaep_padding();
 
@@ -284,16 +284,16 @@ pub fn store_key(key: &[u8]) -> Result<(), String> {
     }
     ciphertext.truncate(actual_len as usize);
 
-    let path = wrapped_key_path()?;
+    let path = wrapped_key_path(wallet_id)?;
     std::fs::write(&path, &ciphertext)
         .map_err(|e| format!("Failed to write {}: {}.", WRAPPED_KEY_FILE, e))?;
 
     Ok(())
 }
 
-pub fn retrieve_key() -> Result<SecureVec, String> {
+pub fn retrieve_key(wallet_id: u32) -> Result<SecureVec, String> {
     let prov = open_provider()?;
-    let name = key_name();
+    let name = key_name(wallet_id);
     let mut hkey: NCRYPT_KEY_HANDLE = 0;
 
     // Open without NCRYPT_SILENT_FLAG so Windows Hello prompt fires.
@@ -303,7 +303,7 @@ pub fn retrieve_key() -> Result<SecureVec, String> {
     }
     let hkey = KeyHandle(hkey);
 
-    let path = wrapped_key_path()?;
+    let path = wrapped_key_path(wallet_id)?;
     let ciphertext =
         std::fs::read(&path).map_err(|e| format!("Failed to read {}: {}.", WRAPPED_KEY_FILE, e))?;
 
@@ -340,9 +340,9 @@ pub fn retrieve_key() -> Result<SecureVec, String> {
     Ok(SecureVec::from_vec(plaintext))
 }
 
-pub fn delete_key() -> Result<(), String> {
+pub fn delete_key(wallet_id: u32) -> Result<(), String> {
     let prov = open_provider()?;
-    let name = key_name();
+    let name = key_name(wallet_id);
     let mut hkey: NCRYPT_KEY_HANDLE = 0;
 
     let status = unsafe { NCryptOpenKey(prov.0, &mut hkey, name.as_ptr(), 0, 0) };
@@ -359,7 +359,7 @@ pub fn delete_key() -> Result<(), String> {
         }
     }
 
-    let path = wrapped_key_path()?;
+    let path = wrapped_key_path(wallet_id)?;
     match std::fs::remove_file(&path) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}

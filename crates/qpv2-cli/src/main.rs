@@ -195,7 +195,7 @@ fn get_auth_key(wallet_id: u32) -> Result<AuthKey, String> {
         }
         AuthMethod::Keychain => {
             println!("Authenticate with {}...", keychain::short_name());
-            let key = keychain::retrieve_key()?;
+            let key = keychain::retrieve_key(wallet_id)?;
             Ok(AuthKey::CryptoKey(key))
         }
         AuthMethod::Fido2 { ref credential_id } => {
@@ -212,10 +212,10 @@ fn get_auth_key(wallet_id: u32) -> Result<AuthKey, String> {
 fn init_with_keychain(vault: &KeyVault, name: &str) -> Result<(), String> {
     let key = qpv2_core::utilities::get_random_bytes(32)
         .map_err(|e| format!("Failed to generate key: {}", e))?;
-    keychain::store_key(&key)?;
+    keychain::store_key(vault.wallet_id, &key)?;
     if let Err(e) = vault.generate_master_seed(AuthKey::CryptoKey(key), AuthMethod::Keychain, name)
     {
-        let _ = keychain::delete_key();
+        let _ = keychain::delete_key(vault.wallet_id);
         return Err(e);
     }
     Ok(())
@@ -228,11 +228,11 @@ fn import_with_keychain(
 ) -> Result<(), String> {
     let key = qpv2_core::utilities::get_random_bytes(32)
         .map_err(|e| format!("Failed to generate key: {}", e))?;
-    keychain::store_key(&key)?;
+    keychain::store_key(vault.wallet_id, &key)?;
     if let Err(e) =
         vault.import_seed_phrase(seed_phrase, AuthKey::CryptoKey(key), AuthMethod::Keychain, name)
     {
-        let _ = keychain::delete_key();
+        let _ = keychain::delete_key(vault.wallet_id);
         return Err(e);
     }
     Ok(())
@@ -549,7 +549,7 @@ fn main() -> Result<(), String> {
                 .map_err(|e| e.to_string())?;
 
             if confirmation.trim().to_lowercase() == "yes" {
-                let _ = keychain::delete_key();
+                let _ = keychain::delete_key(wallet_id);
                 KeyVault::remove_wallet(wallet_id)?;
                 println!("✓ Wallet '{}' removed", name);
             } else {
