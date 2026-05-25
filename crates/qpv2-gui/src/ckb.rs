@@ -153,7 +153,12 @@ impl App {
                     ) {
                         Ok(v) => v,
                         Err(e) => {
-                            let _ = tx.send(Err(format!("Failed to query DAO cells: {}", e)));
+                            let msg = format!("Failed to query DAO cells: {}", e);
+                            if e.to_string().contains("http error") {
+                                log::error!("{}", msg);
+                            } else {
+                                let _ = tx.send(Err(msg));
+                            }
                             continue;
                         }
                     };

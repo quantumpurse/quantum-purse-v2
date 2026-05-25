@@ -588,10 +588,6 @@ fn main() -> Result<(), String> {
             }
             WalletCommands::Rename { to } => {
                 let (wallet_id, old_name) = find_wallet(&cli.wallet)?;
-                let wallets = KeyVault::list_wallets()?;
-                if wallets.iter().any(|w| w.name == to) {
-                    return Err(format!("Wallet '{}' already exists.", to));
-                }
                 qpv2_core::db::wallets::rename_wallet(wallet_id, &to).map_err(|e| e.to_string())?;
                 println!("✓ Wallet renamed from '{}' to '{}'", old_name, to);
             }

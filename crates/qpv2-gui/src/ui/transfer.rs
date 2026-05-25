@@ -279,7 +279,7 @@ impl App {
                         };
 
                         let send_btn =
-                            egui::Button::new(egui::RichText::new(btn_text).size(15.0).strong())
+                            egui::Button::new(egui::RichText::new(btn_text).size(15.0).strong().color(self.colors.bg))
                                 .fill(if can_send {
                                     self.colors.accent
                                 } else {

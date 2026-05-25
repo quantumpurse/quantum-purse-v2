@@ -177,6 +177,14 @@ pub(crate) enum TransactionStatus {
     Error(String),
 }
 
+/// Which wallet modal is currently open, if any.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum WalletModal {
+    None,
+    Create,
+    Import,
+}
+
 /// Sub-view within the DAO tab.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum DaoView {

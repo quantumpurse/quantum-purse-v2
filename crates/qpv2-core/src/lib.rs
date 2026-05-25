@@ -194,6 +194,7 @@ impl KeyVault {
         name: &str,
     ) -> Result<(), String> {
         Self::validate_auth(&auth)?;
+        db::wallets::validate_wallet_name(name, None).map_err(|e| e.to_string())?;
 
         if Self::has_master_seed(self.wallet_id)? {
             return Err("Master seed already exists".to_string());
@@ -296,6 +297,7 @@ impl KeyVault {
         name: &str,
     ) -> Result<(), String> {
         Self::validate_auth(&auth)?;
+        db::wallets::validate_wallet_name(name, None).map_err(|e| e.to_string())?;
 
         if seed_phrase.is_empty() || seed_phrase.is_uninitialized() {
             return Err("Seed phrase cannot be empty or uninitialized".to_string());

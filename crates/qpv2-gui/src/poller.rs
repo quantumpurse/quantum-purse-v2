@@ -149,7 +149,12 @@ impl App {
                 }
                 Ok((lock_args, Err(e))) => {
                     self.balances.insert(lock_args, None);
-                    self.status = Status::Error(format!("Failed to fetch balance: {}", e));
+                    let msg = format!("Failed to fetch balance: {}", e);
+                    if e.contains("http error") {
+                        log::error!("{}", msg);
+                    } else {
+                        self.status = Status::Error(msg);
+                    }
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => {
@@ -204,7 +209,11 @@ impl App {
                 }
                 Ok(Err(e)) => {
                     self.dao_cells_query_rx = None;
-                    self.status = Status::Error(e);
+                    if e.contains("http error") {
+                        log::error!("{}", e);
+                    } else {
+                        self.status = Status::Error(e);
+                    }
                     break;
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
@@ -255,9 +264,11 @@ impl App {
                     break;
                 }
                 Ok(Err(e)) => {
-                    // Surface the error but keep draining so partial results from
-                    // other accounts still land in the list at Done.
-                    self.status = Status::Error(e);
+                    if e.contains("http error") {
+                        log::error!("tx_history: {}", e);
+                    } else {
+                        self.status = Status::Error(e);
+                    }
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => {
@@ -381,7 +392,12 @@ impl App {
                 self.earliest_funding_block_rx = None;
             }
             Ok(Err(e)) => {
-                self.status = Status::Error(format!("Auto-detect failed: {}", e));
+                let msg = format!("Auto-detect failed: {}", e);
+                if e.contains("http error") {
+                    log::error!("{}", msg);
+                } else {
+                    self.status = Status::Error(msg);
+                }
                 self.earliest_funding_block_rx = None;
             }
             Err(mpsc::TryRecvError::Empty) => {}

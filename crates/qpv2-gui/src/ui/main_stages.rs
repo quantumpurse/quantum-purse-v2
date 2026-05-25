@@ -326,7 +326,7 @@ impl App {
                     ui.add_space(8.0);
                     ui.vertical(|ui| {
                         ui.label(
-                            egui::RichText::new("QPV2")
+                            egui::RichText::new("Quantum Purse")
                                 .size(21.0)
                                 .color(self.colors.accent)
                                 .strong(),

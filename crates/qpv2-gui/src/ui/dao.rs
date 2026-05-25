@@ -447,7 +447,7 @@ impl App {
                 };
 
                 let deposit_btn =
-                    egui::Button::new(egui::RichText::new(btn_text).size(15.0).strong())
+                    egui::Button::new(egui::RichText::new(btn_text).size(15.0).strong().color(self.colors.bg))
                         .fill(if can_deposit {
                             self.colors.accent
                         } else {

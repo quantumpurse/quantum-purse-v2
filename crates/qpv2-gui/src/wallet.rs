@@ -181,8 +181,12 @@ impl App {
     fn clear_wallet_state(&mut self) {
         self.accounts.clear();
         self.balances.clear();
-        self.confirm_remove_id = None;
+        self.rename_wallet_id = None;
+        self.rename_wallet_buf.clear();
         self.import_mode = false;
+        self.wallet_modal = crate::types::WalletModal::None;
+        self.set_block_editing = false;
+        self.set_block_input.clear();
 
         // Drop all in-flight receivers so background threads from the
         // previous wallet can't land stale results into the new one.
@@ -219,18 +223,12 @@ impl App {
         self.status = Status::None;
     }
 
-    /// Validate the wallet name and claim the next available wallet ID.
-    /// Returns the pair without modifying `self` — the caller threads
-    /// them through creation calls and only commits via
-    /// `finalize_wallet_setup` on success.
+    /// Trim the wallet name and claim the next available wallet ID.
+    /// Name uniqueness is enforced by core during creation/import.
     pub(crate) fn prepare_new_wallet(&self) -> Result<(u32, String), String> {
         let name = self.new_wallet_name.trim().to_string();
         if name.is_empty() {
             return Err("Wallet name is required.".to_string());
-        }
-        let wallets = KeyVault::list_wallets().map_err(|e| e.to_string())?;
-        if wallets.iter().any(|w| w.name == name) {
-            return Err(format!("Wallet '{}' already exists.", name));
         }
         let wallet_id = qpv2_core::db::wallets::next_wallet_id().map_err(|e| e.to_string())?;
         Ok((wallet_id, name))
@@ -452,6 +450,7 @@ impl App {
                 });
                 self.accounts.push(lock_args.clone());
                 self.register_lock_scripts_with_light_client(std::slice::from_ref(&lock_args));
+                self.refresh_wallet_cache();
                 self.status = Status::Info("New account created!".to_string());
             }
             Err(e) => {
@@ -666,6 +665,7 @@ impl App {
                 });
                 self.accounts.push(lock_args.clone());
                 self.register_lock_scripts_with_light_client(std::slice::from_ref(&lock_args));
+                self.refresh_wallet_cache();
                 self.status = Status::Info("New account created!".to_string());
             }
             Err(e) => {
@@ -940,6 +940,7 @@ impl App {
                 });
                 self.accounts.push(lock_args.clone());
                 self.register_lock_scripts_with_light_client(std::slice::from_ref(&lock_args));
+                self.refresh_wallet_cache();
                 self.status = Status::Info("New account created!".to_string());
             }
             Err(e) => {

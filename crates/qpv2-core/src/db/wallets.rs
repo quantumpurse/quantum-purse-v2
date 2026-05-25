@@ -56,7 +56,28 @@ pub fn next_wallet_id() -> Result<u32, KeyVaultDBError> {
     Ok(max_id.map_or(0, |m| m + 1))
 }
 
+/// Check that `name` is non-empty and not already used by another wallet.
+/// Pass `exclude_id` to allow a wallet to keep its own name during rename.
+pub(crate) fn validate_wallet_name(name: &str, exclude_id: Option<u32>) -> Result<(), KeyVaultDBError> {
+    if name.is_empty() {
+        return Err(KeyVaultDBError::DatabaseError(
+            "Wallet name cannot be empty.".to_string(),
+        ));
+    }
+    let wallets = list_wallets()?;
+    let conflict = wallets.iter().any(|w| {
+        w.name == name && (exclude_id != Some(w.id))
+    });
+    if conflict {
+        return Err(KeyVaultDBError::DatabaseError(
+            format!("Wallet '{}' already exists.", name),
+        ));
+    }
+    Ok(())
+}
+
 pub fn rename_wallet(wallet_id: u32, new_name: &str) -> Result<(), KeyVaultDBError> {
+    validate_wallet_name(new_name, Some(wallet_id))?;
     let mut info = get_wallet_info(wallet_id)?.ok_or_else(|| {
         KeyVaultDBError::DatabaseError(format!("Wallet '{}' not found.", wallet_id))
     })?;

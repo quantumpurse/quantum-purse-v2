@@ -22,19 +22,19 @@ impl App {
                         .color(self.colors.text),
                 );
                 ui.label(
-                    egui::RichText::new("Manage wallets, keys, and authentication")
+                    egui::RichText::new("Derive and manage accounts for the active wallet.")
                         .size(13.0)
                         .color(self.colors.text_muted),
                 );
 
                 ui.add_space(22.0);
 
-                // ── Action cards (3-column grid) ──
-                ui.columns(3, |cols| {
-                    // New Account
-                    let hover = CardHover::new(&cols[0], "acct-new", &self.colors);
+                // ── New Account cards (2-column) ──
+                ui.columns(2, |cols| {
+                    // Single Account
+                    let hover = CardHover::new(&cols[0], "acct-single", &self.colors);
 
-                    let new_card = egui::Frame::new()
+                    let single_card = egui::Frame::new()
                         .fill(hover.fill)
                         .corner_radius(18.0)
                         .inner_margin(egui::Margin::symmetric(20, 24))
@@ -42,10 +42,10 @@ impl App {
                         .show(&mut cols[0], |ui| {
                             ui.vertical_centered(|ui| {
                                 hover.apply_lift(ui);
-                                ui.label(egui::RichText::new("\u{2726}").size(30.0));
-                                ui.add_space(8.0);
+                                ui.label(egui::RichText::new("\u{2726}").size(26.0));
+                                ui.add_space(6.0);
                                 ui.label(
-                                    egui::RichText::new("New Account")
+                                    egui::RichText::new("Single Account")
                                         .size(14.0)
                                         .strong()
                                         .color(self.colors.text),
@@ -62,9 +62,9 @@ impl App {
                         })
                         .response;
 
-                    hover.commit(&new_card);
+                    hover.commit(&single_card);
 
-                    if new_card.interact(egui::Sense::click()).clicked() {
+                    if single_card.interact(egui::Sense::click()).clicked() {
                         match &self.auth_method {
                             Some(AuthMethod::Password) => {
                                 self.create_new_account_with_password();
@@ -83,10 +83,10 @@ impl App {
                         }
                     }
 
-                    // Import (CLI only)
-                    let hover = CardHover::new(&cols[1], "acct-import", &self.colors);
+                    // Multi-sig Account
+                    let hover = CardHover::new(&cols[1], "acct-multisig", &self.colors);
 
-                    let import_card = egui::Frame::new()
+                    let multisig_card = egui::Frame::new()
                         .fill(hover.fill)
                         .corner_radius(18.0)
                         .inner_margin(egui::Margin::symmetric(20, 24))
@@ -94,17 +94,17 @@ impl App {
                         .show(&mut cols[1], |ui| {
                             ui.vertical_centered(|ui| {
                                 hover.apply_lift(ui);
-                                ui.label(egui::RichText::new("\u{2b07}").size(30.0));
-                                ui.add_space(8.0);
+                                ui.label(egui::RichText::new("\u{1f512}").size(26.0));
+                                ui.add_space(6.0);
                                 ui.label(
-                                    egui::RichText::new("Import Seed")
+                                    egui::RichText::new("Multi-sig Account")
                                         .size(14.0)
                                         .strong()
                                         .color(self.colors.text_muted),
                                 );
                                 ui.add_space(4.0);
                                 ui.label(
-                                    egui::RichText::new("CLI only: qpv2 import-seed")
+                                    egui::RichText::new("Coming soon.")
                                         .size(11.0)
                                         .color(self.colors.text_muted),
                                 );
@@ -112,57 +112,7 @@ impl App {
                         })
                         .response;
 
-                    hover.commit(&import_card);
-
-                    // Export Seed
-                    let hover = CardHover::new(&cols[2], "acct-export", &self.colors);
-
-                    let export_card = egui::Frame::new()
-                        .fill(hover.fill)
-                        .corner_radius(18.0)
-                        .inner_margin(egui::Margin::symmetric(20, 24))
-                        .stroke(hover.stroke)
-                        .show(&mut cols[2], |ui| {
-                            ui.vertical_centered(|ui| {
-                                hover.apply_lift(ui);
-                                ui.label(egui::RichText::new("\u{2b06}").size(30.0));
-                                ui.add_space(8.0);
-                                ui.label(
-                                    egui::RichText::new("Export Seed")
-                                        .size(14.0)
-                                        .strong()
-                                        .color(self.colors.text),
-                                );
-                                ui.add_space(4.0);
-                                ui.label(
-                                    egui::RichText::new("Make sure no one is watching.")
-                                        .size(11.0)
-                                        .color(self.colors.warn),
-                                );
-                            });
-                        })
-                        .response;
-
-                    hover.commit(&export_card);
-
-                    if export_card.interact(egui::Sense::click()).clicked() {
-                        match &self.auth_method {
-                            Some(AuthMethod::Password) => {
-                                self.export_seed_phrase_with_password();
-                            }
-                            Some(AuthMethod::Keychain) => {
-                                self.export_seed_phrase_with_keychain();
-                            }
-                            Some(AuthMethod::Fido2 { credential_id }) => {
-                                let cred_id = credential_id.clone();
-                                self.export_seed_phrase_with_fido2(&cred_id);
-                            }
-                            None => {
-                                self.status =
-                                    Status::Error("No authentication method set.".to_string());
-                            }
-                        }
-                    }
+                    hover.commit(&multisig_card);
                 });
 
                 ui.add_space(18.0);

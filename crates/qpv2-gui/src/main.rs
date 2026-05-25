@@ -50,6 +50,9 @@ pub(crate) struct App {
     pub(crate) new_wallet_name: String,
     pub(crate) new_wallet_variant: SpxVariant,
 
+    // Wallet create/import modal state.
+    pub(crate) wallet_modal: types::WalletModal,
+
     // Setup screen state.
     pub(crate) selected_variant: SpxVariant,
     pub(crate) import_mode: bool,
@@ -57,7 +60,8 @@ pub(crate) struct App {
     // Unlocked screen state.
     pub(crate) active_tab: Tab,
     pub(crate) accounts: Vec<String>,
-    pub(crate) confirm_remove_id: Option<u32>,
+    pub(crate) rename_wallet_id: Option<u32>,
+    pub(crate) rename_wallet_buf: String,
 
     // Balance cache: lock_args -> balance in shannons (None = not yet fetched).
     pub(crate) balances: HashMap<String, Option<u64>>,
@@ -315,11 +319,13 @@ impl App {
             wallet_selector_rect: None,
             new_wallet_name: String::new(),
             new_wallet_variant: SpxVariant::Sha2128S,
+            wallet_modal: types::WalletModal::None,
             selected_variant: SpxVariant::Sha2128S,
             import_mode: false,
             active_tab: Tab::Dashboard,
             accounts,
-            confirm_remove_id: None,
+            rename_wallet_id: None,
+            rename_wallet_buf: String::new(),
             balances: HashMap::new(),
             local_node,
             qp_client,
@@ -434,9 +440,10 @@ impl eframe::App for App {
             self.fetch_node_status();
         }
 
-        // Show popups if open.
+        // Show popups / modals if open.
         self.show_node_selector_popup(ctx);
         self.show_wallet_selector_popup(ctx);
+        self.show_wallet_modal(ctx);
 
         // Polling main stages of the wallet.
         match self.screen.clone() {
@@ -477,6 +484,17 @@ impl eframe::App for App {
 }
 
 fn main() -> eframe::Result {
+    if let Ok(data_dir) = qpv2_core::db::get_data_dir() {
+        let log_path = data_dir.join("qpv2-gui.log");
+        if let Ok(file) = std::fs::File::create(&log_path) {
+            let _ = simplelog::WriteLogger::init(
+                simplelog::LevelFilter::Warn,
+                simplelog::Config::default(),
+                file,
+            );
+        }
+    }
+
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1100.0, 700.0])

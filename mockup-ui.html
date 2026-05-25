@@ -79,26 +79,27 @@
     text-transform: uppercase;
   }
 
-  .node-selector {
-    margin: 14px 14px 0;
+  /* Wallet / Node selector shared style */
+  .selector-btn {
+    margin: 0 14px;
     background: var(--surface2);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     padding: 9px 12px; cursor: pointer;
     transition: border-color 0.2s;
   }
-  .node-selector:hover { border-color: var(--border2); }
-  .node-label {
+  .selector-btn:hover { border-color: var(--border2); }
+  .selector-label {
     font-size: 8.5px; text-transform: uppercase;
     letter-spacing: 1.5px; color: var(--muted);
     margin-bottom: 4px; font-family: 'Space Mono', monospace;
   }
-  .node-current {
+  .selector-current {
     display: flex; align-items: center;
     justify-content: space-between;
     font-size: 13px; font-weight: 500;
   }
-  .node-dot {
+  .selector-dot {
     width: 7px; height: 7px; border-radius: 50%;
     background: var(--accent); box-shadow: 0 0 6px var(--accent);
     margin-right: 7px; animation: pulse 2s infinite;
@@ -111,10 +112,46 @@
   }
   .badge-main { background: var(--accent-tint); color: var(--accent); }
   .badge-test { background: var(--accent2-tint); color: var(--accent2); }
+  .variant-badge {
+    font-family: 'Space Mono', monospace;
+    font-size: 8px; color: var(--accent2);
+  }
   @keyframes pulse {
     0%,100%{opacity:1;box-shadow:0 0 6px var(--accent);}
     50%{opacity:.6;box-shadow:0 0 14px var(--accent);}
   }
+
+  /* Wallet selector dropdown */
+  .wallet-dropdown {
+    display: none; margin: 4px 14px 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px;
+  }
+  .wallet-dropdown.open { display: block; animation: fadeIn .15s ease; }
+  .wallet-dd-title {
+    font-size: 8.5px; text-transform: uppercase;
+    letter-spacing: 1.5px; color: var(--muted);
+    font-family: 'Space Mono', monospace;
+    margin-bottom: 6px;
+  }
+  .wallet-dd-row {
+    padding: 6px 8px; border-radius: 6px;
+    cursor: pointer; display: flex; align-items: center;
+    justify-content: space-between; transition: background .15s;
+    margin-bottom: 2px;
+  }
+  .wallet-dd-row:hover { background: rgba(0,255,180,.05); }
+  .wallet-dd-row.active { background: var(--accent-tint); }
+  .wallet-dd-row.active .wallet-dd-name { color: var(--accent); }
+  .wallet-dd-name { font-size: 12.5px; }
+  .wallet-dd-badges { display: flex; gap: 4px; align-items: center; }
+  .wallet-dd-badge {
+    font-family: 'Space Mono', monospace; font-size: 8.5px;
+    padding: 1px 6px; border-radius: 4px;
+  }
+
+  /* Node selector dropdown */
   .node-dropdown {
     display: none; margin: 4px 14px 0;
     background: var(--surface2);
@@ -192,8 +229,6 @@
   }
   .sidebar-btn-lock { color: var(--text); }
   .sidebar-btn-lock:hover { border-color: var(--border2); background: rgba(0,255,180,.06); }
-  .sidebar-btn-danger { color: var(--danger); border-color: rgba(255,77,109,.2); }
-  .sidebar-btn-danger:hover { background: rgba(255,77,109,.08); border-color: rgba(255,77,109,.3); }
 
   /* ── MAIN ── */
   .main {
@@ -520,6 +555,23 @@
     font-size: 8.5px; font-family: 'Space Mono', monospace;
   }
 
+  /* WALLETS TAB */
+  .wallet-row {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 14px 18px;
+    display: flex; align-items: center; gap: 13px;
+    transition: all .15s; margin-bottom: 6px;
+  }
+  .wallet-row:hover { border-color: var(--border2); background: var(--surface2); }
+  .wallet-avatar {
+    width: 38px; height: 38px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; font-weight: 700; font-family: 'Syne', sans-serif; flex-shrink: 0;
+  }
+  .wallet-info { flex: 1; }
+  .wallet-name { font-size: 14px; font-weight: 600; }
+  .wallet-pills { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+
   /* SETUP SCREEN */
   .screen-setup {
     display: none; flex: 1; align-items: center; justify-content: center;
@@ -548,8 +600,8 @@
     border: 1px solid transparent;
   }
   .setup-toggle-btn.active {
-    background: var(--surface); color: var(--text);
-    border-color: var(--border2);
+    background: var(--accent); color: var(--bg);
+    border-color: transparent;
   }
   .variant-pills { display: flex; gap: 6px; margin-top: 8px; margin-bottom: 18px; }
   .auth-buttons { display: flex; flex-direction: column; gap: 8px; }
@@ -560,7 +612,7 @@
     border: 1px solid; text-align: center;
   }
   .auth-btn-keychain {
-    background: linear-gradient(135deg,var(--accent),var(--accent2));
+    background: var(--accent);
     color: #050c0a; border-color: transparent;
   }
   .auth-btn-fido2 {
@@ -568,7 +620,7 @@
     border-color: rgba(0,200,255,.3);
   }
   .auth-btn-password {
-    background: transparent; color: var(--text);
+    background: transparent; color: var(--muted);
     border-color: var(--border2);
   }
 
@@ -587,7 +639,7 @@
   .locked-sub { font-size: 13px; color: var(--muted); margin-bottom: 28px; }
   .unlock-btn {
     padding: 14px 40px; border-radius: var(--radius-sm);
-    background: linear-gradient(135deg,var(--accent2),var(--accent));
+    background: var(--accent2);
     color: #050c0a; font-size: 14px; font-weight: 600;
     border: none; cursor: pointer; font-family: 'DM Sans', sans-serif;
     box-shadow: 0 4px 20px rgba(0,200,255,.25);
@@ -612,6 +664,89 @@
   }
   .screen-switcher button.active { color: var(--accent); border-color: var(--border2); }
   .screen-switcher button:hover { border-color: var(--border2); color: var(--text); }
+
+  /* WALLET ROW — name row with rename icon */
+  .wallet-name-row {
+    display: flex; align-items: center; gap: 6px; margin-bottom: 3px;
+  }
+  .wallet-rename-icon {
+    font-size: 11px; color: var(--muted); cursor: pointer;
+    transition: color .15s;
+  }
+  .wallet-rename-icon:hover { color: var(--accent); }
+  .wallet-pill-delete {
+    background: transparent;
+    border: 1px solid rgba(255,77,109,.35);
+    color: var(--danger);
+    font-family: 'Space Mono', monospace;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  .wallet-pill-delete:hover { background: rgba(255,77,109,.12); }
+
+  /* NODE MANAGER — text-driven layout */
+  .nm-network-row {
+    display: flex; align-items: center; gap: 14px; margin-bottom: 18px;
+  }
+  .nm-network-label {
+    font-size: 12px; color: var(--muted); font-weight: 500;
+  }
+  .nm-radio {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 12px; color: var(--text); cursor: pointer;
+  }
+  .nm-radio input[type="radio"] {
+    accent-color: var(--accent); cursor: pointer;
+  }
+  .nm-separator {
+    height: 1px; background: var(--border); margin-bottom: 0;
+  }
+  .nm-backend {
+    padding: 16px 0 20px;
+  }
+  .nm-backend.nm-backend-inactive .nm-header {
+    cursor: pointer; border-radius: 6px; padding: 8px 12px;
+    margin: 0 -12px; transition: background .15s;
+  }
+  .nm-backend.nm-backend-inactive .nm-header:hover {
+    background: rgba(255,255,255,.03);
+  }
+  .nm-backend.nm-backend-inactive .nm-metrics {
+    opacity: .5;
+  }
+  .nm-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .nm-header-accented {
+    border-left: 3px solid var(--accent3);
+    padding-left: 12px;
+  }
+  .nm-header-left {
+    display: flex; align-items: center; gap: 10px;
+  }
+  .nm-icon { font-size: 20px; }
+  .nm-title {
+    font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700;
+  }
+  .nm-subtitle {
+    font-size: 11.5px; color: var(--muted); font-weight: 300;
+  }
+  .nm-metrics {
+    display: flex; flex-direction: column; gap: 4px;
+    padding-left: 2px;
+  }
+  .nm-metric-row {
+    display: flex; align-items: baseline; gap: 12px;
+    font-family: 'Space Mono', monospace; font-size: 11.5px;
+    line-height: 1.8;
+  }
+  .nm-metric-label {
+    color: var(--muted); min-width: 120px;
+  }
+  .nm-metric-val {
+    color: var(--text);
+  }
 </style>
 </head>
 <body>
@@ -636,6 +771,11 @@
         <div class="setup-toggle-btn" onclick="selSetupTab(this)">Import Wallet</div>
       </div>
 
+      <label class="form-label-mono">Wallet Name</label>
+      <input class="form-input" type="text" placeholder="Enter a name for your wallet" style="margin-bottom:16px">
+
+      <div style="height:1px;background:var(--border);margin-bottom:20px"></div>
+
       <label class="form-label-mono">SPHINCS+ Variant</label>
       <select class="form-input" style="cursor:pointer;margin-bottom:4px">
         <option>Sha2128S</option><option>Sha2128F</option>
@@ -646,9 +786,11 @@
         <option>Shake256S</option><option>Shake256F</option>
       </select>
       <div class="variant-pills">
-        <span class="pill" style="background:var(--accent-tint);color:var(--accent)">Level 1</span>
-        <span class="pill" style="background:var(--accent2-tint);color:var(--accent2)">Small</span>
+        <span class="pill" style="background:var(--accent-tint);color:var(--accent)">128-bit security</span>
+        <span class="pill" style="background:var(--accent2-tint);color:var(--accent2)">Compact signatures</span>
       </div>
+
+      <div style="height:1px;background:var(--border);margin-bottom:20px"></div>
 
       <label class="form-label-mono">Authentication</label>
       <div class="auth-buttons">
@@ -665,9 +807,9 @@
 <!-- ═══════════════════════════════════════════ -->
 <div class="screen-locked" id="screen-locked">
   <div class="locked-center">
-    <div class="locked-icon">🔒</div>
+    <div class="locked-icon">&#x1f512;</div>
     <div class="locked-title">Wallet Locked</div>
-    <div class="locked-sub">Authenticate to access your wallet.</div>
+    <div class="locked-sub">Authenticate to access your wallet</div>
     <button class="unlock-btn">Unlock with Touch ID</button>
   </div>
 </div>
@@ -686,43 +828,78 @@
     </div>
   </div>
 
-  <div class="node-selector" onclick="toggleDD()">
-    <div class="node-label">Active Node</div>
-    <div class="node-current">
-      <span><span class="node-dot"></span><span id="active-node">Public RPC</span></span>
-      <span style="display:flex;align-items:center;gap:6px">
-        <span class="network-badge badge-main" id="network-badge">MAIN</span>
-        <span style="color:var(--muted);font-size:10px">▾</span>
-      </span>
+  <!-- Wallet selector -->
+  <div style="margin-top:10px">
+    <div class="selector-btn" onclick="toggleWalletDD()">
+      <div class="selector-label">Active Wallet</div>
+      <div class="selector-current">
+        <span><span class="selector-dot"></span><span id="active-wallet">tung</span></span>
+        <span style="display:flex;align-items:center;gap:6px">
+          <span style="color:var(--muted);font-size:10px">&#x25bc;</span>
+          <span class="variant-badge" id="wallet-variant-badge">Sha2128S</span>
+        </span>
+      </div>
+    </div>
+    <div class="wallet-dropdown" id="wdd">
+      <div class="wallet-dd-title">Wallets</div>
+      <div class="wallet-dd-row active" onclick="selWallet('tung','Sha2128S','KEY',this)">
+        <span class="wallet-dd-name">tung</span>
+        <div class="wallet-dd-badges">
+          <span class="wallet-dd-badge" style="background:var(--surface2);color:var(--muted)">Sha2128S</span>
+          <span class="wallet-dd-badge" style="background:var(--accent2-tint);color:var(--accent2)">KEY</span>
+        </div>
+      </div>
+      <div class="wallet-dd-row" onclick="selWallet('kingkong','Sha2128S','PWD',this)">
+        <span class="wallet-dd-name">kingkong</span>
+        <div class="wallet-dd-badges">
+          <span class="wallet-dd-badge" style="background:var(--surface2);color:var(--muted)">Sha2128S</span>
+          <span class="wallet-dd-badge" style="background:rgba(90,122,112,.15);color:var(--muted)">PWD</span>
+        </div>
+      </div>
+      <div class="wallet-dd-row" onclick="selWallet('strong','Sha2256F','FIDO',this)">
+        <span class="wallet-dd-name">strong</span>
+        <div class="wallet-dd-badges">
+          <span class="wallet-dd-badge" style="background:var(--surface2);color:var(--muted)">Sha2256F</span>
+          <span class="wallet-dd-badge" style="background:rgba(155,127,212,.15);color:var(--accent3)">FIDO</span>
+        </div>
+      </div>
     </div>
   </div>
-  <div class="node-dropdown" id="ndd">
-    <div class="node-dd-section">Network</div>
-    <div class="network-row">
-      <div class="network-btn active" onclick="selNetwork('Mainnet',this)">Mainnet</div>
-      <div class="network-btn" onclick="selNetwork('Testnet',this)">Testnet</div>
+
+  <!-- Node selector -->
+  <div style="margin-top:6px">
+    <div class="selector-btn" onclick="toggleNodeDD()">
+      <div class="selector-label">Active Node</div>
+      <div class="selector-current">
+        <span><span class="selector-dot"></span><span id="active-node">Public RPC</span></span>
+        <span style="display:flex;align-items:center;gap:6px">
+          <span style="color:var(--muted);font-size:10px">&#x25bc;</span>
+          <span class="network-badge badge-main" id="network-badge">MAIN</span>
+        </span>
+      </div>
     </div>
-    <div class="node-dd-section">Active Node</div>
-    <div class="node-option" onclick="selNode('Full Node',this)">🖥️ Full Node <span class="node-badge badge-full">FULL</span></div>
-    <div class="node-option" onclick="selNode('Light Client',this)">💡 Light Client <span class="node-badge badge-light">LIGHT</span></div>
-    <div class="node-option active" onclick="selNode('Public RPC',this)">🌐 Public RPC <span class="node-badge badge-rpc">RPC</span></div>
+    <div class="node-dropdown" id="ndd">
+      <div class="node-option" onclick="selNode('Full Node',this)">&#x1f5a5;&#xfe0f; Full Node <span class="node-badge badge-full">FULL</span></div>
+      <div class="node-option" onclick="selNode('Light Client',this)">&#x1f4a1; Light Client <span class="node-badge badge-light">LIGHT</span></div>
+      <div class="node-option active" onclick="selNode('Public RPC',this)">&#x1f310; Public RPC <span class="node-badge badge-rpc">RPC</span></div>
+    </div>
   </div>
 
   <nav>
     <div class="nav-section">Wallet</div>
-    <div class="nav-item active" onclick="go('dashboard',this)"><span class="nav-icon">◈</span> Dashboard</div>
-    <div class="nav-item" onclick="go('transfer',this)"><span class="nav-icon">↕</span> Transfer</div>
+    <div class="nav-item active" onclick="go('dashboard',this)"><span class="nav-icon">&#x25c8;</span> Dashboard</div>
+    <div class="nav-item" onclick="go('transfer',this)"><span class="nav-icon">&#x2191;&#x2193;</span> Transfer</div>
     <div class="nav-section">NervosDAO</div>
-    <div class="nav-item" onclick="go('dao',this)"><span class="nav-icon">⬡</span> DAO Operations</div>
+    <div class="nav-item" onclick="go('dao',this)"><span class="nav-icon">&#x2b21;</span> DAO Operations</div>
     <div class="nav-section">Network</div>
-    <div class="nav-item" onclick="go('nodes',this)"><span class="nav-icon">◉</span> Node Manager</div>
+    <div class="nav-item" onclick="go('nodes',this)"><span class="nav-icon">&#x25c9;</span> Node Manager</div>
     <div class="nav-section">Security</div>
-    <div class="nav-item" onclick="go('accounts',this)"><span class="nav-icon">◎</span> Accounts</div>
+    <div class="nav-item" onclick="go('accounts',this)"><span class="nav-icon">&#x25ce;</span> Accounts</div>
+    <div class="nav-item" onclick="go('wallets',this)"><span class="nav-icon">&#x2318;</span> Wallets</div>
   </nav>
 
   <div class="sidebar-bottom">
-    <button class="sidebar-btn sidebar-btn-lock">Lock Wallet</button>
-    <button class="sidebar-btn sidebar-btn-danger">Remove Wallet</button>
+    <button class="sidebar-btn sidebar-btn-lock">&#x1f512; Lock Wallet</button>
   </div>
 </aside>
 
@@ -744,46 +921,46 @@
     </div>
 
     <div class="quick-actions">
-      <div class="qa-btn" onclick="go('transfer',document.querySelectorAll('.nav-item')[1])"><span class="qa-icon">↑</span>Send</div>
-      <div class="qa-btn" onclick="go('accounts',document.querySelectorAll('.nav-item')[4])"><span class="qa-icon">↓</span>Receive</div>
-      <div class="qa-btn" onclick="go('dao',document.querySelectorAll('.nav-item')[2])"><span class="qa-icon">⬡</span>DAO</div>
-      <div class="qa-btn" onclick="go('accounts',document.querySelectorAll('.nav-item')[4])"><span class="qa-icon">◎</span>Accounts</div>
+      <div class="qa-btn" onclick="go('transfer',document.querySelectorAll('.nav-item')[1])"><span class="qa-icon">&#x2191;</span>Send</div>
+      <div class="qa-btn" onclick="go('accounts',document.querySelectorAll('.nav-item')[4])"><span class="qa-icon">&#x2193;</span>Receive</div>
+      <div class="qa-btn" onclick="go('dao',document.querySelectorAll('.nav-item')[2])"><span class="qa-icon">&#x2b21;</span>DAO</div>
+      <div class="qa-btn" onclick="go('accounts',document.querySelectorAll('.nav-item')[4])"><span class="qa-icon">&#x25ce;</span>Accounts</div>
     </div>
 
     <div class="section-title">Recent Transactions <span class="s-badge">4 total</span></div>
     <div class="tx-list">
       <div class="tx-item">
-        <div class="tx-icon tx-dao">⬡</div>
+        <div class="tx-icon tx-dao">&#x2b21;</div>
         <div class="tx-info">
           <div class="tx-name">DAO Deposit</div>
-          <div class="tx-hash">0x3f9a…c21b</div>
+          <div class="tx-hash">0x3f9a...c21b</div>
         </div>
         <span class="tx-acct-badge">#0</span>
-        <div><div class="tx-amount neg">−10,000 CKB</div><div class="tx-time">2h ago</div></div>
+        <div><div class="tx-amount neg">&minus;10,000 CKB</div><div class="tx-time">2h ago</div></div>
       </div>
       <div class="tx-item">
-        <div class="tx-icon tx-in">↓</div>
+        <div class="tx-icon tx-in">&#x2193;</div>
         <div class="tx-info">
-          <div class="tx-name">Received from ckb1…8f2d</div>
-          <div class="tx-hash">0xa87b…119e</div>
+          <div class="tx-name">Received from ckb1...8f2d</div>
+          <div class="tx-hash">0xa87b...119e</div>
         </div>
         <span class="tx-acct-badge">#1</span>
         <div><div class="tx-amount pos">+3,200 CKB</div><div class="tx-time">5h ago</div></div>
       </div>
       <div class="tx-item">
-        <div class="tx-icon tx-out">↑</div>
+        <div class="tx-icon tx-out">&#x2191;</div>
         <div class="tx-info">
-          <div class="tx-name">Transfer to ckb1…92aa</div>
-          <div class="tx-hash">0xd44c…7f01</div>
+          <div class="tx-name">Transfer to ckb1...92aa</div>
+          <div class="tx-hash">0xd44c...7f01</div>
         </div>
         <span class="tx-acct-badge">#0</span>
-        <div><div class="tx-amount neg">−500 CKB</div><div class="tx-time">1d ago</div></div>
+        <div><div class="tx-amount neg">&minus;500 CKB</div><div class="tx-time">1d ago</div></div>
       </div>
       <div class="tx-item">
-        <div class="tx-icon tx-dao">⬡</div>
+        <div class="tx-icon tx-dao">&#x2b21;</div>
         <div class="tx-info">
           <div class="tx-name">DAO Request Withdrawal</div>
-          <div class="tx-hash">0x71fc…3301</div>
+          <div class="tx-hash">0x71fc...3301</div>
         </div>
         <span class="tx-acct-badge">#0</span>
         <div><div class="tx-amount" style="color:var(--warn)">Pending</div><div class="tx-time">2d ago</div></div>
@@ -820,7 +997,7 @@
       </div>
 
       <div class="advanced-toggle" onclick="toggleAdvanced(this)">
-        <span>▸</span> Advanced
+        <span>&#x25b8;</span> Advanced
       </div>
       <div class="advanced-content">
         <div class="form-group">
@@ -829,7 +1006,7 @@
         </div>
       </div>
 
-      <div class="warning-box">⚠️ Transfers are final. Double-check the recipient address before sending.</div>
+      <div class="warning-box">&#x26a0;&#xfe0f; Transfers are final. Double-check the recipient address before sending.</div>
 
       <button class="btn btn-primary full-w" style="height:44px">Confirm Send</button>
 
@@ -852,19 +1029,19 @@
     <div class="dao-grid">
       <div class="dao-action-card">
         <div class="dao-card-accent da-deposit"></div>
-        <span class="dao-action-icon">📥</span>
+        <span class="dao-action-icon">&#x1f4e5;</span>
         <div class="dao-action-title">DAO Deposit</div>
         <div class="dao-action-desc">Lock CKB to earn compensation against secondary issuance inflation.</div>
       </div>
       <div class="dao-action-card">
         <div class="dao-card-accent da-req"></div>
-        <span class="dao-action-icon">⏳</span>
+        <span class="dao-action-icon">&#x23f3;</span>
         <div class="dao-action-title">Request Withdrawal</div>
         <div class="dao-action-desc">Begin the unlock process. Wait for an epoch boundary to complete.</div>
       </div>
       <div class="dao-action-card">
         <div class="dao-card-accent da-withdraw"></div>
-        <span class="dao-action-icon">📤</span>
+        <span class="dao-action-icon">&#x1f4e4;</span>
         <div class="dao-action-title">Withdraw</div>
         <div class="dao-action-desc">Claim CKB + compensation after the epoch boundary is reached.</div>
       </div>
@@ -876,7 +1053,7 @@
         <tbody>
           <tr>
             <td><span class="pill" style="background:var(--accent2-tint);color:var(--accent2)">#0</span></td>
-            <td style="font-family:'Space Mono',monospace;font-size:10px;color:var(--muted)">0x3f9a1b2c3d4e5f6a…c21b7e8f9a0b1c2d</td>
+            <td style="font-family:'Space Mono',monospace;font-size:10px;color:var(--muted)">0x3f9a1b2c3d4e5f6a...c21b7e8f9a0b1c2d</td>
             <td><span style="font-weight:600">44,000</span> <span style="font-size:9.5px;color:var(--muted)">CKB</span></td>
             <td style="font-family:'Space Mono',monospace;font-size:10.5px">14,298,100</td>
             <td style="color:var(--muted)">--</td>
@@ -885,7 +1062,7 @@
           </tr>
           <tr>
             <td><span class="pill" style="background:var(--accent2-tint);color:var(--accent2)">#0</span></td>
-            <td style="font-family:'Space Mono',monospace;font-size:10px;color:var(--muted)">0xb11f2a3b4c5d6e7f…804d9e0f1a2b3c4d</td>
+            <td style="font-family:'Space Mono',monospace;font-size:10px;color:var(--muted)">0xb11f2a3b4c5d6e7f...804d9e0f1a2b3c4d</td>
             <td><span style="font-weight:600">10,000</span> <span style="font-size:9.5px;color:var(--muted)">CKB</span></td>
             <td style="font-family:'Space Mono',monospace;font-size:10.5px">14,290,500</td>
             <td style="color:var(--warn);font-weight:600">+31 CKB</td>
@@ -900,76 +1077,79 @@
   <!-- ═══ NODE MANAGER ═══ -->
   <div class="view" id="view-nodes">
     <div class="page-header" style="margin-bottom:26px"><h1>Node Manager</h1><p>Configure and monitor your CKB node</p></div>
-    <div class="nodes-grid">
-      <div class="node-card">
-        <div class="node-card-header">
-          <div class="node-type-icon">🖥️</div>
-          <div class="node-status-pill ns-standby">○ STANDBY</div>
+
+    <!-- Network toggle -->
+    <div class="nm-network-row">
+      <span class="nm-network-label">Network</span>
+      <label class="nm-radio"><input type="radio" name="nm-network" checked><span>Mainnet</span></label>
+      <label class="nm-radio"><input type="radio" name="nm-network"><span>Testnet</span></label>
+    </div>
+
+    <!-- Full Node (inactive / standby) -->
+    <div class="nm-separator"></div>
+    <div class="nm-backend nm-backend-inactive" onclick="this.classList.toggle('nm-backend-inactive')">
+      <div class="nm-header">
+        <div class="nm-header-left">
+          <span class="nm-icon">&#x1f5a5;&#xfe0f;</span>
+          <span class="nm-title">Full Node</span>
+          <span class="nm-subtitle">Full chain verification</span>
         </div>
-        <div class="node-card-title">Full Node</div>
-        <div class="node-card-sub">Full chain verification · Local sovereignty</div>
-        <div class="node-metrics">
-          <div class="node-metric"><div class="nm-label">Sync</div><div class="nm-val">—</div></div>
-          <div class="node-metric"><div class="nm-label">Local Tip</div><div class="nm-val">—</div></div>
-          <div class="node-metric"><div class="nm-label">Peers</div><div class="nm-val">—</div></div>
-          <div class="node-metric"><div class="nm-label">RPC Port</div><div class="nm-val">8114</div></div>
-        </div>
-        <div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>
-        <div class="progress-label"><span>Sync</span><span>—</span></div>
+        <span class="node-status-pill ns-standby">&#x25cb; STANDBY</span>
       </div>
-      <div class="node-card">
-        <div class="node-card-header">
-          <div class="node-type-icon">💡</div>
-          <div class="node-status-pill ns-standby">○ STANDBY</div>
-        </div>
-        <div class="node-card-title">Light Client</div>
-        <div class="node-card-sub">Header-only sync · Fast & lightweight</div>
-        <div class="node-metrics">
-          <div class="node-metric"><div class="nm-label">Sync</div><div class="nm-val">—</div></div>
-          <div class="node-metric"><div class="nm-label">Tip</div><div class="nm-val">—</div></div>
-          <div class="node-metric"><div class="nm-label">Peers</div><div class="nm-val">—</div></div>
-          <div class="node-metric"><div class="nm-label">RPC Port</div><div class="nm-val">9000</div></div>
-        </div>
-        <div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>
-        <div class="progress-label"><span>Sync</span><span>—</span></div>
+      <div class="nm-metrics">
+        <div class="nm-metric-row"><span class="nm-metric-label">Tip Block</span><span class="nm-metric-val">&mdash;</span></div>
+        <div class="nm-metric-row"><span class="nm-metric-label">RPC URL</span><span class="nm-metric-val">http://127.0.0.1:8114</span></div>
+        <div class="nm-metric-row"><span class="nm-metric-label">Peers</span><span class="nm-metric-val">&mdash;</span></div>
       </div>
-      <div class="node-card connected">
-        <div class="node-card-header">
-          <div class="node-type-icon">🌐</div>
-          <div class="node-status-pill ns-online">● ONLINE</div>
+    </div>
+
+    <!-- Light Client (inactive / standby) -->
+    <div class="nm-separator"></div>
+    <div class="nm-backend nm-backend-inactive" onclick="this.classList.toggle('nm-backend-inactive')">
+      <div class="nm-header">
+        <div class="nm-header-left">
+          <span class="nm-icon">&#x1f4a1;</span>
+          <span class="nm-title" style="color:var(--accent2)">Light Client</span>
+          <span class="nm-subtitle">Header-only sync</span>
         </div>
-        <div class="node-card-title">Public RPC Node</div>
-        <div class="node-card-sub">mainnet.ckb.dev · No local storage</div>
-        <div class="node-metrics">
-          <div class="node-metric"><div class="nm-label">Block Height</div><div class="nm-val">14,298,441</div></div>
-          <div class="node-metric"><div class="nm-label">Endpoint</div><div class="nm-val" style="font-size:10px">mainnet.ckb.dev</div></div>
-          <div class="node-metric"><div class="nm-label">Peers</div><div class="nm-val">—</div></div>
-          <div class="node-metric"><div class="nm-label">Port</div><div class="nm-val">443</div></div>
+        <span class="node-status-pill ns-standby">&#x25cb; STANDBY</span>
+      </div>
+      <div class="nm-metrics">
+        <div class="nm-metric-row"><span class="nm-metric-label">Tip Block</span><span class="nm-metric-val">&mdash;</span></div>
+        <div class="nm-metric-row"><span class="nm-metric-label">RPC URL</span><span class="nm-metric-val">http://127.0.0.1:9000</span></div>
+        <div class="nm-metric-row"><span class="nm-metric-label">Peers</span><span class="nm-metric-val">&mdash;</span></div>
+        <div class="nm-metric-row"><span class="nm-metric-label">Sync start</span><span class="nm-metric-val">&mdash; &#x270f;</span></div>
+      </div>
+    </div>
+
+    <!-- Public RPC (active / online) -->
+    <div class="nm-separator"></div>
+    <div class="nm-backend nm-backend-active nm-accent-purple">
+      <div class="nm-header nm-header-accented" style="border-left-color:var(--accent3)">
+        <div class="nm-header-left">
+          <span class="nm-icon">&#x1f310;</span>
+          <span class="nm-title" style="color:var(--accent3)">Public RPC</span>
+          <span class="nm-subtitle">Remote endpoint</span>
         </div>
-        <div class="progress-bar"><div class="progress-fill" style="width:100%"></div></div>
-        <div class="progress-label"><span>Sync</span><span>100%</span></div>
+        <span class="node-status-pill ns-online">&#x25cf; ONLINE</span>
+      </div>
+      <div class="nm-metrics">
+        <div class="nm-metric-row"><span class="nm-metric-label">Tip Block</span><span class="nm-metric-val">14,298,441</span></div>
+        <div class="nm-metric-row"><span class="nm-metric-label">RPC URL</span><span class="nm-metric-val">https://mainnet.ckb.dev</span></div>
+        <div class="nm-metric-row"><span class="nm-metric-label">Peers</span><span class="nm-metric-val">&mdash;</span></div>
       </div>
     </div>
   </div>
 
   <!-- ═══ ACCOUNTS ═══ -->
   <div class="view" id="view-accounts">
-    <div class="page-header" style="margin-bottom:26px"><h1>Accounts</h1><p>Manage wallets, keys, and authentication</p></div>
-    <div class="auth-grid">
-      <div class="auth-card">
-        <span class="auth-card-icon">✦</span>
-        <div class="auth-card-title">New Account</div>
-        <div class="auth-card-desc">Derive a new account from your wallet seed.</div>
-      </div>
-      <div class="auth-card disabled">
-        <span class="auth-card-icon">⬇</span>
-        <div class="auth-card-title" style="color:var(--muted)">Import Seed</div>
-        <div class="auth-card-desc">CLI only: qpv2 import-seed</div>
-      </div>
-      <div class="auth-card">
-        <span class="auth-card-icon">⬆</span>
-        <div class="auth-card-title">Export Seed</div>
-        <div class="auth-card-desc" style="color:var(--warn)">Make sure no one is watching.</div>
+    <div class="page-header" style="margin-bottom:26px"><h1>Accounts</h1><p>Manage keys and authentication</p></div>
+    <div style="margin-bottom:28px">
+      <div class="dao-action-card" style="max-width:220px;text-align:center">
+        <div class="dao-card-accent da-deposit"></div>
+        <span class="dao-action-icon">&#x2726;</span>
+        <div class="dao-action-title">New Account</div>
+        <div class="dao-action-desc">Derive a new account from your wallet seed.</div>
       </div>
     </div>
 
@@ -987,7 +1167,7 @@
         <div class="acct-address">ckb1qzqg8u7at0qyxkz8vmz47d6tgt8xz7n9cpwfzj9gly4vf5a5f7d3</div>
       </div>
       <div style="display:flex;align-items:center;gap:10px">
-        <div class="icon-btn" title="Copy address">📋</div>
+        <div class="icon-btn" title="Copy address">&#x1f4cb;</div>
         <div class="acct-balance">88,840.50 CKB</div>
       </div>
     </div>
@@ -998,7 +1178,7 @@
         <div class="acct-address">ckb1qzqp9a2x7lm4kf8jw5r6h3nt2yd9qc0v1u8z3e7b6f4d2c1a0e9</div>
       </div>
       <div style="display:flex;align-items:center;gap:10px">
-        <div class="icon-btn" title="Copy address">📋</div>
+        <div class="icon-btn" title="Copy address">&#x1f4cb;</div>
         <div class="acct-balance">54,000.00 CKB</div>
       </div>
     </div>
@@ -1009,8 +1189,93 @@
         <div class="acct-address">ckb1qzqr8k1f3dn9j5mt7ya0xl2qb4vg6uc3h9pw5e1s8d2n7c0a010</div>
       </div>
       <div style="display:flex;align-items:center;gap:10px">
-        <div class="icon-btn" title="Copy address">📋</div>
+        <div class="icon-btn" title="Copy address">&#x1f4cb;</div>
         <div class="acct-balance">0.00 CKB</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ WALLETS ═══ -->
+  <div class="view" id="view-wallets">
+    <div class="page-header" style="margin-bottom:22px"><h1>Wallets</h1><p>Create, manage, and inspect your wallets.</p></div>
+
+    <!-- Wallet action cards -->
+    <div class="dao-grid" style="margin-bottom:22px">
+      <div class="dao-action-card">
+        <div class="dao-card-accent da-deposit"></div>
+        <span class="dao-action-icon">&#x2726;</span>
+        <div class="dao-action-title">Create Wallet</div>
+        <div class="dao-action-desc">Generate a new wallet with a fresh seed.</div>
+      </div>
+      <div class="dao-action-card">
+        <div class="dao-card-accent da-req"></div>
+        <span class="dao-action-icon">&#x2b07;</span>
+        <div class="dao-action-title">Import Seed</div>
+        <div class="dao-action-desc">Restore a wallet from a seed phrase.</div>
+      </div>
+      <div class="dao-action-card">
+        <div class="dao-card-accent da-withdraw"></div>
+        <span class="dao-action-icon">&#x2b06;</span>
+        <div class="dao-action-title">Export Seed</div>
+        <div class="dao-action-desc" style="color:var(--warn)">Make sure no one is watching.</div>
+      </div>
+    </div>
+
+    <!-- Saved Wallets -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <div class="section-title" style="margin:0">Saved Wallets</div>
+      <span class="pill" style="background:var(--accent-tint);color:var(--accent)">3 total</span>
+    </div>
+
+    <!-- Wallet: tung (active) -->
+    <div class="wallet-row">
+      <div class="wallet-avatar av1">T</div>
+      <div class="wallet-info">
+        <div class="wallet-name-row">
+          <span class="wallet-name">tung</span>
+          <span class="wallet-rename-icon" title="Rename wallet">&#x270f;</span>
+        </div>
+        <div class="wallet-pills">
+          <span class="pill" style="background:var(--surface2);color:var(--muted)">Sha2128S</span>
+          <span class="pill" style="background:var(--accent2-tint);color:var(--accent2)">Touch ID</span>
+          <span class="pill" style="background:var(--surface2);color:var(--muted)">1 account</span>
+          <span class="pill wallet-pill-delete">Delete</span>
+          <span class="pill" style="background:var(--accent-tint);color:var(--accent)">ACTIVE</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Wallet: kingkong -->
+    <div class="wallet-row" style="cursor:pointer">
+      <div class="wallet-avatar av2">K</div>
+      <div class="wallet-info">
+        <div class="wallet-name-row">
+          <span class="wallet-name">kingkong</span>
+          <span class="wallet-rename-icon" title="Rename wallet">&#x270f;</span>
+        </div>
+        <div class="wallet-pills">
+          <span class="pill" style="background:var(--surface2);color:var(--muted)">Sha2128S</span>
+          <span class="pill" style="background:rgba(90,122,112,.15);color:var(--muted)">Password</span>
+          <span class="pill" style="background:var(--surface2);color:var(--muted)">2 accounts</span>
+          <span class="pill wallet-pill-delete">Delete</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Wallet: strong -->
+    <div class="wallet-row" style="cursor:pointer">
+      <div class="wallet-avatar av3">S</div>
+      <div class="wallet-info">
+        <div class="wallet-name-row">
+          <span class="wallet-name">strong</span>
+          <span class="wallet-rename-icon" title="Rename wallet">&#x270f;</span>
+        </div>
+        <div class="wallet-pills">
+          <span class="pill" style="background:var(--surface2);color:var(--muted)">Sha2256F</span>
+          <span class="pill" style="background:rgba(155,127,212,.15);color:var(--accent3)">FIDO2 Key</span>
+          <span class="pill" style="background:var(--surface2);color:var(--muted)">1 account</span>
+          <span class="pill wallet-pill-delete">Delete</span>
+        </div>
       </div>
     </div>
   </div>
@@ -1031,8 +1296,20 @@
     document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
     if(el) el.classList.add('active');
   }
-  function toggleDD(){
+  function toggleWalletDD(){
+    document.getElementById('wdd').classList.toggle('open');
+    document.getElementById('ndd').classList.remove('open');
+  }
+  function toggleNodeDD(){
     document.getElementById('ndd').classList.toggle('open');
+    document.getElementById('wdd').classList.remove('open');
+  }
+  function selWallet(name,variant,auth,el){
+    document.getElementById('active-wallet').textContent=name;
+    document.getElementById('wallet-variant-badge').textContent=variant;
+    document.querySelectorAll('.wallet-dd-row').forEach(r=>r.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('wdd').classList.remove('open');
   }
   function selNode(name,el){
     document.getElementById('active-node').textContent=name;
@@ -1057,7 +1334,9 @@
     el.querySelector('span').textContent=content.classList.contains('open')?'▾':'▸';
   }
   document.addEventListener('click',function(e){
-    if(!e.target.closest('.node-selector')&&!e.target.closest('#ndd'))
+    if(!e.target.closest('.selector-btn')&&!e.target.closest('#wdd'))
+      document.getElementById('wdd').classList.remove('open');
+    if(!e.target.closest('.selector-btn')&&!e.target.closest('#ndd'))
       document.getElementById('ndd').classList.remove('open');
   });
 </script>
