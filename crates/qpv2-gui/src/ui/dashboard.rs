@@ -291,43 +291,44 @@ impl App {
                 ui.add_space(20.0);
 
                 // ── Recent Transactions ──
-                if !self.tx_history.is_empty() || self.tx_history_rx.is_some() {
-                    let syne = egui::FontFamily::Name("syne".into());
+                let syne = egui::FontFamily::Name("syne".into());
 
-                    // Section header with pill badge.
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            egui::RichText::new("Recent Transactions")
-                                .size(15.0)
-                                .family(syne)
-                                .strong()
-                                .color(self.colors.text),
-                        );
-                        ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new("Recent Transactions")
+                            .size(15.0)
+                            .family(syne)
+                            .strong()
+                            .color(self.colors.text),
+                    );
+                    ui.add_space(10.0);
 
-                        let badge_text = if self.tx_history_rx.is_some() {
-                            "loading...".to_string()
-                        } else {
-                            format!("{} total", self.tx_history.len())
-                        };
-                        egui::Frame::new()
-                            .fill(egui::Color32::from_rgba_unmultiplied(0, 255, 180, 20))
-                            .corner_radius(10.0)
-                            .inner_margin(egui::Margin::symmetric(8, 2))
-                            .show(ui, |ui| {
-                                ui.label(
-                                    egui::RichText::new(badge_text)
-                                        .size(8.5)
-                                        .family(egui::FontFamily::Monospace)
-                                        .color(self.colors.accent),
-                                );
-                            });
-                    });
+                    let badge_text = if self.tx_history_rx.is_some() {
+                        "loading...".to_string()
+                    } else {
+                        format!("{} total", self.tx_history.len())
+                    };
+                    egui::Frame::new()
+                        .fill(egui::Color32::from_rgba_unmultiplied(0, 255, 180, 20))
+                        .corner_radius(10.0)
+                        .inner_margin(egui::Margin::symmetric(8, 2))
+                        .show(ui, |ui| {
+                            ui.label(
+                                egui::RichText::new(badge_text)
+                                    .size(8.5)
+                                    .family(egui::FontFamily::Monospace)
+                                    .color(self.colors.accent),
+                            );
+                        });
+                });
 
-                    ui.add_space(12.0);
+                ui.add_space(12.0);
 
-                    // Transaction cards.
-                    // Clone to avoid borrow conflict with self in draw_tx_card.
+                if self.tx_history.is_empty() {
+                    ui.label(
+                        egui::RichText::new("No transactions yet.").color(self.colors.text_muted),
+                    );
+                } else {
                     let records: Vec<TxRecord> = self.tx_history.clone();
                     let accounts = &self.accounts;
                     for record in &records {

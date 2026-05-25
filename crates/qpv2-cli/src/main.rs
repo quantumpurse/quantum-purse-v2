@@ -227,9 +227,12 @@ fn import_with_keychain(
     let key = qpv2_core::utilities::get_random_bytes(32)
         .map_err(|e| format!("Failed to generate key: {}", e))?;
     keychain::store_key(vault.wallet_id, &key)?;
-    if let Err(e) =
-        vault.import_seed_phrase(seed_phrase, AuthKey::CryptoKey(key), AuthMethod::Keychain, name)
-    {
+    if let Err(e) = vault.import_seed_phrase(
+        seed_phrase,
+        AuthKey::CryptoKey(key),
+        AuthMethod::Keychain,
+        name,
+    ) {
         let _ = keychain::delete_key(vault.wallet_id);
         return Err(e);
     }
@@ -589,8 +592,7 @@ fn main() -> Result<(), String> {
                 if wallets.iter().any(|w| w.name == to) {
                     return Err(format!("Wallet '{}' already exists.", to));
                 }
-                qpv2_core::db::wallets::rename_wallet(wallet_id, &to)
-                    .map_err(|e| e.to_string())?;
+                qpv2_core::db::wallets::rename_wallet(wallet_id, &to).map_err(|e| e.to_string())?;
                 println!("✓ Wallet renamed from '{}' to '{}'", old_name, to);
             }
         },

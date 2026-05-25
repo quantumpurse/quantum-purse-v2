@@ -1,13 +1,10 @@
 //! Setup and Locked screen rendering.
 
-use crate::types::{Screen, Status, Tab};
+use crate::types::Tab;
 use crate::App;
 use ckb_node::NodeType;
 use eframe::egui;
-use qpv2_core::{
-    types::{AuthMethod, SpxVariant},
-    KeyVault,
-};
+use qpv2_core::types::{AuthMethod, SpxVariant};
 
 impl App {
     pub(crate) fn show_welcome(&mut self, ui: &mut egui::Ui) {
@@ -107,6 +104,19 @@ impl App {
                     }
 
                     ui.add_space(20.0);
+
+                    ui.label(
+                        egui::RichText::new("WALLET NAME")
+                            .size(10.0)
+                            .color(self.colors.text_muted),
+                    );
+                    ui.add_space(6.0);
+                    let name_field = egui::TextEdit::singleline(&mut self.new_wallet_name)
+                        .hint_text("Enter a name for your wallet")
+                        .desired_width(ui.available_width());
+                    ui.add(name_field);
+
+                    ui.add_space(16.0);
 
                     // Divider
                     let divider_rect = ui.available_rect_before_wrap();
@@ -340,8 +350,90 @@ impl App {
                     ui.add_space(1.0);
                 });
 
-                // ── Node selector ──
+                // ── Wallet selector ──
                 ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    ui.add_space(14.0);
+
+                    let (response, painter) =
+                        ui.allocate_painter(egui::vec2(208.0, 42.0), egui::Sense::click());
+
+                    let rect = response.rect;
+                    let is_hovered = response.hovered();
+
+                    self.wallet_selector_rect = Some(rect);
+
+                    let bg_color = if is_hovered {
+                        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 10)
+                    } else {
+                        self.colors.surface2
+                    };
+
+                    painter.rect_filled(rect, 9.0, bg_color);
+                    painter.rect_stroke(
+                        rect,
+                        9.0,
+                        egui::Stroke::new(1.0, self.colors.border),
+                        egui::StrokeKind::Outside,
+                    );
+
+                    let inner = rect.shrink2(egui::vec2(12.0, 5.0));
+
+                    painter.text(
+                        inner.left_top(),
+                        egui::Align2::LEFT_TOP,
+                        "ACTIVE WALLET",
+                        egui::FontId::proportional(8.0),
+                        self.colors.text_muted,
+                    );
+
+                    let row_y = inner.top() + 14.0;
+
+                    painter.circle_filled(
+                        egui::pos2(inner.left() + 4.0, row_y + 7.0),
+                        3.0,
+                        self.colors.accent,
+                    );
+
+                    painter.text(
+                        egui::pos2(inner.left() + 14.0, row_y),
+                        egui::Align2::LEFT_TOP,
+                        &self.wallet_name,
+                        egui::FontId::proportional(13.0),
+                        self.colors.text,
+                    );
+
+                    painter.text(
+                        egui::pos2(inner.right() - 45.0, row_y),
+                        egui::Align2::RIGHT_TOP,
+                        "\u{25bc}",
+                        egui::FontId::proportional(9.0),
+                        self.colors.text_muted,
+                    );
+
+                    // Variant badge (from cache — no disk I/O).
+                    if let Some(cw) = self.wallet_cache.iter().find(|w| w.id == self.wallet_id) {
+                        painter.text(
+                            egui::pos2(inner.right() - 5.0, row_y),
+                            egui::Align2::RIGHT_TOP,
+                            format!("{}", cw.spx_variant),
+                            egui::FontId::proportional(8.0),
+                            self.colors.accent2,
+                        );
+                    }
+
+                    if response.clicked() {
+                        self.wallet_selector_open = !self.wallet_selector_open;
+                        self.node_selector_open = false;
+                    }
+
+                    if is_hovered {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                    }
+                });
+
+                // ── Node selector ──
+                ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     ui.add_space(14.0);
 
@@ -441,6 +533,7 @@ impl App {
                     // Handle click
                     if response.clicked() {
                         self.node_selector_open = !self.node_selector_open;
+                        self.wallet_selector_open = false;
                         // Seed the popup draft from the committed config
                         // each time it opens so stale selections from a
                         // previous (un-applied) session don't leak through.
@@ -514,65 +607,12 @@ impl App {
                 });
                 ui.add_space(4.0);
                 self.draw_nav_item(ui, Tab::Accounts, "\u{25ce}", "Accounts");
+                self.draw_nav_item(ui, Tab::Wallets, "\u{2318}", "Wallets");
 
-                // ── Bottom: Lock / Remove Wallet ──
+                // ── Bottom: Lock Wallet ──
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                     ui.add_space(30.0);
 
-                    // Remove Wallet button
-                    ui.horizontal(|ui| {
-                        ui.add_space(14.0);
-                        let remove_label = if self.confirm_remove {
-                            "\u{26a0} Confirm Remove?"
-                        } else {
-                            "\u{1f5d1} Remove Wallet"
-                        };
-                        let remove_btn = egui::Button::new(
-                            egui::RichText::new(remove_label)
-                                .size(11.0)
-                                .color(self.colors.danger),
-                        )
-                        .fill(egui::Color32::TRANSPARENT)
-                        .stroke(egui::Stroke::new(
-                            1.0,
-                            egui::Color32::from_rgba_unmultiplied(255, 77, 109, 77),
-                        ))
-                        .min_size(egui::vec2(194.0, 28.0));
-
-                        if ui.add(remove_btn).clicked() {
-                            if self.confirm_remove {
-                                let _ = keychain::delete_key();
-                                let _ = ckb_node::wallet_helpers::lc::clear_all_scripts(
-                                    &self.qp_client,
-                                );
-
-                                match KeyVault::clear_database() {
-                                    Ok(()) => {
-                                        self.lock_wallet();
-                                        self.screen = Screen::Setup;
-                                        self.status = Status::Info(
-                                            "Wallet removed successfully.".to_string(),
-                                        );
-                                    }
-                                    Err(e) => {
-                                        self.status = Status::Error(format!(
-                                            "Failed to remove wallet: {}",
-                                            e
-                                        ));
-                                    }
-                                }
-                            } else {
-                                self.confirm_remove = true;
-                            }
-                        }
-                    });
-
-                    ui.add_space(12.0);
-
-                    // Lock Wallet button — only meaningful for wallets
-                    // with a per-session unlock barrier (Touch ID).
-                    // Password-mode wallets have no unlock barrier;
-                    // every privileged op re-prompts.
                     if matches!(
                         self.auth_method,
                         Some(AuthMethod::Keychain) | Some(AuthMethod::Fido2 { .. })
@@ -633,6 +673,7 @@ impl App {
                         Tab::DaoOperations => self.show_dao_tab(ui),
                         Tab::NodeManager => self.show_node_manager_tab(ui),
                         Tab::Accounts => self.show_accounts_tab(ui),
+                        Tab::Wallets => self.show_wallets_tab(ui),
                     }
                 });
             });

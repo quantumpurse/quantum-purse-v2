@@ -95,6 +95,16 @@ pub(crate) enum TxHistoryEvent {
     Done,
 }
 
+/// Pre-fetched wallet metadata so rendering never hits the filesystem.
+pub(crate) struct CurrentWallet {
+    pub id: u32,
+    pub name: String,
+    pub spx_variant: qpv2_core::types::SpxVariant,
+    pub auth_method: qpv2_core::types::AuthMethod,
+    pub account_count: usize,
+    pub path: String,
+}
+
 /// Sidebar navigation tabs matching the mockup layout.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum Tab {
@@ -103,6 +113,7 @@ pub(crate) enum Tab {
     DaoOperations,
     NodeManager,
     Accounts,
+    Wallets,
 }
 
 /// Snapshot of the currently-active backend's live status, cached on `App`

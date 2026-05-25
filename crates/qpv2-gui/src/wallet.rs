@@ -4,10 +4,41 @@ use qpv2_core::types::{AuthKey, AuthMethod, SpxVariant};
 use qpv2_core::KeyVault;
 
 use crate::tx_history_store::TxHistoryStore;
-use crate::types::{Screen, Status, Tab, TransactionStatus};
+use crate::types::{CurrentWallet, Screen, Status, TransactionStatus};
 use crate::App;
 
 impl App {
+    /// Build the wallet cache from disk. Called as an associated function
+    /// during `App::new` (before `self` exists) and as a method thereafter.
+    pub(crate) fn current_wallet_cache() -> Vec<CurrentWallet> {
+        let wallets = KeyVault::list_wallets().unwrap_or_default();
+        wallets
+            .into_iter()
+            .filter_map(|entry| {
+                let info = KeyVault::read_wallet_info(entry.id).ok()?;
+                let account_count = KeyVault::get_all_sphincs_lock_args(entry.id)
+                    .map(|a| a.len())
+                    .unwrap_or(0);
+                let path = qpv2_core::db::get_wallet_dir(entry.id)
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default();
+                Some(CurrentWallet {
+                    id: entry.id,
+                    name: entry.name,
+                    spx_variant: info.spx_variant,
+                    auth_method: info.auth_method,
+                    account_count,
+                    path,
+                })
+            })
+            .collect()
+    }
+
+    /// Refresh the in-memory wallet cache from disk.
+    pub(crate) fn refresh_wallet_cache(&mut self) {
+        self.wallet_cache = Self::current_wallet_cache();
+    }
+
     /// Tells the running light client to start indexing the given
     /// accounts from the current tip onward, in a single `set_scripts`
     /// RPC call. No-op when the backend isn't LightClient, no local
@@ -44,8 +75,16 @@ impl App {
     /// Common transition from Setup to Unlocked after successful wallet
     /// creation or import. Loads accounts, registers LC scripts, sets
     /// the screen, and kicks off all background fetches.
-    fn finalize_wallet_setup(&mut self, auth_method: AuthMethod, success_msg: &str) {
-        match KeyVault::get_all_sphincs_lock_args() {
+    fn finalize_wallet_setup(
+        &mut self,
+        auth_method: AuthMethod,
+        success_msg: &str,
+        wallet_id: u32,
+        wallet_name: String,
+    ) {
+        self.wallet_id = wallet_id;
+        self.wallet_name = wallet_name;
+        match KeyVault::get_all_sphincs_lock_args(self.wallet_id) {
             Ok(lock_args) => {
                 self.accounts = lock_args;
                 self.auth_method = Some(auth_method);
@@ -53,6 +92,10 @@ impl App {
                 self.screen = Screen::Unlocked;
                 self.status = Status::Info(success_msg.to_string());
                 self.last_poll_time = std::time::Instant::now();
+                self.new_wallet_name.clear();
+                self.wallet_selector_open = false;
+                save_last_wallet_id(self.wallet_id);
+                self.refresh_wallet_cache();
                 self.load_tx_history_from_disk();
                 self.fetch_all_balances();
                 self.fetch_tx_history(true);
@@ -135,28 +178,28 @@ impl App {
             .unwrap_or(0)
     }
 
-    /// Lock the wallet: clear sensitive state and return to the Locked screen.
-    pub(crate) fn lock_wallet(&mut self) {
+    /// Wipe all wallet-specific runtime state: accounts, balances,
+    /// in-flight receivers, form inputs, and DAO caches. Does NOT
+    /// change `screen` or `status` — callers decide what transition
+    /// follows.
+    fn clear_wallet_state(&mut self) {
         self.accounts.clear();
         self.balances.clear();
-        self.confirm_remove = false;
+        self.confirm_remove_id = None;
         self.import_mode = false;
-        self.active_tab = Tab::Dashboard;
-        self.screen = Screen::Locked;
-        self.status = Status::None;
 
-        // Drop the receiver *before* clearing in-memory state. If we don't,
-        // an in-flight sync thread's late `Done` event would repopulate
-        // `tx_history` and — worse — write it back to disk, undoing both
-        // lock and a subsequent `clear_database()`. Dropping the receiver
-        // also short-circuits `poll_tx_history()`. The background thread
-        // exits on its next `send(...)` (channel disconnected).
+        // Drop all in-flight receivers so background threads from the
+        // previous wallet can't land stale results into the new one.
         self.tx_history_rx = None;
-        // Drop the in-memory tx history; the on-disk file is kept so the
-        // next unlock can reload it instantly.
+        self.balance_receiver = None;
+        self.spendable_capacity_rx = None;
+        self.transaction_build_rx = None;
+        self.transaction_send_rx = None;
+        self.node_status_rx = None;
+        self.earliest_funding_block_rx = None;
+
         self.tx_history.clear();
 
-        // Clear form state so stale values don't persist across sessions.
         self.transfer_recipient.clear();
         self.transfer_amount.clear();
         self.transfer_all = false;
@@ -165,6 +208,56 @@ impl App {
         self.dao_deposit_all = false;
         self.dao_deposit_from_account = 0;
         self.tx_status = TransactionStatus::Idle;
+
+        self.dao_deposited_cells.clear();
+        self.dao_prepared_cells.clear();
+        self.dao_deposited_staging.clear();
+        self.dao_prepared_staging.clear();
+        self.dao_cells_query_rx = None;
+    }
+
+    /// Lock the wallet: clear state and return to the Locked screen.
+    pub(crate) fn lock_wallet(&mut self) {
+        self.clear_wallet_state();
+        self.screen = Screen::Locked;
+        self.status = Status::None;
+    }
+
+    /// Validate the wallet name and claim the next available wallet ID.
+    /// Returns the pair without modifying `self` — the caller threads
+    /// them through creation calls and only commits via
+    /// `finalize_wallet_setup` on success.
+    pub(crate) fn prepare_new_wallet(&self) -> Result<(u32, String), String> {
+        let name = self.new_wallet_name.trim().to_string();
+        if name.is_empty() {
+            return Err("Wallet name is required.".to_string());
+        }
+        let wallets = KeyVault::list_wallets().map_err(|e| e.to_string())?;
+        if wallets.iter().any(|w| w.name == name) {
+            return Err(format!("Wallet '{}' already exists.", name));
+        }
+        let wallet_id = qpv2_core::db::wallets::next_wallet_id().map_err(|e| e.to_string())?;
+        Ok((wallet_id, name))
+    }
+
+    /// Switch the active wallet. Clears previous wallet state, loads
+    /// the new wallet's metadata, and transitions directly to Unlocked.
+    pub(crate) fn switch_wallet(&mut self, wallet_id: u32, wallet_name: &str) {
+        self.clear_wallet_state();
+        self.wallet_id = wallet_id;
+        self.wallet_name = wallet_name.to_string();
+        save_last_wallet_id(wallet_id);
+
+        self.auth_method = KeyVault::read_wallet_info(wallet_id)
+            .ok()
+            .map(|w| w.auth_method);
+
+        self.lc_scripts_registered = false;
+        self.accounts = KeyVault::get_all_sphincs_lock_args(wallet_id).unwrap_or_default();
+        self.screen = Screen::Unlocked;
+        self.needs_initial_fetch = true;
+        self.wallet_selector_open = false;
+        self.refresh_wallet_cache();
     }
 
     /// Called when the node type or network changes in the UI. Refreshes
@@ -250,7 +343,7 @@ impl App {
     /// or first time on this network) or read failure (corrupted file →
     /// surfaces as a status warning; next sync rebuilds from scratch).
     pub(crate) fn load_tx_history_from_disk(&mut self) {
-        match TxHistoryStore::load(self.qp_client.network().tag()) {
+        match TxHistoryStore::load(self.wallet_id, self.qp_client.network().tag()) {
             Ok(Some(store)) => {
                 self.tx_history = store.records;
             }
@@ -272,6 +365,13 @@ impl App {
     /// `Screen::Unlocked`. Cancellation surfaces as a quiet info
     /// banner; nothing else changes.
     pub(crate) fn create_wallet_with_password(&mut self, variant: SpxVariant) {
+        let (wallet_id, wallet_name) = match self.prepare_new_wallet() {
+            Ok(v) => v,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
         let pw = match qpv2_core::pinentry::prompt_password_with_confirmation(
             "Choose a password for your wallet. You'll be prompted for it \
              again on every signing operation.",
@@ -294,14 +394,11 @@ impl App {
             }
         };
 
-        // `generate_master_seed` and `gen_new_account` each consume an
-        // owned `AuthKey::Password(SecureString)`. Mirror the passkey
-        // path (one Touch ID → PRF used twice) and the CLI path (one
-        // input → reused) by cloning the SecureString once instead of
-        // re-prompting. Both copies zeroize-on-drop.
         let pw_for_account = pw.clone();
-        let vault = KeyVault::new(variant);
-        if let Err(e) = vault.generate_master_seed(AuthKey::Password(pw), AuthMethod::Password) {
+        let vault = KeyVault::new(variant, wallet_id);
+        if let Err(e) =
+            vault.generate_master_seed(AuthKey::Password(pw), AuthMethod::Password, &wallet_name)
+        {
             self.status = Status::Error(format!("Failed to create wallet: {}", e));
             return;
         }
@@ -315,6 +412,8 @@ impl App {
         self.finalize_wallet_setup(
             AuthMethod::Password,
             &format!("Wallet created successfully!{}", strength_str),
+            wallet_id,
+            wallet_name,
         );
     }
 
@@ -333,14 +432,14 @@ impl App {
             }
         };
 
-        let variant = match KeyVault::get_spx_variant() {
+        let variant = match KeyVault::get_spx_variant(self.wallet_id) {
             Ok(v) => v,
             Err(e) => {
                 self.status = Status::Error(format!("Failed to read wallet variant: {}", e));
                 return;
             }
         };
-        let vault = KeyVault::new(variant);
+        let vault = KeyVault::new(variant, self.wallet_id);
         match vault.gen_new_account(AuthKey::Password(pw)) {
             Ok(lock_args) => {
                 self.balances.insert(lock_args.clone(), None);
@@ -366,6 +465,13 @@ impl App {
     }
 
     pub(crate) fn import_seed_phrase_with_password(&mut self, variant: SpxVariant) {
+        let (wallet_id, wallet_name) = match self.prepare_new_wallet() {
+            Ok(v) => v,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
         let seed_phrase = match qpv2_core::pinentry::prompt_seed_phrase(variant) {
             Ok(s) => s,
             Err(e) => {
@@ -397,11 +503,14 @@ impl App {
         };
 
         let pw_for_account = pw.clone();
-        let vault = KeyVault::new(variant);
+        let vault = KeyVault::new(variant, wallet_id);
 
-        if let Err(e) =
-            vault.import_seed_phrase(seed_phrase, AuthKey::Password(pw), AuthMethod::Password)
-        {
+        if let Err(e) = vault.import_seed_phrase(
+            seed_phrase,
+            AuthKey::Password(pw),
+            AuthMethod::Password,
+            &wallet_name,
+        ) {
             self.status = Status::Error(format!("Failed to import wallet: {}", e));
             return;
         }
@@ -415,6 +524,8 @@ impl App {
         self.finalize_wallet_setup(
             AuthMethod::Password,
             &format!("Wallet imported successfully!{}", strength_str),
+            wallet_id,
+            wallet_name,
         );
     }
 
@@ -430,14 +541,14 @@ impl App {
             }
         };
 
-        let variant = match KeyVault::get_spx_variant() {
+        let variant = match KeyVault::get_spx_variant(self.wallet_id) {
             Ok(v) => v,
             Err(e) => {
                 self.status = Status::Error(format!("Failed to read wallet variant: {}", e));
                 return;
             }
         };
-        let vault = KeyVault::new(variant);
+        let vault = KeyVault::new(variant, self.wallet_id);
         match vault.export_seed_phrase(AuthKey::Password(pw)) {
             Ok(phrase) => {
                 if let Err(e) = qpv2_core::pinentry::show_seed_phrase(&phrase) {
@@ -454,6 +565,13 @@ impl App {
     /// stores it in the platform credential store, then creates the
     /// wallet and first account.
     pub(crate) fn create_wallet_with_keychain(&mut self, variant: SpxVariant) {
+        let (wallet_id, wallet_name) = match self.prepare_new_wallet() {
+            Ok(v) => v,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
         let key = match qpv2_core::utilities::get_random_bytes(32) {
             Ok(b) => b,
             Err(e) => {
@@ -462,16 +580,18 @@ impl App {
             }
         };
 
-        if let Err(e) = keychain::store_key(&key) {
+        if let Err(e) = keychain::store_key(wallet_id, &key) {
             self.status = Status::Error(format!("Failed to store key in Keychain: {}", e));
             return;
         }
 
         let key_for_account = key.clone();
 
-        let vault = KeyVault::new(variant);
-        if let Err(e) = vault.generate_master_seed(AuthKey::CryptoKey(key), AuthMethod::Keychain) {
-            let _ = keychain::delete_key();
+        let vault = KeyVault::new(variant, wallet_id);
+        if let Err(e) =
+            vault.generate_master_seed(AuthKey::CryptoKey(key), AuthMethod::Keychain, &wallet_name)
+        {
+            let _ = keychain::delete_key(wallet_id);
             self.status = Status::Error(format!("Failed to create wallet: {}", e));
             return;
         }
@@ -485,14 +605,16 @@ impl App {
         self.finalize_wallet_setup(
             AuthMethod::Keychain,
             &format!("Wallet created with {}!", keychain::short_name()),
+            wallet_id,
+            wallet_name,
         );
     }
 
     /// Unlock via the platform credential store, then transition to
     /// Unlocked.
     pub(crate) fn unlock_with_keychain(&mut self) {
-        match keychain::retrieve_key() {
-            Ok(_) => match KeyVault::get_all_sphincs_lock_args() {
+        match keychain::retrieve_key(self.wallet_id) {
+            Ok(_) => match KeyVault::get_all_sphincs_lock_args(self.wallet_id) {
                 Ok(lock_args) => {
                     self.accounts = lock_args;
                     self.screen = Screen::Unlocked;
@@ -516,7 +638,7 @@ impl App {
 
     /// Derive a new account using the platform credential store.
     pub(crate) fn create_new_account_with_keychain(&mut self) {
-        let key = match keychain::retrieve_key() {
+        let key = match keychain::retrieve_key(self.wallet_id) {
             Ok(k) => k,
             Err(e) => {
                 self.status = Status::Error(e);
@@ -524,14 +646,14 @@ impl App {
             }
         };
 
-        let variant = match KeyVault::get_spx_variant() {
+        let variant = match KeyVault::get_spx_variant(self.wallet_id) {
             Ok(v) => v,
             Err(e) => {
                 self.status = Status::Error(format!("Failed to read wallet variant: {}", e));
                 return;
             }
         };
-        let vault = KeyVault::new(variant);
+        let vault = KeyVault::new(variant, self.wallet_id);
         match vault.gen_new_account(AuthKey::CryptoKey(key)) {
             Ok(lock_args) => {
                 self.balances.insert(lock_args.clone(), None);
@@ -557,6 +679,13 @@ impl App {
     }
 
     pub(crate) fn import_seed_phrase_with_keychain(&mut self, variant: SpxVariant) {
+        let (wallet_id, wallet_name) = match self.prepare_new_wallet() {
+            Ok(v) => v,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
         let seed_phrase = match qpv2_core::pinentry::prompt_seed_phrase(variant) {
             Ok(s) => s,
             Err(e) => {
@@ -573,18 +702,21 @@ impl App {
             }
         };
 
-        if let Err(e) = keychain::store_key(&key) {
+        if let Err(e) = keychain::store_key(wallet_id, &key) {
             self.status = Status::Error(format!("Failed to store key in Keychain: {}", e));
             return;
         }
 
         let key_for_account = key.clone();
-        let vault = KeyVault::new(variant);
+        let vault = KeyVault::new(variant, wallet_id);
 
-        if let Err(e) =
-            vault.import_seed_phrase(seed_phrase, AuthKey::CryptoKey(key), AuthMethod::Keychain)
-        {
-            let _ = keychain::delete_key();
+        if let Err(e) = vault.import_seed_phrase(
+            seed_phrase,
+            AuthKey::CryptoKey(key),
+            AuthMethod::Keychain,
+            &wallet_name,
+        ) {
+            let _ = keychain::delete_key(wallet_id);
             self.status = Status::Error(format!("Failed to import wallet: {}", e));
             return;
         }
@@ -598,11 +730,13 @@ impl App {
         self.finalize_wallet_setup(
             AuthMethod::Keychain,
             &format!("Wallet imported with {}!", keychain::short_name()),
+            wallet_id,
+            wallet_name,
         );
     }
 
     pub(crate) fn export_seed_phrase_with_keychain(&mut self) {
-        let key = match keychain::retrieve_key() {
+        let key = match keychain::retrieve_key(self.wallet_id) {
             Ok(k) => k,
             Err(e) => {
                 self.status = Status::Error(e);
@@ -610,14 +744,14 @@ impl App {
             }
         };
 
-        let variant = match KeyVault::get_spx_variant() {
+        let variant = match KeyVault::get_spx_variant(self.wallet_id) {
             Ok(v) => v,
             Err(e) => {
                 self.status = Status::Error(format!("Failed to read wallet variant: {}", e));
                 return;
             }
         };
-        let vault = KeyVault::new(variant);
+        let vault = KeyVault::new(variant, self.wallet_id);
         match vault.export_seed_phrase(AuthKey::CryptoKey(key)) {
             Ok(phrase) => {
                 if let Err(e) = qpv2_core::pinentry::show_seed_phrase(&phrase) {
@@ -634,6 +768,13 @@ impl App {
     /// via pinentry, registers a credential, then derives the encryption
     /// key via hmac-secret.
     pub(crate) fn create_wallet_with_fido2(&mut self, variant: SpxVariant) {
+        let (wallet_id, wallet_name) = match self.prepare_new_wallet() {
+            Ok(v) => v,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
         let pin = match qpv2_core::pinentry::prompt_password(
             "Enter your FIDO2 security key PIN to register a new credential.",
             "PIN:",
@@ -676,8 +817,10 @@ impl App {
             credential_id: credential_id.clone(),
         };
 
-        let vault = KeyVault::new(variant);
-        if let Err(e) = vault.generate_master_seed(AuthKey::CryptoKey(key), auth_method.clone()) {
+        let vault = KeyVault::new(variant, wallet_id);
+        if let Err(e) =
+            vault.generate_master_seed(AuthKey::CryptoKey(key), auth_method.clone(), &wallet_name)
+        {
             self.status = Status::Error(format!("Failed to create wallet: {}", e));
             return;
         }
@@ -691,6 +834,8 @@ impl App {
         self.finalize_wallet_setup(
             AuthMethod::Fido2 { credential_id },
             "Wallet created with FIDO2 security key!",
+            wallet_id,
+            wallet_name,
         );
     }
 
@@ -716,7 +861,7 @@ impl App {
         };
 
         match keychain::fido2::authenticate(&cred_bytes, &pin) {
-            Ok(_) => match KeyVault::get_all_sphincs_lock_args() {
+            Ok(_) => match KeyVault::get_all_sphincs_lock_args(self.wallet_id) {
                 Ok(lock_args) => {
                     self.accounts = lock_args;
                     self.screen = Screen::Unlocked;
@@ -775,14 +920,14 @@ impl App {
             }
         };
 
-        let variant = match KeyVault::get_spx_variant() {
+        let variant = match KeyVault::get_spx_variant(self.wallet_id) {
             Ok(v) => v,
             Err(e) => {
                 self.status = Status::Error(format!("Failed to read wallet variant: {}", e));
                 return;
             }
         };
-        let vault = KeyVault::new(variant);
+        let vault = KeyVault::new(variant, self.wallet_id);
         match vault.gen_new_account(AuthKey::CryptoKey(key)) {
             Ok(lock_args) => {
                 self.balances.insert(lock_args.clone(), None);
@@ -808,6 +953,14 @@ impl App {
     }
 
     pub(crate) fn import_seed_phrase_with_fido2(&mut self, variant: SpxVariant) {
+        let (wallet_id, wallet_name) = match self.prepare_new_wallet() {
+            Ok(v) => v,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+
         let seed_phrase = match qpv2_core::pinentry::prompt_seed_phrase(variant) {
             Ok(s) => s,
             Err(e) => {
@@ -857,11 +1010,14 @@ impl App {
         let auth_method = AuthMethod::Fido2 {
             credential_id: credential_id.clone(),
         };
-        let vault = KeyVault::new(variant);
+        let vault = KeyVault::new(variant, wallet_id);
 
-        if let Err(e) =
-            vault.import_seed_phrase(seed_phrase, AuthKey::CryptoKey(key), auth_method.clone())
-        {
+        if let Err(e) = vault.import_seed_phrase(
+            seed_phrase,
+            AuthKey::CryptoKey(key),
+            auth_method.clone(),
+            &wallet_name,
+        ) {
             self.status = Status::Error(format!("Failed to import wallet: {}", e));
             return;
         }
@@ -875,6 +1031,8 @@ impl App {
         self.finalize_wallet_setup(
             AuthMethod::Fido2 { credential_id },
             "Wallet imported with FIDO2 security key!",
+            wallet_id,
+            wallet_name,
         );
     }
 
@@ -914,14 +1072,14 @@ impl App {
             }
         };
 
-        let variant = match KeyVault::get_spx_variant() {
+        let variant = match KeyVault::get_spx_variant(self.wallet_id) {
             Ok(v) => v,
             Err(e) => {
                 self.status = Status::Error(format!("Failed to read wallet variant: {}", e));
                 return;
             }
         };
-        let vault = KeyVault::new(variant);
+        let vault = KeyVault::new(variant, self.wallet_id);
         match vault.export_seed_phrase(AuthKey::CryptoKey(key)) {
             Ok(phrase) => {
                 if let Err(e) = qpv2_core::pinentry::show_seed_phrase(&phrase) {
@@ -933,4 +1091,24 @@ impl App {
             }
         }
     }
+}
+
+// ── Last-wallet persistence ──
+
+const LAST_WALLET_FILE: &str = "last_wallet.json";
+
+pub(crate) fn save_last_wallet_id(wallet_id: u32) {
+    if let Ok(dir) = qpv2_core::db::get_data_dir() {
+        let path = dir.join(LAST_WALLET_FILE);
+        let json = format!("{{\"wallet_id\":{}}}", wallet_id);
+        let _ = std::fs::write(path, json);
+    }
+}
+
+pub(crate) fn load_last_wallet_id() -> Option<u32> {
+    let dir = qpv2_core::db::get_data_dir().ok()?;
+    let path = dir.join(LAST_WALLET_FILE);
+    let data = std::fs::read_to_string(path).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&data).ok()?;
+    v.get("wallet_id")?.as_u64().map(|id| id as u32)
 }

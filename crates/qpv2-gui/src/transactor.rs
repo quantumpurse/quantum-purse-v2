@@ -67,7 +67,7 @@ impl App {
         };
 
         // Determine the SPHINCS+ variant to calculate placeholder witness size
-        let variant = match KeyVault::get_spx_variant() {
+        let variant = match KeyVault::get_spx_variant(self.wallet_id) {
             Ok(v) => v,
             Err(e) => {
                 self.tx_status =
@@ -179,7 +179,7 @@ impl App {
             }
         };
 
-        let variant = match KeyVault::get_spx_variant() {
+        let variant = match KeyVault::get_spx_variant(self.wallet_id) {
             Ok(v) => v,
             Err(e) => {
                 self.tx_status =
@@ -265,7 +265,7 @@ impl App {
 
         let fee_rate: u64 = self.dao_deposit_fee_rate.trim().parse().unwrap_or(1000);
 
-        let variant = match KeyVault::get_spx_variant() {
+        let variant = match KeyVault::get_spx_variant(self.wallet_id) {
             Ok(v) => v,
             Err(e) => {
                 self.tx_status =
@@ -330,7 +330,7 @@ impl App {
 
         let fee_rate: u64 = self.dao_deposit_fee_rate.trim().parse().unwrap_or(1000);
 
-        let variant = match KeyVault::get_spx_variant() {
+        let variant = match KeyVault::get_spx_variant(self.wallet_id) {
             Ok(v) => v,
             Err(e) => {
                 self.tx_status =
@@ -412,7 +412,7 @@ impl App {
         input_cells: Vec<(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)>,
         lock_args: String,
     ) {
-        let key = match keychain::retrieve_key() {
+        let key = match keychain::retrieve_key(self.wallet_id) {
             Ok(k) => k,
             Err(e) => {
                 self.tx_status = TransactionStatus::Idle;
@@ -501,7 +501,7 @@ impl App {
     ) {
         use ckb_types::prelude::*;
 
-        let variant = match KeyVault::get_spx_variant() {
+        let variant = match KeyVault::get_spx_variant(self.wallet_id) {
             Ok(v) => v,
             Err(e) => {
                 self.tx_status = TransactionStatus::Error(format!("Failed to read variant: {}", e));
@@ -545,7 +545,7 @@ impl App {
         }
         let message = hasher.hash().to_vec();
 
-        let vault = KeyVault::new(variant);
+        let vault = KeyVault::new(variant, self.wallet_id);
         let signature_bytes = match vault.ckb_sign(auth, lock_args, message) {
             Ok(sig) => sig,
             Err(e) => {

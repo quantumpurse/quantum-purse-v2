@@ -16,6 +16,8 @@ use std::collections::HashMap;
 use std::sync::mpsc;
 use std::time::Duration;
 
+use wallet::{load_last_wallet_id, save_last_wallet_id};
+
 /// Interval between periodic data refreshes (balances, tx history, DAO cells).
 const POLL_INTERVAL: Duration = Duration::from_secs(10);
 
@@ -33,6 +35,21 @@ pub(crate) struct App {
     pub(crate) status: Status,
     pub(crate) colors: AppColors,
 
+    // Active wallet identity.
+    pub(crate) wallet_id: u32,
+    pub(crate) wallet_name: String,
+
+    // Cached wallet registry — populated on startup, refreshed on
+    // create/delete/switch so rendering never hits the filesystem.
+    pub(crate) wallet_cache: Vec<types::CurrentWallet>,
+
+    // Wallet selector popup state.
+    pub(crate) wallet_selector_open: bool,
+    pub(crate) wallet_selector_rect: Option<egui::Rect>,
+    // Temporary values for new wallet creation in popup.
+    pub(crate) new_wallet_name: String,
+    pub(crate) new_wallet_variant: SpxVariant,
+
     // Setup screen state.
     pub(crate) selected_variant: SpxVariant,
     pub(crate) import_mode: bool,
@@ -40,7 +57,7 @@ pub(crate) struct App {
     // Unlocked screen state.
     pub(crate) active_tab: Tab,
     pub(crate) accounts: Vec<String>,
-    pub(crate) confirm_remove: bool,
+    pub(crate) confirm_remove_id: Option<u32>,
 
     // Balance cache: lock_args -> balance in shannons (None = not yet fetched).
     pub(crate) balances: HashMap<String, Option<u64>>,
@@ -141,7 +158,7 @@ pub(crate) struct App {
     // (password-mode wallet at startup) and the first frame still
     // needs to run the same fetches `unlock_with_passkey_finish` does. Cleared
     // on the first `update()` after consumption.
-    pub(crate) pending_unlocked_session_setup: bool,
+    pub(crate) needs_initial_fetch: bool,
 
     // Periodic polling timer for balances, tx history, and DAO cells.
     pub(crate) last_poll_time: std::time::Instant,
@@ -220,22 +237,30 @@ impl App {
             repaint_ctx.request_repaint();
         });
 
-        // Check if a wallet already exists by trying to read wallet info.
-        // Password-mode wallets skip the Locked screen entirely —
-        // there's no per-session unlock barrier; every privileged op
-        // re-prompts the password individually. Touch ID wallets keep
-        // the existing Locked → unlock flow.
-        let (screen, auth_method, accounts, pending_unlocked_session_setup) =
-            if KeyVault::wallet_exists() {
-                let am = KeyVault::read_wallet_info().ok().map(|w| w.auth_method);
-                if matches!(am, Some(qpv2_core::types::AuthMethod::Password)) {
-                    let accs = KeyVault::get_all_sphincs_lock_args().unwrap_or_default();
-                    (Screen::Unlocked, am, accs, true)
-                } else {
-                    (Screen::Locked, am, Vec::new(), false)
-                }
+        // Discover existing wallets and pick the active one.
+        // Last-used wallet is remembered; falls back to the first in the
+        // list. If no wallets exist at all, go straight to Setup.
+        let wallets = KeyVault::list_wallets().unwrap_or_default();
+        let (screen, wallet_id, wallet_name, auth_method, accounts, needs_initial_fetch) =
+            if wallets.is_empty() {
+                (Screen::Setup, 0, String::new(), None, Vec::new(), false)
             } else {
-                (Screen::Setup, None, Vec::new(), false)
+                let last_id = load_last_wallet_id();
+                let entry = wallets
+                    .iter()
+                    .find(|w| Some(w.id) == last_id)
+                    .unwrap_or(&wallets[0]);
+                let wid = entry.id;
+                let wname = entry.name.clone();
+                save_last_wallet_id(wid);
+
+                let am = KeyVault::read_wallet_info(wid).ok().map(|w| w.auth_method);
+                if matches!(am, Some(qpv2_core::types::AuthMethod::Password)) {
+                    let accs = KeyVault::get_all_sphincs_lock_args(wid).unwrap_or_default();
+                    (Screen::Unlocked, wid, wname, am, accs, true)
+                } else {
+                    (Screen::Locked, wid, wname, am, Vec::new(), false)
+                }
             };
 
         // Restore the last-known node configuration (network + backend +
@@ -277,15 +302,24 @@ impl App {
         let temp_network = node_config.network;
         let temp_node_type = node_config.node_type;
 
+        let wallet_cache = Self::current_wallet_cache();
+
         Self {
             screen,
             status: startup_status,
             colors,
+            wallet_id,
+            wallet_name,
+            wallet_cache,
+            wallet_selector_open: false,
+            wallet_selector_rect: None,
+            new_wallet_name: String::new(),
+            new_wallet_variant: SpxVariant::Sha2128S,
             selected_variant: SpxVariant::Sha2128S,
             import_mode: false,
             active_tab: Tab::Dashboard,
             accounts,
-            confirm_remove: false,
+            confirm_remove_id: None,
             balances: HashMap::new(),
             local_node,
             qp_client,
@@ -329,7 +363,7 @@ impl App {
             // each flow that needs it; cached `None` here. Setup screen
             // doesn't need it; Locked screen reads it before rendering.
             auth_method,
-            pending_unlocked_session_setup,
+            needs_initial_fetch,
             last_poll_time: std::time::Instant::now(),
             status_seen: Status::None,
             status_set_at: None,
@@ -368,8 +402,8 @@ impl eframe::App for App {
         // dropped straight into Screen::Unlocked. Mirrors what
         // `unlock_with_keychain` does for Touch ID wallets after a
         // successful unlock.
-        if self.pending_unlocked_session_setup {
-            self.pending_unlocked_session_setup = false;
+        if self.needs_initial_fetch {
+            self.needs_initial_fetch = false;
             self.last_poll_time = std::time::Instant::now();
             self.load_tx_history_from_disk();
             self.fetch_all_balances();
@@ -400,8 +434,9 @@ impl eframe::App for App {
             self.fetch_node_status();
         }
 
-        // Show node selector popup if open
+        // Show popups if open.
         self.show_node_selector_popup(ctx);
+        self.show_wallet_selector_popup(ctx);
 
         // Polling main stages of the wallet.
         match self.screen.clone() {
@@ -444,8 +479,8 @@ impl eframe::App for App {
 fn main() -> eframe::Result {
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1100.0, 600.0])
-            .with_min_inner_size([1100.0, 600.0])
+            .with_inner_size([1100.0, 720.0])
+            .with_min_inner_size([1100.0, 720.0])
             .with_title("Quantum Purse"),
         ..Default::default()
     };

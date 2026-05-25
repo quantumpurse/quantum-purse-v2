@@ -23,9 +23,9 @@ impl TxHistoryStore {
     /// Loads the store for `network_tag` if present. Returns `Ok(None)`
     /// when the file is absent (fresh wallet or never synced on this
     /// network), `Err` when the file exists but can't be read or parsed.
-    pub fn load(network_tag: &str) -> Result<Option<Self>, String> {
-        let path =
-            qpv2_core::db::get_tx_history_path(network_tag).map_err(|e| format!("path: {}", e))?;
+    pub fn load(wallet_id: u32, network_tag: &str) -> Result<Option<Self>, String> {
+        let path = qpv2_core::db::get_tx_history_path(wallet_id, network_tag)
+            .map_err(|e| format!("path: {}", e))?;
         if !path.exists() {
             return Ok(None);
         }
@@ -41,9 +41,9 @@ impl TxHistoryStore {
     /// Writes the store atomically via tmp-file + rename so a crash mid-write
     /// cannot corrupt the canonical file. `network_tag` scopes the file to
     /// the active chain.
-    pub fn save(&self, network_tag: &str) -> Result<(), String> {
-        let final_path =
-            qpv2_core::db::get_tx_history_path(network_tag).map_err(|e| format!("path: {}", e))?;
+    pub fn save(&self, wallet_id: u32, network_tag: &str) -> Result<(), String> {
+        let final_path = qpv2_core::db::get_tx_history_path(wallet_id, network_tag)
+            .map_err(|e| format!("path: {}", e))?;
         let tmp_path = final_path.with_extension("json.tmp");
 
         let json = serde_json::to_string_pretty(self).map_err(|e| format!("serialize: {}", e))?;

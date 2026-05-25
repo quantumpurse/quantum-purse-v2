@@ -200,7 +200,7 @@ impl App {
                         self.colors.accent,
                     );
 
-                    if let Ok(info) = KeyVault::read_wallet_info() {
+                    if let Ok(info) = KeyVault::read_wallet_info(self.wallet_id) {
                         ui.add_space(6.0);
                         pill(
                             ui,

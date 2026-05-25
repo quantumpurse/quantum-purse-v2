@@ -646,10 +646,7 @@ impl KeyVault {
             })
     }
 
-    pub fn check_auth_compatibility(
-        wallet_id: u32,
-        expected: &AuthMethod,
-    ) -> Result<(), String> {
+    pub fn check_auth_compatibility(wallet_id: u32, expected: &AuthMethod) -> Result<(), String> {
         let wallet_info = Self::read_wallet_info(wallet_id)?;
 
         match (&wallet_info.auth_method, expected) {

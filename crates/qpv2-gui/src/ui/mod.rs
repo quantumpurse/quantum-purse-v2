@@ -8,3 +8,5 @@ mod main_stages;
 mod node_manager;
 mod node_selector;
 mod transfer;
+mod wallet_selector;
+mod wallets;
