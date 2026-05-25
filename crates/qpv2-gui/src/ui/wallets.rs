@@ -339,34 +339,26 @@ impl App {
                                         }
                                     });
 
-                                    // Right side: ACTIVE badge or Delete button
+                                    // Right side: ACTIVE badge + Delete button
                                     ui.with_layout(
                                         egui::Layout::right_to_left(egui::Align::Center),
                                         |ui| {
-                                            if is_active {
-                                                pill(
-                                                    ui,
-                                                    self.colors.accent_tint,
-                                                    "ACTIVE".to_string(),
-                                                    self.colors.accent,
-                                                );
+                                            let confirming =
+                                                self.confirm_remove_id == Some(cw_id);
+                                            let label = if confirming {
+                                                "\u{26a0} Confirm?"
                                             } else {
-                                                let confirming =
-                                                    self.confirm_remove_id == Some(cw_id);
-                                                let label = if confirming {
-                                                    "\u{26a0} Confirm?"
-                                                } else {
-                                                    "\u{1f5d1} Delete"
-                                                };
-                                                let del_btn = egui::Button::new(
-                                                    egui::RichText::new(label)
-                                                        .size(10.0)
-                                                        .color(self.colors.danger),
-                                                )
-                                                .fill(egui::Color32::TRANSPARENT)
-                                                .stroke(egui::Stroke::new(
-                                                    1.0,
-                                                    egui::Color32::from_rgba_unmultiplied(
+                                                "\u{1f5d1} Delete"
+                                            };
+                                            let del_btn = egui::Button::new(
+                                                egui::RichText::new(label)
+                                                    .size(10.0)
+                                                    .color(self.colors.danger),
+                                            )
+                                            .fill(egui::Color32::TRANSPARENT)
+                                            .stroke(egui::Stroke::new(
+                                                1.0,
+                                                egui::Color32::from_rgba_unmultiplied(
                                                         255, 77, 109, 77,
                                                     ),
                                                 ))
@@ -379,6 +371,14 @@ impl App {
                                                         self.confirm_remove_id = Some(cw_id);
                                                     }
                                                 }
+
+                                            if is_active {
+                                                pill(
+                                                    ui,
+                                                    self.colors.accent_tint,
+                                                    "ACTIVE".to_string(),
+                                                    self.colors.accent,
+                                                );
                                             }
                                         },
                                     );

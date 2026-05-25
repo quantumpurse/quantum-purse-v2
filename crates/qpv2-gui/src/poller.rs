@@ -246,7 +246,7 @@ impl App {
                     // so mainnet and testnet caches can't cross-contaminate.
                     // A write failure here is non-fatal — the next tick
                     // will save the same state again.
-                    let store = crate::tx_history_store::TxHistoryStore {
+                    let store = crate::tx_history::TxHistoryStore {
                         records: self.tx_history.clone(),
                     };
                     if let Err(e) = store.save(self.wallet_id, self.qp_client.network().tag()) {

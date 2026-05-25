@@ -3,7 +3,7 @@
 use qpv2_core::types::{AuthKey, AuthMethod, SpxVariant};
 use qpv2_core::KeyVault;
 
-use crate::tx_history_store::TxHistoryStore;
+use crate::tx_history::TxHistoryStore;
 use crate::types::{CurrentWallet, Screen, Status, TransactionStatus};
 use crate::App;
 

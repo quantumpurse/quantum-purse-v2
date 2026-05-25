@@ -3,7 +3,7 @@
 mod ckb;
 mod poller;
 mod transactor;
-mod tx_history_store;
+mod tx_history;
 mod types;
 mod ui;
 mod wallet;
@@ -479,8 +479,8 @@ impl eframe::App for App {
 fn main() -> eframe::Result {
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1100.0, 720.0])
-            .with_min_inner_size([1100.0, 720.0])
+            .with_inner_size([1100.0, 700.0])
+            .with_min_inner_size([1100.0, 700.0])
             .with_title("Quantum Purse"),
         ..Default::default()
     };
