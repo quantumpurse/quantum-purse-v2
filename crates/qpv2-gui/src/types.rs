@@ -102,7 +102,6 @@ pub(crate) struct CurrentWallet {
     pub spx_variant: qpv2_core::types::SpxVariant,
     pub auth_method: qpv2_core::types::AuthMethod,
     pub account_count: usize,
-    pub path: String,
 }
 
 /// Sidebar navigation tabs matching the mockup layout.

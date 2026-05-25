@@ -19,16 +19,12 @@ impl App {
                 let account_count = KeyVault::get_all_sphincs_lock_args(entry.id)
                     .map(|a| a.len())
                     .unwrap_or(0);
-                let path = qpv2_core::db::get_wallet_dir(entry.id)
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_default();
                 Some(CurrentWallet {
                     id: entry.id,
                     name: entry.name,
                     spx_variant: info.spx_variant,
                     auth_method: info.auth_method,
                     account_count,
-                    path,
                 })
             })
             .collect()

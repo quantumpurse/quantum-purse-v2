@@ -242,7 +242,6 @@ impl App {
                         let cw_variant = cw.spx_variant;
                         let cw_auth = cw.auth_method.clone();
                         let cw_acct_count = cw.account_count;
-                        let cw_path = cw.path.clone();
 
                         let row_resp = egui::Frame::new()
                             .fill(hover.fill)
@@ -327,16 +326,6 @@ impl App {
                                                 self.colors.text_muted,
                                             );
                                         });
-
-                                        // Path
-                                        if !cw_path.is_empty() {
-                                            ui.label(
-                                                egui::RichText::new(&cw_path)
-                                                    .size(9.0)
-                                                    .family(egui::FontFamily::Monospace)
-                                                    .color(self.colors.text_muted),
-                                            );
-                                        }
                                     });
 
                                     // Right side: ACTIVE badge + Delete button
