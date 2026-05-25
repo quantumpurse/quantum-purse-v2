@@ -585,6 +585,10 @@ impl App {
             return;
         }
 
+        for lock_args in &accounts {
+            self.balances.entry(lock_args.clone()).or_insert(None);
+        }
+
         let qp_client = self.qp_client.clone();
         let (tx, rx) = mpsc::channel();
         self.balance_receiver = Some(rx);

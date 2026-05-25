@@ -203,12 +203,6 @@ impl App {
                             .color(self.colors.text_muted),
                     );
                 } else {
-                    let avatar_colors = [
-                        (self.colors.accent, egui::Color32::from_rgb(5, 12, 10)),
-                        (self.colors.accent3, egui::Color32::WHITE),
-                        (self.colors.warn, egui::Color32::from_rgb(5, 12, 10)),
-                    ];
-
                     let mut delete_target: Option<u32> = None;
                     let mut rename_target: Option<(u32, String)> = None;
                     let mut switch_target: Option<(u32, String)> = None;
@@ -216,7 +210,6 @@ impl App {
                     for i in 0..self.wallet_cache.len() {
                         let cw = &self.wallet_cache[i];
                         let is_active = cw.id == self.wallet_id;
-                        let (av_bg, av_fg) = avatar_colors[i % avatar_colors.len()];
 
                         let hover = CardHover::new(ui, ("wallet-row", i), &self.colors);
 
@@ -233,26 +226,18 @@ impl App {
                             .stroke(hover.stroke)
                             .show(ui, |ui| {
                                 ui.horizontal(|ui| {
-                                    // Avatar
-                                    let (avatar_rect, _) = ui.allocate_exact_size(
+                                    // Wallet tile (rounded square with diagonal pattern)
+                                    let (tile_rect, _) = ui.allocate_exact_size(
                                         egui::vec2(38.0, 38.0),
                                         egui::Sense::hover(),
                                     );
-                                    ui.painter()
-                                        .circle_filled(avatar_rect.center(), 19.0, av_bg);
-                                    let letter = cw_name
-                                        .chars()
-                                        .next()
-                                        .unwrap_or('?')
-                                        .to_uppercase()
-                                        .next()
-                                        .unwrap_or('?');
-                                    ui.painter().text(
-                                        avatar_rect.center(),
-                                        egui::Align2::CENTER_CENTER,
-                                        letter.to_string(),
-                                        egui::FontId::proportional(15.0),
-                                        av_fg,
+                                    paint_wallet_tile(
+                                        ui.painter(),
+                                        tile_rect,
+                                        &cw_name,
+                                        self.colors.surface2,
+                                        self.colors.border,
+                                        self.colors.text_muted,
                                     );
 
                                     ui.add_space(10.0);
@@ -619,4 +604,50 @@ fn paint_hold_border(
     if points.len() >= 2 {
         painter.add(egui::Shape::line(points, stroke));
     }
+}
+
+fn paint_wallet_tile(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    name: &str,
+    fill: egui::Color32,
+    border: egui::Color32,
+    text_color: egui::Color32,
+) {
+    let cr = 8.0;
+    painter.rect_filled(rect, cr, fill);
+    painter.rect_stroke(rect, cr, egui::Stroke::new(1.0, border), egui::StrokeKind::Inside);
+
+    let stripe = egui::Color32::from_rgba_unmultiplied(
+        border.r(),
+        border.g(),
+        border.b(),
+        40,
+    );
+    let step = 8.0;
+    let clip = rect.shrink(1.0);
+    let mut x = rect.left() - rect.height();
+    while x < rect.right() {
+        let p0 = egui::pos2(x, rect.bottom());
+        let p1 = egui::pos2(x + rect.height(), rect.top());
+        let p0c = egui::pos2(p0.x.clamp(clip.left(), clip.right()), p0.y.clamp(clip.top(), clip.bottom()));
+        let p1c = egui::pos2(p1.x.clamp(clip.left(), clip.right()), p1.y.clamp(clip.top(), clip.bottom()));
+        painter.line_segment([p0c, p1c], egui::Stroke::new(0.5, stripe));
+        x += step;
+    }
+
+    let letter = name
+        .chars()
+        .next()
+        .unwrap_or('?')
+        .to_uppercase()
+        .next()
+        .unwrap_or('?');
+    painter.text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        letter.to_string(),
+        egui::FontId::new(14.0, egui::FontFamily::Monospace),
+        text_color,
+    );
 }

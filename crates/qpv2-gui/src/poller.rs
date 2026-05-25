@@ -147,9 +147,11 @@ impl App {
                 Ok((lock_args, Ok(balance))) => {
                     self.balances.insert(lock_args, Some(balance));
                 }
-                Ok((lock_args, Err(e))) => {
-                    self.balances.insert(lock_args, None);
+                Ok((_, Err(e))) => {
                     let msg = format!("Failed to fetch balance: {}", e);
+                    // Transient HTTP errors are expected when the local RPC node is
+                    // momentarily busy (light client compaction, full node sync bursts).
+                    // Log to file but don't surface in the UI to avoid noisy false alarms.
                     if e.contains("http error") {
                         log::error!("{}", msg);
                     } else {
@@ -209,6 +211,9 @@ impl App {
                 }
                 Ok(Err(e)) => {
                     self.dao_cells_query_rx = None;
+                    // Transient HTTP errors are expected when the local RPC node is
+                    // momentarily busy (light client compaction, full node sync bursts).
+                    // Log to file but don't surface in the UI to avoid noisy false alarms.
                     if e.contains("http error") {
                         log::error!("{}", e);
                     } else {
@@ -264,6 +269,9 @@ impl App {
                     break;
                 }
                 Ok(Err(e)) => {
+                    // Transient HTTP errors are expected when the local RPC node is
+                    // momentarily busy (light client compaction, full node sync bursts).
+                    // Log to file but don't surface in the UI to avoid noisy false alarms.
                     if e.contains("http error") {
                         log::error!("tx_history: {}", e);
                     } else {
@@ -393,6 +401,9 @@ impl App {
             }
             Ok(Err(e)) => {
                 let msg = format!("Auto-detect failed: {}", e);
+                // Transient HTTP errors are expected when the local RPC node is
+                // momentarily busy (light client compaction, full node sync bursts).
+                // Log to file but don't surface in the UI to avoid noisy false alarms.
                 if e.contains("http error") {
                     log::error!("{}", msg);
                 } else {

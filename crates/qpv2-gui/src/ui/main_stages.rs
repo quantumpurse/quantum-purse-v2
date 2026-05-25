@@ -600,7 +600,7 @@ impl App {
                 ui.horizontal(|ui| {
                     ui.add_space(20.0);
                     ui.label(
-                        egui::RichText::new("SECURITY")
+                        egui::RichText::new("SETTING")
                             .size(8.0)
                             .color(self.colors.text_muted),
                     );
