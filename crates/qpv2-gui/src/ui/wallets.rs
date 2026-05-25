@@ -346,7 +346,7 @@ impl App {
                                             let confirming =
                                                 self.confirm_remove_id == Some(cw_id);
                                             let label = if confirming {
-                                                "\u{26a0} Confirm?"
+                                                "\u{26a0} Confirm delete?"
                                             } else {
                                                 "\u{1f5d1} Delete"
                                             };
