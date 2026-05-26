@@ -574,56 +574,84 @@
 
   /* SETUP SCREEN */
   .screen-setup {
-    display: none; flex: 1; align-items: center; justify-content: center;
+    display: none; flex: 1; flex-direction: column;
+    align-items: center; justify-content: center;
     min-height: 100vh; position: relative; z-index: 1;
   }
   .screen-setup.active { display: flex; }
-  .setup-center { text-align: center; max-width: 400px; width: 100%; }
+  .setup-header { text-align: center; margin-bottom: 32px; }
   .setup-title {
     font-family: 'Syne', sans-serif; font-size: 24px;
     font-weight: 800; color: var(--accent);
     letter-spacing: -0.5px; margin-bottom: 6px;
   }
-  .setup-sub { font-size: 13px; color: var(--muted); margin-bottom: 28px; }
-  .setup-card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 20px; padding: 28px; text-align: left;
+  .setup-sub { font-size: 13px; color: var(--muted); }
+  .setup-columns {
+    display: flex; align-items: center; gap: 0;
   }
-  .setup-toggle {
-    display: flex; gap: 3px; background: var(--surface2);
-    padding: 3px; border-radius: var(--radius-sm); margin-bottom: 22px;
+  .setup-col-buttons {
+    width: 190px; display: flex; flex-direction: column; gap: 8px;
   }
-  .setup-toggle-btn {
-    flex: 1; padding: 8px; text-align: center;
-    font-size: 12px; border-radius: 6px;
-    cursor: pointer; color: var(--muted); transition: all .15s;
-    border: 1px solid transparent;
+  .setup-col-thread {
+    width: 170px; position: relative; display: flex;
+    flex-direction: column; align-items: center;
   }
-  .setup-toggle-btn.active {
-    background: var(--accent); color: var(--bg);
-    border-color: transparent;
+  .thread-line {
+    position: absolute; top: 0; bottom: 0; left: 50%;
+    width: 1px; background: var(--border); transform: translateX(-50%);
   }
-  .variant-pills { display: flex; gap: 6px; margin-top: 8px; margin-bottom: 18px; }
-  .auth-buttons { display: flex; flex-direction: column; gap: 8px; }
+  .thread-group { display: flex; flex-direction: column; position: relative; z-index: 1; }
+  .thread-group + .thread-group { margin-top: 14px; }
+  .thread-row {
+    height: 22px; display: flex; align-items: center;
+    justify-content: center; cursor: pointer; position: relative;
+    user-select: none;
+  }
+  .thread-label-left {
+    position: absolute; right: calc(50% + 12px);
+    font-size: 11px; color: var(--muted); white-space: nowrap;
+    font-family: 'Space Mono', monospace;
+  }
+  .thread-label-right {
+    position: absolute; left: calc(50% + 12px);
+    font-size: 11px; color: var(--muted); white-space: nowrap;
+    font-family: 'Space Mono', monospace;
+  }
+  .thread-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--border2); transition: all .15s;
+    position: relative; z-index: 2;
+  }
+  .thread-row.selected .thread-dot {
+    width: 10px; height: 10px; background: var(--accent);
+    box-shadow: 0 0 8px rgba(0,255,180,0.4);
+  }
+  .thread-row.selected .thread-label-left,
+  .thread-row.selected .thread-label-right {
+    color: var(--text);
+  }
   .auth-btn {
-    width: 100%; padding: 12px; border-radius: var(--radius-sm);
+    width: 100%; height: 40px; border-radius: 8px;
     font-size: 13px; font-weight: 500; cursor: pointer;
     font-family: 'DM Sans', sans-serif; transition: all .2s;
     border: 1px solid; text-align: center;
+    display: flex; align-items: center; justify-content: center;
   }
   .auth-btn-keychain {
     background: var(--accent);
     color: #050c0a; border-color: transparent;
   }
+  .auth-btn-keychain:hover { opacity: 0.9; }
   .auth-btn-fido2 {
-    background: transparent; color: var(--text);
-    border-color: rgba(0,200,255,.3);
+    background: var(--surface); color: var(--text);
+    border-color: var(--accent2);
   }
+  .auth-btn-fido2:hover { background: var(--surface2); }
   .auth-btn-password {
     background: transparent; color: var(--muted);
     border-color: var(--border2);
   }
-
+  .auth-btn-password:hover { border-color: var(--muted); }
   /* LOCKED SCREEN */
   .screen-locked {
     display: none; flex: 1; align-items: center; justify-content: center;
@@ -762,46 +790,102 @@
 <!-- SETUP SCREEN -->
 <!-- ═══════════════════════════════════════════ -->
 <div class="screen-setup" id="screen-setup">
-  <div class="setup-center">
+  <div class="setup-header">
     <div class="setup-title">QUANTUM PURSE</div>
     <div class="setup-sub">Post-quantum secure wallet for Nervos Network.</div>
-    <div class="setup-card">
-      <div class="setup-toggle">
-        <div class="setup-toggle-btn active" onclick="selSetupTab(this)">New Wallet</div>
-        <div class="setup-toggle-btn" onclick="selSetupTab(this)">Import Wallet</div>
+  </div>
+  <div class="setup-columns">
+    <!-- Left: Create buttons -->
+    <div class="setup-col-buttons">
+      <button class="auth-btn auth-btn-keychain">Create with Touch ID</button>
+      <button class="auth-btn auth-btn-fido2">Create with Security Key</button>
+      <button class="auth-btn auth-btn-password">Create with Password</button>
+    </div>
+
+    <!-- Center: Variant thread -->
+    <div class="setup-col-thread" id="variant-thread">
+      <div class="thread-line"></div>
+      <div style="height:12px"></div>
+      <!-- Group 1: 128-bit -->
+      <div class="thread-group">
+        <div class="thread-row selected" onclick="selVariant(this)" data-variant="SHA2 128S">
+          <span class="thread-label-left">SHA2</span>
+          <div class="thread-dot"></div>
+          <span class="thread-label-right">128S</span>
+        </div>
+        <div class="thread-row" onclick="selVariant(this)" data-variant="SHA2 128F">
+          <span class="thread-label-left">SHA2</span>
+          <div class="thread-dot"></div>
+          <span class="thread-label-right">128F</span>
+        </div>
+        <div class="thread-row" onclick="selVariant(this)" data-variant="SHAKE 128S">
+          <span class="thread-label-left">SHAKE</span>
+          <div class="thread-dot"></div>
+          <span class="thread-label-right">128S</span>
+        </div>
+        <div class="thread-row" onclick="selVariant(this)" data-variant="SHAKE 128F">
+          <span class="thread-label-left">SHAKE</span>
+          <div class="thread-dot"></div>
+          <span class="thread-label-right">128F</span>
+        </div>
       </div>
-
-      <label class="form-label-mono">Wallet Name</label>
-      <input class="form-input" type="text" placeholder="Enter a name for your wallet" style="margin-bottom:16px">
-
-      <div style="height:1px;background:var(--border);margin-bottom:20px"></div>
-
-      <label class="form-label-mono">SPHINCS+ Variant</label>
-      <select class="form-input" style="cursor:pointer;margin-bottom:4px">
-        <option>Sha2128S</option><option>Sha2128F</option>
-        <option>Shake128S</option><option>Shake128F</option>
-        <option>Sha2192S</option><option>Sha2192F</option>
-        <option>Shake192S</option><option>Shake192F</option>
-        <option>Sha2256S</option><option>Sha2256F</option>
-        <option>Shake256S</option><option>Shake256F</option>
-      </select>
-      <div class="variant-pills">
-        <span class="pill" style="background:var(--accent-tint);color:var(--accent)">128-bit security</span>
-        <span class="pill" style="background:var(--accent2-tint);color:var(--accent2)">Compact signatures</span>
+      <!-- Group 2: 192-bit -->
+      <div class="thread-group">
+        <div class="thread-row" onclick="selVariant(this)" data-variant="SHA2 192S">
+          <span class="thread-label-left">SHA2</span>
+          <div class="thread-dot"></div>
+          <span class="thread-label-right">192S</span>
+        </div>
+        <div class="thread-row" onclick="selVariant(this)" data-variant="SHA2 192F">
+          <span class="thread-label-left">SHA2</span>
+          <div class="thread-dot"></div>
+          <span class="thread-label-right">192F</span>
+        </div>
+        <div class="thread-row" onclick="selVariant(this)" data-variant="SHAKE 192S">
+          <span class="thread-label-left">SHAKE</span>
+          <div class="thread-dot"></div>
+          <span class="thread-label-right">192S</span>
+        </div>
+        <div class="thread-row" onclick="selVariant(this)" data-variant="SHAKE 192F">
+          <span class="thread-label-left">SHAKE</span>
+          <div class="thread-dot"></div>
+          <span class="thread-label-right">192F</span>
+        </div>
       </div>
-
-      <div style="height:1px;background:var(--border);margin-bottom:20px"></div>
-
-      <label class="form-label-mono">Authentication</label>
-      <div class="auth-buttons">
-        <button class="auth-btn auth-btn-keychain">Create with Touch ID</button>
-        <button class="auth-btn auth-btn-fido2">Create with Security Key</button>
-        <button class="auth-btn auth-btn-password">Create with Password</button>
+      <!-- Group 3: 256-bit -->
+      <div class="thread-group">
+        <div class="thread-row" onclick="selVariant(this)" data-variant="SHA2 256S">
+          <span class="thread-label-left">SHA2</span>
+          <div class="thread-dot"></div>
+          <span class="thread-label-right">256S</span>
+        </div>
+        <div class="thread-row" onclick="selVariant(this)" data-variant="SHA2 256F">
+          <span class="thread-label-left">SHA2</span>
+          <div class="thread-dot"></div>
+          <span class="thread-label-right">256F</span>
+        </div>
+        <div class="thread-row" onclick="selVariant(this)" data-variant="SHAKE 256S">
+          <span class="thread-label-left">SHAKE</span>
+          <div class="thread-dot"></div>
+          <span class="thread-label-right">256S</span>
+        </div>
+        <div class="thread-row" onclick="selVariant(this)" data-variant="SHAKE 256F">
+          <span class="thread-label-left">SHAKE</span>
+          <div class="thread-dot"></div>
+          <span class="thread-label-right">256F</span>
+        </div>
       </div>
+      <div style="height:12px"></div>
+    </div>
+
+    <!-- Right: Import buttons -->
+    <div class="setup-col-buttons">
+      <button class="auth-btn auth-btn-keychain">Import with Touch ID</button>
+      <button class="auth-btn auth-btn-fido2">Import with Security Key</button>
+      <button class="auth-btn auth-btn-password">Import with Password</button>
     </div>
   </div>
 </div>
-
 <!-- ═══════════════════════════════════════════ -->
 <!-- LOCKED SCREEN -->
 <!-- ═══════════════════════════════════════════ -->
@@ -1144,12 +1228,17 @@
   <!-- ═══ ACCOUNTS ═══ -->
   <div class="view" id="view-accounts">
     <div class="page-header" style="margin-bottom:26px"><h1>Accounts</h1><p>Manage keys and authentication</p></div>
-    <div style="margin-bottom:28px">
-      <div class="dao-action-card" style="max-width:220px;text-align:center">
+    <div style="display:grid;grid-template-columns:repeat(2,220px);gap:14px;margin-bottom:28px">
+      <div class="dao-action-card" style="text-align:center">
         <div class="dao-card-accent da-deposit"></div>
         <span class="dao-action-icon">&#x2726;</span>
         <div class="dao-action-title">New Account</div>
         <div class="dao-action-desc">Derive a new account from your wallet seed.</div>
+      </div>
+      <div class="dao-action-card disabled" style="text-align:center;cursor:default;opacity:.6">
+        <span class="dao-action-icon">&#x1f512;</span>
+        <div class="dao-action-title" style="color:var(--muted)">Multi-sig Account</div>
+        <div class="dao-action-desc">Coming soon.</div>
       </div>
     </div>
 
@@ -1324,9 +1413,9 @@
     if(name==='Mainnet'){badge.textContent='MAIN';badge.className='network-badge badge-main';}
     else{badge.textContent='TEST';badge.className='network-badge badge-test';}
   }
-  function selSetupTab(el){
-    el.parentNode.querySelectorAll('.setup-toggle-btn').forEach(t=>t.classList.remove('active'));
-    el.classList.add('active');
+  function selVariant(el){
+    document.querySelectorAll('.thread-row').forEach(r=>r.classList.remove('selected'));
+    el.classList.add('selected');
   }
   function toggleAdvanced(el){
     const content=el.nextElementSibling;

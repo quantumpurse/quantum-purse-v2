@@ -52,7 +52,6 @@ impl App {
 		let mut selected = current_network;
 
 		ui.horizontal(|ui| {
-			ui.add_space(ROW_INDENT);
 			ui.label(
 				egui::RichText::new("Network")
 					.size(12.0)
