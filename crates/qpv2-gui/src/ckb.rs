@@ -133,11 +133,14 @@ impl App {
         self.dao_cells_query_rx = Some(rx);
 
         std::thread::spawn(move || {
+            let mut all_ok = true;
+
             for lock_args in &all_lock_args {
                 let address_str = match lock_args_to_address(lock_args, is_mainnet) {
                     Ok(v) => v,
                     Err(e) => {
                         let _ = tx.send(Err(format!("Invalid address: {}", e)));
+                        all_ok = false;
                         continue;
                     }
                 };
@@ -145,6 +148,7 @@ impl App {
                     Ok(v) => v,
                     Err(e) => {
                         let _ = tx.send(Err(format!("Invalid address: {}", e)));
+                        all_ok = false;
                         continue;
                     }
                 };
@@ -161,12 +165,12 @@ impl App {
                             } else {
                                 let _ = tx.send(Err(msg));
                             }
+                            all_ok = false;
                             continue;
                         }
                     };
 
                 for cell in deposited {
-                    // If the receiver is dropped (e.g. wallet locked), stop.
                     if tx
                         .send(Ok(DaoQueryEvent::Deposited(lock_args.clone(), cell)))
                         .is_err()
@@ -176,7 +180,6 @@ impl App {
                 }
 
                 for cell in prepared {
-                    // If the receiver is dropped (e.g. wallet locked), stop.
                     if tx
                         .send(Ok(DaoQueryEvent::Prepared(lock_args.clone(), cell)))
                         .is_err()
@@ -186,7 +189,12 @@ impl App {
                 }
             }
 
-            let _ = tx.send(Ok(DaoQueryEvent::Done));
+            // Only commit the refresh when every account succeeded.
+            // Any failure means the staging buffer is incomplete — keep
+            // the previous display data instead of swapping in a partial set.
+            if all_ok {
+                let _ = tx.send(Ok(DaoQueryEvent::Done));
+            }
         });
     }
 
