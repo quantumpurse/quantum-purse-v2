@@ -310,6 +310,12 @@ impl App {
             self.local_node.stop();
         }
 
+        if let Some(t) = self.node_status_reconnected_at {
+            if t.elapsed() >= std::time::Duration::from_secs(3) {
+                self.node_status_reconnected_at = None;
+            }
+        }
+
         let rx = match &self.node_status_rx {
             Some(rx) => rx,
             None => return,
@@ -317,6 +323,13 @@ impl App {
 
         match rx.try_recv() {
             Ok(Ok(status)) => {
+                let was_offline = !self.node_status.online;
+                if was_offline && status.online {
+                    self.node_status_reconnected_at = Some(std::time::Instant::now());
+                }
+                if !status.online {
+                    self.node_status_reconnected_at = None;
+                }
                 self.node_status = status;
                 self.node_status_rx = None;
             }

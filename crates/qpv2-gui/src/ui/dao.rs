@@ -645,7 +645,7 @@ impl App {
                                 .add_enabled(
                                     !is_busy,
                                     egui::Button::new(
-                                        egui::RichText::new("Request Withdraw")
+                                        egui::RichText::new("Request")
                                             .size(10.5)
                                             .color(self.colors.text_muted),
                                     )

@@ -222,13 +222,12 @@ impl App {
                         let row_resp = egui::Frame::new()
                             .fill(hover.fill)
                             .corner_radius(8.0)
-                            .inner_margin(egui::Margin::symmetric(18, 14))
+                            .inner_margin(egui::Margin::symmetric(18, 16))
                             .stroke(hover.stroke)
                             .show(ui, |ui| {
-                                ui.horizontal(|ui| {
-                                    // Wallet tile (rounded square with diagonal pattern)
+                                ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
                                     let (tile_rect, _) = ui.allocate_exact_size(
-                                        egui::vec2(38.0, 38.0),
+                                        egui::vec2(48.0, 64.0),
                                         egui::Sense::hover(),
                                     );
                                     paint_wallet_tile(
@@ -240,7 +239,7 @@ impl App {
                                         self.colors.text_muted,
                                     );
 
-                                    ui.add_space(10.0);
+                                    ui.add_space(12.0);
 
                                     // Info column
                                     let info_width = ui.available_width();
@@ -313,10 +312,21 @@ impl App {
                                                     self.rename_wallet_id = Some(cw_id);
                                                     self.rename_wallet_buf = cw_name.clone();
                                                 }
+
+                                                if is_active {
+                                                    ui.add_space(4.0);
+                                                    pill(
+                                                        ui,
+                                                        self.colors.accent_tint,
+                                                        "ACTIVE".to_string(),
+                                                        self.colors.accent,
+                                                    );
+                                                }
                                             });
                                         }
 
-                                        // Detail pills row
+                                        ui.add_space(4.0);
+
                                         ui.horizontal(|ui| {
                                             pill(
                                                 ui,
@@ -356,6 +366,17 @@ impl App {
                                                 ui,
                                                 self.colors.surface2,
                                                 acct_text,
+                                                self.colors.text_muted,
+                                            );
+                                        });
+
+                                        ui.add_space(4.0);
+
+                                        ui.horizontal(|ui| {
+                                            pill(
+                                                ui,
+                                                self.colors.surface2,
+                                                cw_path.clone(),
                                                 self.colors.text_muted,
                                             );
 
@@ -422,23 +443,7 @@ impl App {
                                                     .memory_mut(|m| m.data.remove::<f64>(del_id));
                                             }
 
-                                            if is_active {
-                                                pill(
-                                                    ui,
-                                                    self.colors.accent_tint,
-                                                    "ACTIVE".to_string(),
-                                                    self.colors.accent,
-                                                );
-                                            }
                                         });
-
-                                        ui.add_space(2.0);
-                                        pill(
-                                            ui,
-                                            self.colors.surface2,
-                                            cw_path.clone(),
-                                            self.colors.text_muted,
-                                        );
                                     });
                                 });
                             });

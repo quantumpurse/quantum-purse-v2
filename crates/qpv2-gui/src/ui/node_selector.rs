@@ -114,6 +114,17 @@ impl App {
                                 self.switch_to_backend(ntype);
                             }
                         }
+
+                        if !self.node_status.online {
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new("\u{26a0} No connection")
+                                        .size(10.0)
+                                        .color(self.colors.warn),
+                                );
+                            });
+                        }
                     });
             });
 

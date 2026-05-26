@@ -129,6 +129,7 @@ pub(crate) struct App {
     // Node Manager tab — latest cached snapshot + in-flight refresh.
     pub(crate) node_status: NodeStatus,
     pub(crate) node_status_rx: Option<mpsc::Receiver<NodeStatusUpdate>>,
+    pub(crate) node_status_reconnected_at: Option<std::time::Instant>,
 
     // Manual "set scan from block" input on the Light Client card.
     // Transient UI state; not persisted across sessions.
@@ -358,8 +359,9 @@ impl App {
             dao_deposit_all: false,
             tx_history: Vec::new(),
             tx_history_rx: None,
-            node_status: NodeStatus::default(),
+            node_status: NodeStatus { online: true, ..NodeStatus::default() },
             node_status_rx: None,
+            node_status_reconnected_at: None,
             set_block_input: String::new(),
             set_block_editing: false,
             earliest_funding_block_rx: None,

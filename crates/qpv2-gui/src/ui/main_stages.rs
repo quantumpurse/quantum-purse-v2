@@ -321,15 +321,25 @@ impl App {
                     // Node info row
                     let row_y = inner.top() + 14.0;
 
-                    // TODO: replace with a real liveness probe (periodic
-                    // tip-header ping). The node manager is always constructed
-                    // at startup, so this dot is currently purely cosmetic.
-                    let dot_color = self.colors.accent;
+                    let t = ui.input(|i| i.time);
+                    let blink_alpha = ((t * std::f64::consts::TAU).sin() * 0.5 + 0.5) as f32;
+                    let dot_color = if self.node_status.online {
+                        if self.node_status_reconnected_at.is_some() {
+                            self.colors.accent.linear_multiply(0.3 + 0.7 * blink_alpha)
+                        } else {
+                            self.colors.accent
+                        }
+                    } else {
+                        self.colors.danger.linear_multiply(0.3 + 0.7 * blink_alpha)
+                    };
                     painter.circle_filled(
                         egui::pos2(inner.left() + 4.0, row_y + 7.0),
                         3.0,
                         dot_color,
                     );
+                    if !self.node_status.online || self.node_status_reconnected_at.is_some() {
+                        ctx.request_repaint();
+                    }
 
                     // Node type
                     let node_name = match self.qp_client.config().node_type {
@@ -518,7 +528,7 @@ impl App {
                     );
                 });
                 ui.add_space(4.0);
-                self.draw_nav_item(ui, Tab::NodeManager, "\u{25c9}", "Node Types");
+                self.draw_nav_item(ui, Tab::NodeManager, "\u{25c9}", "Nodes");
                 self.draw_nav_item(ui, Tab::Wallets, "\u{25EB}", "Wallets");
                 self.draw_nav_item(ui, Tab::Accounts, "\u{25ce}", "Accounts");
 

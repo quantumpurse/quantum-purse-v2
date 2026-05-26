@@ -16,12 +16,22 @@ impl App {
             ui.vertical(|ui| {
                 ui.set_width(ui.available_width() - 30.0);
 
-                ui.heading(
-                    egui::RichText::new("Node Manager")
-                        .size(26.0)
-                        .strong()
-                        .color(self.colors.text),
-                );
+                ui.horizontal(|ui| {
+                    ui.heading(
+                        egui::RichText::new("Node Manager")
+                            .size(26.0)
+                            .strong()
+                            .color(self.colors.text),
+                    );
+                    if !self.node_status.online {
+                        ui.add_space(8.0);
+                        ui.label(
+                            egui::RichText::new("\u{26a0} No connection")
+                                .size(12.0)
+                                .color(self.colors.warn),
+                        );
+                    }
+                });
                 ui.label(
                     egui::RichText::new("Configure and monitor your CKB node")
                         .size(13.0)
@@ -280,19 +290,18 @@ impl App {
 
                 let metrics = self.metric_cells(backend, active);
                 for (i, (label, value)) in metrics.iter().enumerate() {
-                    if is_lc && i == 0 && !is_editing {
-                        self.draw_sync_metric_row(ui, value);
+                    if is_lc && i == 0 {
+                        if is_editing {
+                            self.draw_sync_edit_row(ui);
+                        } else {
+                            self.draw_sync_metric_row(ui, value);
+                        }
                     } else {
                         self.draw_metric_row(ui, label, value);
                     }
                     if i < metrics.len() - 1 {
                         ui.add_space(4.0);
                     }
-                }
-
-                if is_lc && is_editing {
-                    ui.add_space(8.0);
-                    self.draw_sync_edit_section(ui);
                 }
             });
 
@@ -481,58 +490,79 @@ impl App {
         });
     }
 
-    fn draw_sync_edit_section(&mut self, ui: &mut egui::Ui) {
+    fn draw_sync_edit_row(&mut self, ui: &mut egui::Ui) {
         let tip = self.node_status.tip_block;
 
         ui.horizontal(|ui| {
             ui.add_space(ROW_INDENT);
-            ui.vertical(|ui| {
-                ui.label(
-                    egui::RichText::new("SET SYNC START BLOCK")
-                        .size(9.0)
-                        .family(egui::FontFamily::Monospace)
+            ui.label(
+                egui::RichText::new(format!("{:<width$}", "Sync", width = METRIC_LABEL_PAD))
+                    .size(12.0)
+                    .family(egui::FontFamily::Monospace)
+                    .color(self.colors.text_muted),
+            );
+
+            let response = ui.add(
+                egui::TextEdit::singleline(&mut self.set_block_input)
+                    .desired_width(120.0)
+                    .font(egui::FontId::monospace(12.0))
+                    .text_color(self.colors.text_muted),
+            );
+
+            let parsed = self.set_block_input.trim().replace(',', "").parse::<u64>();
+            let valid = matches!(&parsed, Ok(b) if tip.is_none_or(|t| *b <= t));
+
+            let ok_btn = ui.add_enabled(
+                valid,
+                egui::Button::new(
+                    egui::RichText::new("\u{2713}")
+                        .size(13.0)
+                        .color(if valid { self.colors.accent } else { self.colors.text_muted }),
+                )
+                .fill(egui::Color32::TRANSPARENT),
+            );
+
+            let cancel_btn = ui.add(
+                egui::Button::new(
+                    egui::RichText::new("\u{2715}")
+                        .size(13.0)
                         .color(self.colors.text_muted),
-                );
-                ui.add_space(4.0);
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.set_block_input)
-                        .desired_width(260.0)
-                        .font(egui::FontId::monospace(13.0))
-                        .text_color(self.colors.text),
-                );
-                ui.add_space(4.0);
-                ui.horizontal(|ui| {
-                    let parsed = self.set_block_input.trim().replace(',', "").parse::<u64>();
-                    let valid = matches!(&parsed, Ok(b) if tip.is_none_or(|t| *b <= t));
+                )
+                .fill(egui::Color32::TRANSPARENT),
+            );
 
-                    let set_clicked = ui.add_enabled(valid, egui::Button::new("Set")).clicked();
-                    let cancel_clicked = ui.button("Cancel").clicked();
-                    let auto_enabled =
-                        self.earliest_funding_block_rx.is_none() && !self.accounts.is_empty();
-                    let auto_label = if self.earliest_funding_block_rx.is_some() {
-                        "Auto\u{2026}"
-                    } else {
-                        "Auto"
-                    };
-                    let auto_clicked = ui
-                        .add_enabled(auto_enabled, egui::Button::new(auto_label))
-                        .clicked();
-                    let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
+            let auto_enabled =
+                self.earliest_funding_block_rx.is_none() && !self.accounts.is_empty();
+            let auto_label = if self.earliest_funding_block_rx.is_some() {
+                "\u{2699}\u{2026}"
+            } else {
+                "\u{2699}"
+            };
+            let auto_btn = ui.add_enabled(
+                auto_enabled,
+                egui::Button::new(
+                    egui::RichText::new(auto_label)
+                        .size(13.0)
+                        .color(if auto_enabled { self.colors.accent2 } else { self.colors.text_muted }),
+                )
+                .fill(egui::Color32::TRANSPARENT),
+            );
 
-                    if set_clicked {
-                        if let Ok(block) = parsed {
-                            self.set_all_accounts_lock_script_block(block);
-                            self.set_block_editing = false;
-                            self.set_block_input.clear();
-                        }
-                    } else if cancel_clicked || escape {
-                        self.set_block_editing = false;
-                        self.set_block_input.clear();
-                    } else if auto_clicked {
-                        self.detect_earliest_funding_block_async();
-                    }
-                });
-            });
+            let enter = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
+
+            if (ok_btn.clicked() || enter) && valid {
+                if let Ok(block) = parsed {
+                    self.set_all_accounts_lock_script_block(block);
+                    self.set_block_editing = false;
+                    self.set_block_input.clear();
+                }
+            } else if cancel_btn.clicked() || escape {
+                self.set_block_editing = false;
+                self.set_block_input.clear();
+            } else if auto_btn.clicked() {
+                self.detect_earliest_funding_block_async();
+            }
         });
     }
 }
