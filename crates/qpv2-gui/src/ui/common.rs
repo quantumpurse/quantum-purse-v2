@@ -89,7 +89,7 @@ impl App {
         let glow_radius = rect.width().min(rect.height()) * 0.55;
         let glow1_x = 0.15 + 0.03 * (t * 0.2).sin();
         let glow1_y = 0.20 + 0.03 * (t * 0.15).cos();
-        draw_soft_glow(
+        draw_soft_glow_animated(
             painter,
             egui::pos2(
                 rect.left() + rect.width() * glow1_x,
@@ -97,10 +97,11 @@ impl App {
             ),
             glow_radius,
             egui::Color32::from_rgb(0, 255, 180),
+            t,
         );
         let glow2_x = 0.82 + 0.03 * (t * 0.17).cos();
         let glow2_y = 0.78 + 0.03 * (t * 0.22).sin();
-        draw_soft_glow(
+        draw_soft_glow_animated(
             painter,
             egui::pos2(
                 rect.left() + rect.width() * glow2_x,
@@ -108,6 +109,7 @@ impl App {
             ),
             glow_radius * 0.9,
             egui::Color32::from_rgb(255, 160, 30),
+            t,
         );
 
         // 3. Lattice — low-alpha dots at a 48-px grid.
@@ -746,24 +748,29 @@ pub(crate) fn lerp_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Co
 /// is intentionally low; blended via `Color32::from_rgba_unmultiplied`
 /// they compound at the center and fade naturally at the rim. Cheaper
 /// and less aggressive than the original 30-ring falloff.
-fn draw_soft_glow(
+fn draw_soft_glow_animated(
     painter: &egui::Painter,
     center: egui::Pos2,
     max_radius: f32,
     base: egui::Color32,
+    t: f32,
 ) {
-    // (scale_of_max_radius, per-disc alpha)
-    const RINGS: [(f32, u8); 7] = [
-        (1.00, 3),
-        (0.80, 4),
-        (0.62, 5),
-        (0.46, 6),
-        (0.32, 7),
-        (0.20, 8),
-        (0.10, 10),
+    // (scale_of_max_radius, per-disc alpha, phase offset for wobble)
+    const RINGS: [(f32, u8, f32); 7] = [
+        (1.00, 3, 0.0),
+        (0.80, 4, 1.1),
+        (0.62, 5, 2.3),
+        (0.46, 6, 3.7),
+        (0.32, 7, 4.9),
+        (0.20, 8, 6.1),
+        (0.10, 10, 7.4),
     ];
-    for (scale, alpha) in RINGS {
+    let wobble = max_radius * 0.02;
+    for (scale, alpha, phase) in RINGS {
+        let dx = wobble * (t * 0.7 + phase).sin();
+        let dy = wobble * (t * 0.9 + phase * 1.3).cos();
+        let ring_center = egui::pos2(center.x + dx, center.y + dy);
         let color = egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), alpha);
-        painter.circle_filled(center, max_radius * scale, color);
+        painter.circle_filled(ring_center, max_radius * scale, color);
     }
 }
