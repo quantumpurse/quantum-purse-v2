@@ -1,6 +1,8 @@
 //! DAO cell queries: classify an address's DAO cells as deposited vs prepared
 //! and compute the maximum withdrawable capacity for prepared cells.
 
+use std::collections::{HashMap, HashSet};
+
 use crate::client::QpClient;
 use crate::error::NodeManagerError;
 use byteorder::{ByteOrder, LittleEndian};
@@ -42,51 +44,241 @@ pub struct PreparedCell {
     pub prepare_block_number: u64,
 }
 
+/// Helper for deserializing `get_transaction` batch results.
+#[derive(serde::Deserialize)]
+struct TxResponse {
+    transaction: Option<ckb_jsonrpc_types::TransactionView>,
+    tx_status: TxStatusResponse,
+}
+
+#[derive(serde::Deserialize)]
+struct TxStatusResponse {
+    block_hash: Option<H256>,
+}
+
 /// Queries all DAO cells for an address and partitions them into deposited and
-/// prepared cells.
+/// prepared cells. Prepared cells use batched RPC to compute max-withdraw in
+/// 3 round-trips instead of 4*N sequential calls.
 pub fn categorize_dao_cells(
     qp_client: &QpClient,
     address: &Address,
 ) -> Result<(Vec<DepositedCell>, Vec<PreparedCell>), NodeManagerError> {
     let cells = collect_dao_cells(qp_client, address)?;
 
+    // Phase 1: Classify cells — deposited vs prepared.
     let mut deposited = Vec::new();
-    let mut prepared = Vec::new();
+    let mut prepared_cells: Vec<LiveCell> = Vec::new();
     for cell in cells {
         if cell.output_data.len() != 8 {
             continue;
         }
-
-        // The DAO cell data tells us whether this is a deposit cell or a
-        // withdrawn cell waiting to be unlocked. If the first 8 bytes are
-        // all zero, it's a deposit cell; otherwise it's a prepared cell.
         let cell_data = LittleEndian::read_u64(&cell.output_data.as_ref()[0..8]);
         if cell_data == 0 {
             deposited.push(DepositedCell {
-                out_point: cell.out_point,
+                out_point: cell.out_point.clone(),
                 capacity: cell.output.capacity().unpack(),
                 block_number: cell.block_number,
             });
         } else {
-            let (max_withdraw, deposit_block_number, prepare_block_number) =
-                calculate_max_withdraw(qp_client, &cell)?;
-            prepared.push(PreparedCell {
-                out_point: cell.out_point,
-                capacity: cell.output.capacity().unpack(),
-                maximum_withdraw: max_withdraw,
-                deposit_block_number,
-                prepare_block_number,
-            });
+            prepared_cells.push(cell);
         }
+    }
+
+    if prepared_cells.is_empty() {
+        return Ok((deposited, vec![]));
+    }
+
+    // Phase 2: Batch-fetch all prepare transactions (1 round-trip).
+    let prepare_tx_hashes: Vec<H256> = prepared_cells
+        .iter()
+        .map(|c| c.out_point.tx_hash().unpack())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    let calls: Vec<(&str, serde_json::Value)> = prepare_tx_hashes
+        .iter()
+        .map(|h| ("get_transaction", serde_json::json!([format!("{:#x}", h)])))
+        .collect();
+    let results = qp_client.batch_rpc(&calls)?;
+
+    let mut prepare_tx_map: HashMap<H256, (ckb_jsonrpc_types::TransactionView, H256)> =
+        HashMap::new();
+    for (hash, result) in prepare_tx_hashes.iter().zip(results) {
+        let resp: TxResponse = serde_json::from_value(result).map_err(|e| {
+            NodeManagerError::RpcError(format!("Failed to parse prepare tx {}: {}", hash, e))
+        })?;
+        let tx_view = resp.transaction.ok_or_else(|| {
+            NodeManagerError::RpcError(format!("Prepare transaction {} has no data.", hash))
+        })?;
+        let block_hash = resp.tx_status.block_hash.ok_or_else(|| {
+            NodeManagerError::RpcError(format!(
+                "Prepare transaction {} is not committed.",
+                hash
+            ))
+        })?;
+        prepare_tx_map.insert(hash.clone(), (tx_view, block_hash));
+    }
+
+    // Phase 3: Extract deposit out_points, batch-fetch deposit transactions (1 round-trip).
+    // Build a per-cell mapping: prepared cell -> (prepare_tx, prepare_block_hash, deposit_out_point).
+    struct CellContext {
+        prepare_block_hash: H256,
+        deposit_out_point: OutPoint,
+    }
+
+    let mut cell_contexts: Vec<CellContext> = Vec::with_capacity(prepared_cells.len());
+    let mut deposit_tx_hashes_set: HashSet<H256> = HashSet::new();
+
+    for cell in &prepared_cells {
+        let prepare_tx_hash: H256 = cell.out_point.tx_hash().unpack();
+        let output_index: u32 = cell.out_point.index().unpack();
+
+        let (tx_view, prepare_block_hash) =
+            prepare_tx_map.get(&prepare_tx_hash).ok_or_else(|| {
+                NodeManagerError::RpcError(format!(
+                    "Prepare transaction {} missing from batch results.",
+                    prepare_tx_hash
+                ))
+            })?;
+        let prepare_tx: ckb_types::packed::Transaction = tx_view.inner.clone().into();
+        let prepare_tx = prepare_tx.into_view();
+
+        let deposit_out_point = prepare_tx
+            .inputs()
+            .get(output_index as usize)
+            .ok_or_else(|| {
+                NodeManagerError::RpcError(format!(
+                    "Input index {} not found in prepare transaction {}.",
+                    output_index, prepare_tx_hash
+                ))
+            })?
+            .previous_output();
+
+        let deposit_tx_hash: H256 = deposit_out_point.tx_hash().unpack();
+        deposit_tx_hashes_set.insert(deposit_tx_hash);
+
+        cell_contexts.push(CellContext {
+            prepare_block_hash: prepare_block_hash.clone(),
+            deposit_out_point,
+        });
+    }
+
+    let deposit_tx_hashes: Vec<H256> = deposit_tx_hashes_set.into_iter().collect();
+    let calls: Vec<(&str, serde_json::Value)> = deposit_tx_hashes
+        .iter()
+        .map(|h| ("get_transaction", serde_json::json!([format!("{:#x}", h)])))
+        .collect();
+    let results = qp_client.batch_rpc(&calls)?;
+
+    let mut deposit_tx_map: HashMap<H256, (ckb_jsonrpc_types::TransactionView, H256)> =
+        HashMap::new();
+    for (hash, result) in deposit_tx_hashes.iter().zip(results) {
+        let resp: TxResponse = serde_json::from_value(result).map_err(|e| {
+            NodeManagerError::RpcError(format!("Failed to parse deposit tx {}: {}", hash, e))
+        })?;
+        let tx_view = resp.transaction.ok_or_else(|| {
+            NodeManagerError::RpcError(format!("Deposit transaction {} has no data.", hash))
+        })?;
+        let block_hash = resp.tx_status.block_hash.ok_or_else(|| {
+            NodeManagerError::RpcError(format!(
+                "Deposit transaction {} is not committed.",
+                hash
+            ))
+        })?;
+        deposit_tx_map.insert(hash.clone(), (tx_view, block_hash));
+    }
+
+    // Phase 4: Collect all unique block hashes, batch-fetch headers (1 round-trip).
+    let mut block_hashes_set: HashSet<H256> = HashSet::new();
+    for (_, block_hash) in prepare_tx_map.values() {
+        block_hashes_set.insert(block_hash.clone());
+    }
+    for (_, block_hash) in deposit_tx_map.values() {
+        block_hashes_set.insert(block_hash.clone());
+    }
+    let block_hashes: Vec<H256> = block_hashes_set.into_iter().collect();
+
+    let calls: Vec<(&str, serde_json::Value)> = block_hashes
+        .iter()
+        .map(|h| ("get_header", serde_json::json!([format!("{:#x}", h)])))
+        .collect();
+    let results = qp_client.batch_rpc(&calls)?;
+
+    let mut header_map: HashMap<H256, HeaderView> = HashMap::new();
+    for (hash, result) in block_hashes.iter().zip(results) {
+        let header: ckb_jsonrpc_types::HeaderView = serde_json::from_value(result)
+            .map_err(|e| {
+                NodeManagerError::RpcError(format!("Failed to parse header {}: {}", hash, e))
+            })?;
+        header_map.insert(hash.clone(), header.into());
+    }
+
+    // Phase 5: Compute max-withdraw for each prepared cell (local only).
+    let mut prepared = Vec::with_capacity(prepared_cells.len());
+    for (cell, ctx) in prepared_cells.into_iter().zip(cell_contexts) {
+        let deposit_tx_hash: H256 = ctx.deposit_out_point.tx_hash().unpack();
+        let deposit_index: u32 = ctx.deposit_out_point.index().unpack();
+
+        let (deposit_tx_view, deposit_block_hash) =
+            deposit_tx_map.get(&deposit_tx_hash).ok_or_else(|| {
+                NodeManagerError::RpcError(format!(
+                    "Deposit transaction {} missing from batch results.",
+                    deposit_tx_hash
+                ))
+            })?;
+        let deposit_tx: ckb_types::packed::Transaction = deposit_tx_view.inner.clone().into();
+        let deposit_tx = deposit_tx.into_view();
+
+        let (output, output_data) =
+            deposit_tx
+                .output_with_data(deposit_index as usize)
+                .ok_or_else(|| {
+                    NodeManagerError::RpcError(format!(
+                        "Output index {} not found in deposit transaction {}.",
+                        deposit_index, deposit_tx_hash
+                    ))
+                })?;
+
+        let deposit_header = header_map.get(deposit_block_hash).ok_or_else(|| {
+            NodeManagerError::RpcError(format!(
+                "Deposit header {} not found.",
+                deposit_block_hash
+            ))
+        })?;
+        let prepare_header = header_map.get(&ctx.prepare_block_hash).ok_or_else(|| {
+            NodeManagerError::RpcError(format!(
+                "Prepare header {} not found.",
+                ctx.prepare_block_hash
+            ))
+        })?;
+
+        let occupied_capacity = output
+            .occupied_capacity(Capacity::bytes(output_data.len()).unwrap())
+            .map_err(|e| {
+                NodeManagerError::RpcError(format!("Failed to calculate occupied capacity: {}", e))
+            })?;
+
+        let max_withdraw = ckb_sdk::util::calculate_dao_maximum_withdraw4(
+            deposit_header,
+            prepare_header,
+            &output,
+            occupied_capacity.as_u64(),
+        );
+
+        prepared.push(PreparedCell {
+            out_point: cell.out_point,
+            capacity: cell.output.capacity().unpack(),
+            maximum_withdraw: max_withdraw,
+            deposit_block_number: deposit_header.number(),
+            prepare_block_number: prepare_header.number(),
+        });
     }
 
     Ok((deposited, prepared))
 }
 
 /// Collects all DAO cells for a given address from the indexer.
-///
-/// Returns the raw `LiveCell` list so callers can partition into
-/// deposited vs prepared.
 fn collect_dao_cells(
     qp_client: &QpClient,
     address: &Address,
@@ -104,118 +296,4 @@ fn collect_dao_cells(
     query.min_total_capacity = u64::MAX;
 
     qp_client.collect_cells(&query)
-}
-
-/// Calculates the maximum withdrawable capacity for a prepared DAO cell.
-///
-/// Follows the same logic as ckb-cli's `calculate_dao_maximum_withdraw`:
-/// 1. Fetch the prepare transaction to find the deposit out_point.
-/// 2. Fetch the deposit transaction to get the original output.
-/// 3. Fetch both block headers (deposit and prepare).
-/// 4. Compute the DAO interest using `calculate_dao_maximum_withdraw4`.
-///
-/// Returns `(maximum_withdraw, deposit_block_number, prepare_block_number)`.
-fn calculate_max_withdraw(
-    qp_client: &QpClient,
-    cell: &LiveCell,
-) -> Result<(u64, u64, u64), NodeManagerError> {
-    let prepare_tx_hash: H256 = cell.out_point.tx_hash().unpack();
-    let prepare_output_index: u32 = cell.out_point.index().unpack();
-
-    // 1. Get the prepare transaction and its block hash.
-    let prepare_tx_status = qp_client
-        .get_transaction(prepare_tx_hash.clone())?
-        .ok_or_else(|| {
-            NodeManagerError::RpcError(format!(
-                "Prepare transaction {} not found.",
-                prepare_tx_hash
-            ))
-        })?;
-
-    let prepare_block_hash = prepare_tx_status.block_hash.ok_or_else(|| {
-        NodeManagerError::RpcError("Prepare transaction is not committed.".to_string())
-    })?;
-
-    let prepare_tx_view = prepare_tx_status.transaction.ok_or_else(|| {
-        NodeManagerError::RpcError("Prepare transaction has no data.".to_string())
-    })?;
-
-    // 2. Extract the deposit out_point from the prepare tx input
-    //    at the same index as the prepared cell output.
-    let prepare_tx: ckb_types::packed::Transaction = prepare_tx_view.inner.into();
-    let prepare_tx = prepare_tx.into_view();
-
-    let deposit_out_point = prepare_tx
-        .inputs()
-        .get(prepare_output_index as usize)
-        .ok_or_else(|| {
-            NodeManagerError::RpcError(format!(
-                "Input index {} not found in prepare transaction.",
-                prepare_output_index
-            ))
-        })?
-        .previous_output();
-
-    // 3. Get the deposit transaction and its block hash.
-    let deposit_tx_hash: H256 = deposit_out_point.tx_hash().unpack();
-    let deposit_tx_status = qp_client
-        .get_transaction(deposit_tx_hash.clone())?
-        .ok_or_else(|| {
-            NodeManagerError::RpcError(format!(
-                "Deposit transaction {} not found.",
-                deposit_tx_hash
-            ))
-        })?;
-
-    let deposit_block_hash = deposit_tx_status.block_hash.ok_or_else(|| {
-        NodeManagerError::RpcError("Deposit transaction is not committed.".to_string())
-    })?;
-
-    let deposit_tx_view = deposit_tx_status.transaction.ok_or_else(|| {
-        NodeManagerError::RpcError("Deposit transaction has no data.".to_string())
-    })?;
-
-    let deposit_tx: ckb_types::packed::Transaction = deposit_tx_view.inner.into();
-    let deposit_tx = deposit_tx.into_view();
-
-    // 4. Get the original deposit output and data.
-    let deposit_index: u32 = deposit_out_point.index().unpack();
-    let (output, output_data) = deposit_tx
-        .output_with_data(deposit_index as usize)
-        .ok_or_else(|| {
-            NodeManagerError::RpcError(format!(
-                "Output index {} not found in deposit transaction.",
-                deposit_index
-            ))
-        })?;
-
-    // 5. Fetch both headers.
-    let deposit_header: HeaderView = qp_client
-        .get_header(deposit_block_hash)?
-        .ok_or_else(|| NodeManagerError::RpcError("Deposit block header not found.".to_string()))?
-        .into();
-
-    let prepare_header: HeaderView = qp_client
-        .get_header(prepare_block_hash)?
-        .ok_or_else(|| NodeManagerError::RpcError("Prepare block header not found.".to_string()))?
-        .into();
-
-    // 6. Calculate the maximum withdraw amount.
-    let occupied_capacity = output
-        .occupied_capacity(Capacity::bytes(output_data.len()).unwrap())
-        .map_err(|e| {
-            NodeManagerError::RpcError(format!("Failed to calculate occupied capacity: {}", e))
-        })?;
-
-    let max_withdraw = ckb_sdk::util::calculate_dao_maximum_withdraw4(
-        &deposit_header,
-        &prepare_header,
-        &output,
-        occupied_capacity.as_u64(),
-    );
-
-    let deposit_block_number: u64 = deposit_header.number();
-    let prepare_block_number: u64 = prepare_header.number();
-
-    Ok((max_withdraw, deposit_block_number, prepare_block_number))
 }

@@ -191,6 +191,74 @@ impl QpClient {
         self.config.network == NetworkType::Mainnet
     }
 
+    /// Returns the JSON-RPC endpoint URL this handle is bound to.
+    fn rpc_url(&self) -> &str {
+        &self.config.rpc_url
+    }
+
+    /// Sends a batch of JSON-RPC calls in a single HTTP POST and returns
+    /// the results in request order. Each element of `calls` is a
+    /// `(method, params)` pair. Returns one `serde_json::Value` per call
+    /// (the `"result"` field); callers deserialize themselves.
+    pub fn batch_rpc(
+        &self,
+        calls: &[(&str, serde_json::Value)],
+    ) -> Result<Vec<serde_json::Value>, NodeManagerError> {
+        if calls.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let batch: Vec<serde_json::Value> = calls
+            .iter()
+            .enumerate()
+            .map(|(id, (method, params))| {
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "method": method,
+                    "params": params,
+                })
+            })
+            .collect();
+
+        let resp = reqwest::blocking::Client::new()
+            .post(self.rpc_url())
+            .json(&batch)
+            .send()
+            .map_err(|e| NodeManagerError::RpcError(format!("Batch RPC HTTP error: {}", e)))?
+            .error_for_status()
+            .map_err(|e| NodeManagerError::RpcError(format!("Batch RPC HTTP {}", e)))?;
+
+        let mut results: Vec<serde_json::Value> = resp
+            .json()
+            .map_err(|e| NodeManagerError::RpcError(format!("Batch RPC parse error: {}", e)))?;
+
+        if results.len() != calls.len() {
+            return Err(NodeManagerError::RpcError(format!(
+                "Batch RPC: expected {} results, got {}",
+                calls.len(),
+                results.len(),
+            )));
+        }
+
+        results.sort_by_key(|r| r.get("id").and_then(|v| v.as_u64()).unwrap_or(0));
+
+        results
+            .into_iter()
+            .enumerate()
+            .map(|(i, r)| {
+                if let Some(err) = r.get("error") {
+                    let method = calls[i].0;
+                    return Err(NodeManagerError::RpcError(format!(
+                        "Batch RPC '{}': {}",
+                        method, err
+                    )));
+                }
+                Ok(r.get("result").cloned().unwrap_or(serde_json::Value::Null))
+            })
+            .collect()
+    }
+
     /// Returns the tip (latest) block header from the active backend.
     pub fn get_tip_header(&self) -> Result<ckb_jsonrpc_types::HeaderView, NodeManagerError> {
         self.unified_client.get_tip_header()
