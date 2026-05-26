@@ -112,10 +112,7 @@ pub fn categorize_dao_cells(
             NodeManagerError::RpcError(format!("Prepare transaction {} has no data.", hash))
         })?;
         let block_hash = resp.tx_status.block_hash.ok_or_else(|| {
-            NodeManagerError::RpcError(format!(
-                "Prepare transaction {} is not committed.",
-                hash
-            ))
+            NodeManagerError::RpcError(format!("Prepare transaction {} is not committed.", hash))
         })?;
         prepare_tx_map.insert(hash.clone(), (tx_view, block_hash));
     }
@@ -181,10 +178,7 @@ pub fn categorize_dao_cells(
             NodeManagerError::RpcError(format!("Deposit transaction {} has no data.", hash))
         })?;
         let block_hash = resp.tx_status.block_hash.ok_or_else(|| {
-            NodeManagerError::RpcError(format!(
-                "Deposit transaction {} is not committed.",
-                hash
-            ))
+            NodeManagerError::RpcError(format!("Deposit transaction {} is not committed.", hash))
         })?;
         deposit_tx_map.insert(hash.clone(), (tx_view, block_hash));
     }
@@ -207,8 +201,8 @@ pub fn categorize_dao_cells(
 
     let mut header_map: HashMap<H256, HeaderView> = HashMap::new();
     for (hash, result) in block_hashes.iter().zip(results) {
-        let header: ckb_jsonrpc_types::HeaderView = serde_json::from_value(result)
-            .map_err(|e| {
+        let header: ckb_jsonrpc_types::HeaderView =
+            serde_json::from_value(result).map_err(|e| {
                 NodeManagerError::RpcError(format!("Failed to parse header {}: {}", hash, e))
             })?;
         header_map.insert(hash.clone(), header.into());
@@ -230,21 +224,17 @@ pub fn categorize_dao_cells(
         let deposit_tx: ckb_types::packed::Transaction = deposit_tx_view.inner.clone().into();
         let deposit_tx = deposit_tx.into_view();
 
-        let (output, output_data) =
-            deposit_tx
-                .output_with_data(deposit_index as usize)
-                .ok_or_else(|| {
-                    NodeManagerError::RpcError(format!(
-                        "Output index {} not found in deposit transaction {}.",
-                        deposit_index, deposit_tx_hash
-                    ))
-                })?;
+        let (output, output_data) = deposit_tx
+            .output_with_data(deposit_index as usize)
+            .ok_or_else(|| {
+                NodeManagerError::RpcError(format!(
+                    "Output index {} not found in deposit transaction {}.",
+                    deposit_index, deposit_tx_hash
+                ))
+            })?;
 
         let deposit_header = header_map.get(deposit_block_hash).ok_or_else(|| {
-            NodeManagerError::RpcError(format!(
-                "Deposit header {} not found.",
-                deposit_block_hash
-            ))
+            NodeManagerError::RpcError(format!("Deposit header {} not found.", deposit_block_hash))
         })?;
         let prepare_header = header_map.get(&ctx.prepare_block_hash).ok_or_else(|| {
             NodeManagerError::RpcError(format!(

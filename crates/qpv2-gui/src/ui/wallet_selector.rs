@@ -96,7 +96,6 @@ impl App {
                                                                 .color(auth_color),
                                                         );
                                                     });
-
                                             },
                                         );
                                     });

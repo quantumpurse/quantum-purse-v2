@@ -90,11 +90,8 @@ impl App {
                 );
 
                 let is_active = selected == net;
-                let resp = ui.interact(
-                    seg_rect,
-                    ui.id().with(("net-seg", i)),
-                    egui::Sense::click(),
-                );
+                let resp =
+                    ui.interact(seg_rect, ui.id().with(("net-seg", i)), egui::Sense::click());
 
                 if is_active {
                     painter.rect_filled(
@@ -514,11 +511,11 @@ impl App {
 
             let ok_btn = ui.add_enabled(
                 valid,
-                egui::Button::new(
-                    egui::RichText::new("\u{2713}")
-                        .size(13.0)
-                        .color(if valid { self.colors.accent } else { self.colors.text_muted }),
-                )
+                egui::Button::new(egui::RichText::new("\u{2713}").size(13.0).color(if valid {
+                    self.colors.accent
+                } else {
+                    self.colors.text_muted
+                }))
                 .fill(egui::Color32::TRANSPARENT),
             );
 
@@ -540,11 +537,13 @@ impl App {
             };
             let auto_btn = ui.add_enabled(
                 auto_enabled,
-                egui::Button::new(
-                    egui::RichText::new(auto_label)
-                        .size(13.0)
-                        .color(if auto_enabled { self.colors.accent2 } else { self.colors.text_muted }),
-                )
+                egui::Button::new(egui::RichText::new(auto_label).size(13.0).color(
+                    if auto_enabled {
+                        self.colors.accent2
+                    } else {
+                        self.colors.text_muted
+                    },
+                ))
                 .fill(egui::Color32::TRANSPARENT),
             );
 

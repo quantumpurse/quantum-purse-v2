@@ -359,7 +359,10 @@ impl App {
             dao_deposit_all: false,
             tx_history: Vec::new(),
             tx_history_rx: None,
-            node_status: NodeStatus { online: true, ..NodeStatus::default() },
+            node_status: NodeStatus {
+                online: true,
+                ..NodeStatus::default()
+            },
             node_status_rx: None,
             node_status_reconnected_at: None,
             set_block_input: String::new(),

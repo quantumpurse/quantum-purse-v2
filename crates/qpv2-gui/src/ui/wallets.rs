@@ -225,227 +225,233 @@ impl App {
                             .inner_margin(egui::Margin::symmetric(18, 16))
                             .stroke(hover.stroke)
                             .show(ui, |ui| {
-                                ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
-                                    let (tile_rect, _) = ui.allocate_exact_size(
-                                        egui::vec2(48.0, 64.0),
-                                        egui::Sense::hover(),
-                                    );
-                                    paint_wallet_tile(
-                                        ui.painter(),
-                                        tile_rect,
-                                        &cw_name,
-                                        self.colors.surface2,
-                                        self.colors.border,
-                                        self.colors.text_muted,
-                                    );
+                                ui.with_layout(
+                                    egui::Layout::left_to_right(egui::Align::Min),
+                                    |ui| {
+                                        let (tile_rect, _) = ui.allocate_exact_size(
+                                            egui::vec2(48.0, 64.0),
+                                            egui::Sense::hover(),
+                                        );
+                                        paint_wallet_tile(
+                                            ui.painter(),
+                                            tile_rect,
+                                            &cw_name,
+                                            self.colors.surface2,
+                                            self.colors.border,
+                                            self.colors.text_muted,
+                                        );
 
-                                    ui.add_space(12.0);
+                                        ui.add_space(12.0);
 
-                                    // Info column
-                                    let info_width = ui.available_width();
-                                    ui.vertical(|ui| {
-                                        ui.set_width(info_width);
-                                        let is_renaming = self.rename_wallet_id == Some(cw_id);
+                                        // Info column
+                                        let info_width = ui.available_width();
+                                        ui.vertical(|ui| {
+                                            ui.set_width(info_width);
+                                            let is_renaming = self.rename_wallet_id == Some(cw_id);
 
-                                        if is_renaming {
-                                            ui.horizontal(|ui| {
-                                                let field = egui::TextEdit::singleline(
-                                                    &mut self.rename_wallet_buf,
-                                                )
-                                                .desired_width(140.0)
-                                                .font(egui::TextStyle::Body);
-                                                let response = ui.add(field);
+                                            if is_renaming {
+                                                ui.horizontal(|ui| {
+                                                    let field = egui::TextEdit::singleline(
+                                                        &mut self.rename_wallet_buf,
+                                                    )
+                                                    .desired_width(140.0)
+                                                    .font(egui::TextStyle::Body);
+                                                    let response = ui.add(field);
 
-                                                if response.lost_focus()
-                                                    && ui.input(|i| i.key_pressed(egui::Key::Enter))
-                                                {
-                                                    rename_target = Some((
-                                                        cw_id,
-                                                        self.rename_wallet_buf.clone(),
-                                                    ));
-                                                }
+                                                    if response.lost_focus()
+                                                        && ui.input(|i| {
+                                                            i.key_pressed(egui::Key::Enter)
+                                                        })
+                                                    {
+                                                        rename_target = Some((
+                                                            cw_id,
+                                                            self.rename_wallet_buf.clone(),
+                                                        ));
+                                                    }
 
-                                                let ok_btn = egui::Button::new(
-                                                    egui::RichText::new("\u{2713}")
-                                                        .size(13.0)
-                                                        .color(self.colors.accent),
-                                                )
-                                                .fill(egui::Color32::TRANSPARENT);
+                                                    let ok_btn = egui::Button::new(
+                                                        egui::RichText::new("\u{2713}")
+                                                            .size(13.0)
+                                                            .color(self.colors.accent),
+                                                    )
+                                                    .fill(egui::Color32::TRANSPARENT);
 
-                                                if ui.add(ok_btn).clicked() {
-                                                    rename_target = Some((
-                                                        cw_id,
-                                                        self.rename_wallet_buf.clone(),
-                                                    ));
-                                                }
+                                                    if ui.add(ok_btn).clicked() {
+                                                        rename_target = Some((
+                                                            cw_id,
+                                                            self.rename_wallet_buf.clone(),
+                                                        ));
+                                                    }
 
-                                                let cancel_btn = egui::Button::new(
-                                                    egui::RichText::new("\u{2715}")
-                                                        .size(13.0)
-                                                        .color(self.colors.text_muted),
-                                                )
-                                                .fill(egui::Color32::TRANSPARENT);
-
-                                                if ui.add(cancel_btn).clicked() {
-                                                    self.rename_wallet_id = None;
-                                                    self.rename_wallet_buf.clear();
-                                                }
-                                            });
-                                        } else {
-                                            ui.horizontal(|ui| {
-                                                ui.label(
-                                                    egui::RichText::new(&cw_name)
-                                                        .size(14.0)
-                                                        .strong()
-                                                        .color(self.colors.text),
-                                                );
-                                                let pen = ui.add(
-                                                    egui::Button::new(
-                                                        egui::RichText::new("\u{270f}")
-                                                            .size(11.0)
+                                                    let cancel_btn = egui::Button::new(
+                                                        egui::RichText::new("\u{2715}")
+                                                            .size(13.0)
                                                             .color(self.colors.text_muted),
                                                     )
-                                                    .fill(egui::Color32::TRANSPARENT)
-                                                    .frame(false),
-                                                );
-                                                if pen.clicked() {
-                                                    self.rename_wallet_id = Some(cw_id);
-                                                    self.rename_wallet_buf = cw_name.clone();
-                                                }
+                                                    .fill(egui::Color32::TRANSPARENT);
 
-                                                if is_active {
-                                                    ui.add_space(4.0);
-                                                    pill(
-                                                        ui,
-                                                        self.colors.accent_tint,
-                                                        "ACTIVE".to_string(),
-                                                        self.colors.accent,
-                                                    );
-                                                }
-                                            });
-                                        }
-
-                                        ui.add_space(4.0);
-
-                                        ui.horizontal(|ui| {
-                                            pill(
-                                                ui,
-                                                self.colors.surface2,
-                                                format!("{}", cw_variant),
-                                                self.colors.text_muted,
-                                            );
-                                            let (auth_label, auth_color) = match &cw_auth {
-                                                AuthMethod::Password => {
-                                                    ("Password", self.colors.text_muted)
-                                                }
-                                                AuthMethod::Keychain => {
-                                                    (keychain::short_name(), self.colors.accent2)
-                                                }
-                                                AuthMethod::Fido2 { .. } => {
-                                                    ("FIDO2 Key", self.colors.accent3)
-                                                }
-                                            };
-                                            pill(
-                                                ui,
-                                                egui::Color32::from_rgba_unmultiplied(
-                                                    auth_color.r(),
-                                                    auth_color.g(),
-                                                    auth_color.b(),
-                                                    20,
-                                                ),
-                                                auth_label.to_string(),
-                                                auth_color,
-                                            );
-
-                                            let acct_text = if cw_acct_count == 1 {
-                                                "1 account".to_string()
+                                                    if ui.add(cancel_btn).clicked() {
+                                                        self.rename_wallet_id = None;
+                                                        self.rename_wallet_buf.clear();
+                                                    }
+                                                });
                                             } else {
-                                                format!("{} accounts", cw_acct_count)
-                                            };
-                                            pill(
-                                                ui,
-                                                self.colors.surface2,
-                                                acct_text,
-                                                self.colors.text_muted,
-                                            );
-                                        });
-
-                                        ui.add_space(4.0);
-
-                                        ui.horizontal(|ui| {
-                                            pill(
-                                                ui,
-                                                self.colors.surface2,
-                                                cw_path.clone(),
-                                                self.colors.text_muted,
-                                            );
-
-                                            // Hold-to-delete pill
-                                            const HOLD_SECS: f64 = 2.0;
-                                            let del_id = ui.id().with(("del-hold", cw_id));
-                                            let press_start: Option<f64> =
-                                                ui.ctx().memory(|m| m.data.get_temp(del_id));
-
-                                            let del_resp = egui::Frame::new()
-                                                .fill(egui::Color32::TRANSPARENT)
-                                                .stroke(egui::Stroke::new(
-                                                    1.0,
-                                                    egui::Color32::from_rgba_unmultiplied(
-                                                        255, 77, 109, 77,
-                                                    ),
-                                                ))
-                                                .corner_radius(4.0)
-                                                .inner_margin(egui::Margin::symmetric(8, 2))
-                                                .show(ui, |ui| {
+                                                ui.horizontal(|ui| {
                                                     ui.label(
-                                                        egui::RichText::new("\u{1f5d1} Delete")
-                                                            .size(8.5)
-                                                            .family(egui::FontFamily::Monospace)
-                                                            .color(self.colors.danger),
+                                                        egui::RichText::new(&cw_name)
+                                                            .size(14.0)
+                                                            .strong()
+                                                            .color(self.colors.text),
                                                     );
-                                                })
-                                                .response
-                                                .interact(egui::Sense::click_and_drag());
+                                                    let pen = ui.add(
+                                                        egui::Button::new(
+                                                            egui::RichText::new("\u{270f}")
+                                                                .size(11.0)
+                                                                .color(self.colors.text_muted),
+                                                        )
+                                                        .fill(egui::Color32::TRANSPARENT)
+                                                        .frame(false),
+                                                    );
+                                                    if pen.clicked() {
+                                                        self.rename_wallet_id = Some(cw_id);
+                                                        self.rename_wallet_buf = cw_name.clone();
+                                                    }
 
-                                            if del_resp.is_pointer_button_down_on() {
-                                                let now = ui.input(|i| i.time);
-                                                if press_start.is_none()
-                                                    && del_resp.contains_pointer()
-                                                    && ui.input(|i| i.pointer.any_pressed())
-                                                {
-                                                    ui.ctx().memory_mut(|m| {
-                                                        m.data.insert_temp(del_id, now)
-                                                    });
-                                                }
-                                                let start = press_start.unwrap_or(now);
-                                                let progress = ((now - start) / HOLD_SECS)
-                                                    .clamp(0.0, 1.0)
-                                                    as f32;
-                                                paint_hold_border(
-                                                    ui.painter(),
-                                                    del_resp.rect,
-                                                    4.0,
-                                                    progress,
-                                                    egui::Stroke::new(
-                                                        1.0,
-                                                        egui::Color32::from_rgb(255, 77, 109),
-                                                    ),
+                                                    if is_active {
+                                                        ui.add_space(4.0);
+                                                        pill(
+                                                            ui,
+                                                            self.colors.accent_tint,
+                                                            "ACTIVE".to_string(),
+                                                            self.colors.accent,
+                                                        );
+                                                    }
+                                                });
+                                            }
+
+                                            ui.add_space(4.0);
+
+                                            ui.horizontal(|ui| {
+                                                pill(
+                                                    ui,
+                                                    self.colors.surface2,
+                                                    format!("{}", cw_variant),
+                                                    self.colors.text_muted,
                                                 );
-                                                if progress >= 1.0 {
-                                                    delete_target = Some(cw_id);
+                                                let (auth_label, auth_color) = match &cw_auth {
+                                                    AuthMethod::Password => {
+                                                        ("Password", self.colors.text_muted)
+                                                    }
+                                                    AuthMethod::Keychain => (
+                                                        keychain::short_name(),
+                                                        self.colors.accent2,
+                                                    ),
+                                                    AuthMethod::Fido2 { .. } => {
+                                                        ("FIDO2 Key", self.colors.accent3)
+                                                    }
+                                                };
+                                                pill(
+                                                    ui,
+                                                    egui::Color32::from_rgba_unmultiplied(
+                                                        auth_color.r(),
+                                                        auth_color.g(),
+                                                        auth_color.b(),
+                                                        20,
+                                                    ),
+                                                    auth_label.to_string(),
+                                                    auth_color,
+                                                );
+
+                                                let acct_text = if cw_acct_count == 1 {
+                                                    "1 account".to_string()
+                                                } else {
+                                                    format!("{} accounts", cw_acct_count)
+                                                };
+                                                pill(
+                                                    ui,
+                                                    self.colors.surface2,
+                                                    acct_text,
+                                                    self.colors.text_muted,
+                                                );
+                                            });
+
+                                            ui.add_space(4.0);
+
+                                            ui.horizontal(|ui| {
+                                                pill(
+                                                    ui,
+                                                    self.colors.surface2,
+                                                    cw_path.clone(),
+                                                    self.colors.text_muted,
+                                                );
+
+                                                // Hold-to-delete pill
+                                                const HOLD_SECS: f64 = 2.0;
+                                                let del_id = ui.id().with(("del-hold", cw_id));
+                                                let press_start: Option<f64> =
+                                                    ui.ctx().memory(|m| m.data.get_temp(del_id));
+
+                                                let del_resp = egui::Frame::new()
+                                                    .fill(egui::Color32::TRANSPARENT)
+                                                    .stroke(egui::Stroke::new(
+                                                        1.0,
+                                                        egui::Color32::from_rgba_unmultiplied(
+                                                            255, 77, 109, 77,
+                                                        ),
+                                                    ))
+                                                    .corner_radius(4.0)
+                                                    .inner_margin(egui::Margin::symmetric(8, 2))
+                                                    .show(ui, |ui| {
+                                                        ui.label(
+                                                            egui::RichText::new("\u{1f5d1} Delete")
+                                                                .size(8.5)
+                                                                .family(egui::FontFamily::Monospace)
+                                                                .color(self.colors.danger),
+                                                        );
+                                                    })
+                                                    .response
+                                                    .interact(egui::Sense::click_and_drag());
+
+                                                if del_resp.is_pointer_button_down_on() {
+                                                    let now = ui.input(|i| i.time);
+                                                    if press_start.is_none()
+                                                        && del_resp.contains_pointer()
+                                                        && ui.input(|i| i.pointer.any_pressed())
+                                                    {
+                                                        ui.ctx().memory_mut(|m| {
+                                                            m.data.insert_temp(del_id, now)
+                                                        });
+                                                    }
+                                                    let start = press_start.unwrap_or(now);
+                                                    let progress = ((now - start) / HOLD_SECS)
+                                                        .clamp(0.0, 1.0)
+                                                        as f32;
+                                                    paint_hold_border(
+                                                        ui.painter(),
+                                                        del_resp.rect,
+                                                        4.0,
+                                                        progress,
+                                                        egui::Stroke::new(
+                                                            1.0,
+                                                            egui::Color32::from_rgb(255, 77, 109),
+                                                        ),
+                                                    );
+                                                    if progress >= 1.0 {
+                                                        delete_target = Some(cw_id);
+                                                        ui.ctx().memory_mut(|m| {
+                                                            m.data.remove::<f64>(del_id)
+                                                        });
+                                                    }
+                                                    ui.ctx().request_repaint();
+                                                } else if press_start.is_some() {
                                                     ui.ctx().memory_mut(|m| {
                                                         m.data.remove::<f64>(del_id)
                                                     });
                                                 }
-                                                ui.ctx().request_repaint();
-                                            } else if press_start.is_some() {
-                                                ui.ctx()
-                                                    .memory_mut(|m| m.data.remove::<f64>(del_id));
-                                            }
-
+                                            });
                                         });
-                                    });
-                                });
+                                    },
+                                );
                             });
 
                         hover.commit(&row_resp.response);
