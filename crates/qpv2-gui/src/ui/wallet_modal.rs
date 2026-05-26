@@ -62,21 +62,6 @@ impl App {
 						);
 						ui.add_space(16.0);
 
-						// Name field
-						ui.label(
-							egui::RichText::new("Name")
-								.size(11.0)
-								.color(self.colors.text_muted),
-						);
-						ui.add_space(2.0);
-						let name_field =
-							egui::TextEdit::singleline(&mut self.new_wallet_name)
-								.hint_text("Wallet name")
-								.desired_width(modal_width);
-						ui.add(name_field);
-
-						ui.add_space(14.0);
-
 						// Variant selector
 						ui.label(
 							egui::RichText::new("SPHINCS+ Variant")

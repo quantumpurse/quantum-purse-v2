@@ -10,7 +10,7 @@ use std::io::{self, Write};
 #[command(name = "qpv2")]
 #[command(about = "A SPHINCS+-based key management CLI with integrated CKB blockchain address resolution.", long_about = None)]
 struct Cli {
-    /// Wallet name (required for init and import, auto-selects if only one wallet exists)
+    /// Wallet name (optional for init and import — auto-generated if omitted; auto-selects if only one wallet exists)
     #[arg(long, global = true)]
     wallet: Option<String>,
 
@@ -294,10 +294,12 @@ fn find_wallet(wallet_name: &Option<String>) -> Result<(u32, String), String> {
 
 /// Validates a wallet name for creation and returns the next available ID.
 fn prepare_new_wallet(wallet_name: &Option<String>) -> Result<(u32, String), String> {
-    let name = wallet_name
-        .as_ref()
-        .ok_or_else(|| "Wallet name is required. Specify --wallet <name>.".to_string())?
-        .clone();
+    let name = match wallet_name {
+        Some(n) => n.clone(),
+        None => names::Generator::default()
+            .next()
+            .unwrap_or_else(|| "wallet".to_string()),
+    };
     let wallets = KeyVault::list_wallets()?;
     if wallets.iter().any(|w| w.name == name) {
         return Err(format!("Wallet '{}' already exists.", name));

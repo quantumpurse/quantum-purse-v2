@@ -8,6 +8,32 @@ use qpv2_core::types::{AuthMethod, SpxVariant};
 
 impl App {
     pub(crate) fn show_welcome(&mut self, ui: &mut egui::Ui) {
+        let variants = [
+            SpxVariant::Sha2128S,
+            SpxVariant::Sha2128F,
+            SpxVariant::Shake128S,
+            SpxVariant::Shake128F,
+            SpxVariant::Sha2192S,
+            SpxVariant::Sha2192F,
+            SpxVariant::Shake192S,
+            SpxVariant::Shake192F,
+            SpxVariant::Sha2256S,
+            SpxVariant::Sha2256F,
+            SpxVariant::Shake256S,
+            SpxVariant::Shake256F,
+        ];
+
+        let row_h = 22.0;
+        let group_gap = 14.0;
+        let group_h = 4.0 * row_h;
+        let thread_h = 3.0 * group_h + 2.0 * group_gap;
+        let btn_h = 40.0;
+        let btn_gap = 8.0;
+        let btn_w = 190.0;
+        let center_w = 170.0;
+        let buttons_h = 3.0 * btn_h + 2.0 * btn_gap;
+        let btn_top_pad = (thread_h - buttons_h) / 2.0;
+
         ui.vertical_centered(|ui| {
             ui.add_space(60.0);
 
@@ -26,265 +52,159 @@ impl App {
 
             ui.add_space(32.0);
 
-            // Setup card
-            egui::Frame::new()
-                .fill(self.colors.surface2)
-                .corner_radius(16.0)
-                .inner_margin(32.0)
-                .stroke(egui::Stroke::new(1.0, self.colors.border))
-                .show(ui, |ui| {
-                    ui.set_max_width(400.0);
+            let spacing_x = ui.spacing().item_spacing.x;
+            let total_w = btn_w * 2.0 + center_w + spacing_x * 2.0;
+            let left_pad = (ui.available_width() - total_w) / 2.0;
 
-                    // Segmented toggle: New Wallet | Import Wallet
-                    let seg_width = ui.available_width();
-                    let seg_height = 36.0;
-                    let seg_radius = 8.0;
-                    let response = ui
-                        .allocate_response(egui::vec2(seg_width, seg_height), egui::Sense::click());
+            ui.horizontal(|ui| {
+                ui.add_space(left_pad.max(0.0));
+                // ── Left column: CREATE ──
+                ui.allocate_ui_with_layout(egui::vec2(btn_w, thread_h), egui::Layout::top_down(egui::Align::Center), |ui| {
+                    ui.add_space(btn_top_pad);
+
+                    for group_idx in 0..3u8 {
+                        let label = match group_idx {
+                            0 => format!("Create with {}", keychain::short_name()),
+                            1 => "Create with Security Key".to_string(),
+                            _ => "Create with Password".to_string(),
+                        };
+                        let (fill, text_color, stroke) = self.auth_button_style(group_idx);
+
+                        let btn = egui::Button::new(
+                            egui::RichText::new(&label)
+                                .size(12.0)
+                                .color(text_color),
+                        )
+                        .fill(fill)
+                        .stroke(stroke)
+                        .corner_radius(8.0)
+                        .min_size(egui::vec2(btn_w, btn_h));
+
+                        if ui.add(btn).clicked() {
+                            let v = self.selected_variant;
+                            match group_idx {
+                                0 => self.create_wallet_with_keychain(v),
+                                1 => self.create_wallet_with_fido2(v),
+                                _ => self.create_wallet_with_password(v),
+                            }
+                        }
+
+                        if group_idx < 2 {
+                            ui.add_space(btn_gap);
+                        }
+                    }
+                });
+
+                // ── Center column: Variant thread ──
+                ui.allocate_ui_with_layout(egui::vec2(center_w, thread_h), egui::Layout::top_down(egui::Align::Center), |ui| {
+                    let (response, painter) = ui.allocate_painter(
+                        egui::vec2(center_w, thread_h),
+                        egui::Sense::click(),
+                    );
                     let rect = response.rect;
-                    let mid = rect.center().x;
-                    let painter = ui.painter();
+                    let line_x = rect.center().x;
 
-                    painter.rect_filled(rect, seg_radius, self.colors.surface);
-                    painter.rect_stroke(
-                        rect,
-                        seg_radius,
+                    let first_y = rect.top();
+                    let last_y = rect.bottom();
+
+                    painter.line_segment(
+                        [egui::pos2(line_x, first_y), egui::pos2(line_x, last_y)],
                         egui::Stroke::new(1.0, self.colors.border),
-                        egui::StrokeKind::Outside,
                     );
 
-                    let left_rect =
-                        egui::Rect::from_min_max(rect.left_top(), egui::pos2(mid, rect.bottom()));
-                    let right_rect =
-                        egui::Rect::from_min_max(egui::pos2(mid, rect.top()), rect.right_bottom());
+                    for (i, variant) in variants.iter().enumerate() {
+                        let group = i / 4;
+                        let in_group = i % 4;
+                        let y = rect.top()
+                            + group as f32 * (group_h + group_gap)
+                            + in_group as f32 * row_h
+                            + row_h / 2.0;
 
-                    if !self.import_mode {
-                        painter.rect_filled(
-                            left_rect.shrink(2.0),
-                            seg_radius - 2.0,
-                            self.colors.accent,
+                        let is_selected = *variant == self.selected_variant;
+                        let (dot_color, dot_r, text_color) = if is_selected {
+                            (self.colors.accent, 5.0, self.colors.text)
+                        } else {
+                            (self.colors.border2, 3.0, self.colors.text_muted)
+                        };
+
+                        let (hash, param) = variant_parts(*variant);
+
+                        painter.circle_filled(egui::pos2(line_x, y), dot_r, dot_color);
+                        painter.text(
+                            egui::pos2(line_x - 12.0, y),
+                            egui::Align2::RIGHT_CENTER,
+                            hash,
+                            egui::FontId::proportional(11.0),
+                            text_color,
                         );
-                    } else {
-                        painter.rect_filled(
-                            right_rect.shrink(2.0),
-                            seg_radius - 2.0,
-                            self.colors.accent,
+                        painter.text(
+                            egui::pos2(line_x + 12.0, y),
+                            egui::Align2::LEFT_CENTER,
+                            param,
+                            egui::FontId::proportional(11.0),
+                            text_color,
                         );
                     }
 
-                    let (left_text_color, right_text_color) = if !self.import_mode {
-                        (self.colors.bg, self.colors.text_muted)
-                    } else {
-                        (self.colors.text_muted, self.colors.bg)
-                    };
-
-                    painter.text(
-                        left_rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        "New Wallet",
-                        egui::FontId::proportional(13.0),
-                        left_text_color,
-                    );
-                    painter.text(
-                        right_rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        "Import Wallet",
-                        egui::FontId::proportional(13.0),
-                        right_text_color,
-                    );
-
                     if response.clicked() {
                         if let Some(pos) = response.interact_pointer_pos() {
-                            self.import_mode = pos.x >= mid;
+                            for (i, variant) in variants.iter().enumerate() {
+                                let group = i / 4;
+                                let in_group = i % 4;
+                                let y = rect.top()
+                                    + group as f32 * (group_h + group_gap)
+                                    + in_group as f32 * row_h
+                                    + row_h / 2.0;
+                                if (pos.y - y).abs() < row_h / 2.0 {
+                                    self.selected_variant = *variant;
+                                    break;
+                                }
+                            }
                         }
                     }
 
                     if response.hovered() {
                         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                     }
+                });
 
-                    ui.add_space(20.0);
+                // ── Right column: IMPORT ──
+                ui.allocate_ui_with_layout(egui::vec2(btn_w, thread_h), egui::Layout::top_down(egui::Align::Center), |ui| {
+                    ui.add_space(btn_top_pad);
 
-                    ui.label(
-                        egui::RichText::new("WALLET NAME")
-                            .size(10.0)
-                            .color(self.colors.text_muted),
-                    );
-                    ui.add_space(6.0);
-                    let name_field = egui::TextEdit::singleline(&mut self.new_wallet_name)
-                        .hint_text("Enter a name for your wallet")
-                        .desired_width(ui.available_width());
-                    ui.add(name_field);
-
-                    ui.add_space(16.0);
-
-                    // Divider
-                    let divider_rect = ui.available_rect_before_wrap();
-                    ui.painter().line_segment(
-                        [
-                            divider_rect.left_top(),
-                            egui::pos2(divider_rect.right(), divider_rect.top()),
-                        ],
-                        egui::Stroke::new(1.0, self.colors.border),
-                    );
-                    ui.add_space(1.0);
-
-                    ui.add_space(20.0);
-
-                    ui.label(
-                        egui::RichText::new("SPHINCS+ VARIANT")
-                            .size(10.0)
-                            .color(self.colors.text_muted),
-                    );
-                    ui.add_space(6.0);
-
-                    let field_width = ui.available_width();
-
-                    egui::ComboBox::from_id_salt("variant")
-                        .selected_text(format!("{}", self.selected_variant))
-                        .width(field_width)
-                        .show_ui(ui, |ui| {
-                            for variant in &[
-                                SpxVariant::Sha2128S,
-                                SpxVariant::Sha2128F,
-                                SpxVariant::Shake128S,
-                                SpxVariant::Shake128F,
-                                SpxVariant::Sha2192S,
-                                SpxVariant::Sha2192F,
-                                SpxVariant::Shake192S,
-                                SpxVariant::Shake192F,
-                                SpxVariant::Sha2256S,
-                                SpxVariant::Sha2256F,
-                                SpxVariant::Shake256S,
-                                SpxVariant::Shake256F,
-                            ] {
-                                ui.selectable_value(
-                                    &mut self.selected_variant,
-                                    *variant,
-                                    format!("{}", variant),
-                                );
-                            }
-                        });
-
-                    ui.add_space(8.0);
-
-                    // Variant info pills
-                    let (security, speed) = variant_info(self.selected_variant);
-                    ui.horizontal(|ui| {
-                        let pill = |ui: &mut egui::Ui, text: &str, color: egui::Color32| {
-                            let galley = ui.painter().layout_no_wrap(
-                                text.to_string(),
-                                egui::FontId::proportional(10.0),
-                                color,
-                            );
-                            let pad = egui::vec2(8.0, 3.0);
-                            let size = galley.size() + pad * 2.0;
-                            let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-                            let tint = egui::Color32::from_rgba_unmultiplied(
-                                color.r(),
-                                color.g(),
-                                color.b(),
-                                20,
-                            );
-                            ui.painter().rect_filled(rect, 4.0, tint);
-                            ui.painter().galley(rect.min + pad, galley, color);
+                    for group_idx in 0..3u8 {
+                        let label = match group_idx {
+                            0 => format!("Import with {}", keychain::short_name()),
+                            1 => "Import with Security Key".to_string(),
+                            _ => "Import with Password".to_string(),
                         };
-                        pill(ui, security, self.colors.accent);
-                        pill(ui, speed, self.colors.accent2);
-                        if self.import_mode {
-                            let word_count =
-                                self.selected_variant.required_bip39_size_in_word_total();
-                            pill(
-                                ui,
-                                &format!("Requires {} words", word_count),
-                                self.colors.text_muted,
-                            );
-                        }
-                    });
+                        let (fill, text_color, stroke) = self.auth_button_style(group_idx);
 
-                    ui.add_space(24.0);
-
-                    // Divider
-                    let divider_rect = ui.available_rect_before_wrap();
-                    ui.painter().line_segment(
-                        [
-                            divider_rect.left_top(),
-                            egui::pos2(divider_rect.right(), divider_rect.top()),
-                        ],
-                        egui::Stroke::new(1.0, self.colors.border),
-                    );
-                    ui.add_space(1.0);
-
-                    ui.add_space(20.0);
-
-                    ui.label(
-                        egui::RichText::new("AUTHENTICATION")
-                            .size(10.0)
-                            .color(self.colors.text_muted),
-                    );
-                    ui.add_space(10.0);
-
-                    let verb = if self.import_mode { "Import" } else { "Create" };
-
-                    {
-                        let label = format!("{} with {}", verb, keychain::short_name());
-                        let pk_button = egui::Button::new(
-                            egui::RichText::new(label).size(15.0).color(self.colors.bg),
+                        let btn = egui::Button::new(
+                            egui::RichText::new(&label)
+                                .size(12.0)
+                                .color(text_color),
                         )
-                        .fill(self.colors.accent)
-                        .corner_radius(10.0)
-                        .min_size(egui::vec2(field_width, 44.0));
+                        .fill(fill)
+                        .stroke(stroke)
+                        .corner_radius(8.0)
+                        .min_size(egui::vec2(btn_w, btn_h));
 
-                        if ui.add(pk_button).clicked() {
-                            if self.import_mode {
-                                self.import_seed_phrase_with_keychain(self.selected_variant);
-                            } else {
-                                self.create_wallet_with_keychain(self.selected_variant);
+                        if ui.add(btn).clicked() {
+                            let v = self.selected_variant;
+                            match group_idx {
+                                0 => self.import_seed_phrase_with_keychain(v),
+                                1 => self.import_seed_phrase_with_fido2(v),
+                                _ => self.import_seed_phrase_with_password(v),
                             }
                         }
 
-                        ui.add_space(8.0);
-                    }
-
-                    {
-                        let fido2_btn = egui::Button::new(
-                            egui::RichText::new(format!("{} with Security Key", verb))
-                                .size(15.0)
-                                .color(self.colors.text),
-                        )
-                        .fill(self.colors.surface)
-                        .stroke(egui::Stroke::new(1.0, self.colors.accent2))
-                        .corner_radius(10.0)
-                        .min_size(egui::vec2(field_width, 44.0));
-
-                        if ui.add(fido2_btn).clicked() {
-                            if self.import_mode {
-                                self.import_seed_phrase_with_fido2(self.selected_variant);
-                            } else {
-                                self.create_wallet_with_fido2(self.selected_variant);
-                            }
-                        }
-
-                        ui.add_space(8.0);
-                    }
-
-                    let pw_btn = egui::Button::new(
-                        egui::RichText::new(format!("{} with Password", verb))
-                            .size(15.0)
-                            .color(self.colors.text_muted),
-                    )
-                    .fill(egui::Color32::TRANSPARENT)
-                    .stroke(egui::Stroke::new(1.0, self.colors.border2))
-                    .corner_radius(10.0)
-                    .min_size(egui::vec2(field_width, 44.0));
-                    if ui.add(pw_btn).clicked() {
-                        if self.import_mode {
-                            self.import_seed_phrase_with_password(self.selected_variant);
-                        } else {
-                            self.create_wallet_with_password(self.selected_variant);
+                        if group_idx < 2 {
+                            ui.add_space(btn_gap);
                         }
                     }
                 });
+            });
 
             ui.add_space(24.0);
             ui.vertical_centered(|ui| self.show_status(ui));
@@ -737,31 +657,37 @@ impl App {
             ui.vertical_centered(|ui| self.show_status(ui));
         });
     }
+
+    fn auth_button_style(&self, idx: u8) -> (egui::Color32, egui::Color32, egui::Stroke) {
+        match idx {
+            0 => (self.colors.accent, self.colors.bg, egui::Stroke::NONE),
+            1 => (
+                self.colors.surface,
+                self.colors.text,
+                egui::Stroke::new(1.0, self.colors.accent2),
+            ),
+            _ => (
+                egui::Color32::TRANSPARENT,
+                self.colors.text_muted,
+                egui::Stroke::new(1.0, self.colors.border2),
+            ),
+        }
+    }
 }
 
-fn variant_info(v: SpxVariant) -> (&'static str, &'static str) {
-    let security = match v {
-        SpxVariant::Sha2128S
-        | SpxVariant::Sha2128F
-        | SpxVariant::Shake128S
-        | SpxVariant::Shake128F => "128-bit security",
-        SpxVariant::Sha2192S
-        | SpxVariant::Sha2192F
-        | SpxVariant::Shake192S
-        | SpxVariant::Shake192F => "192-bit security",
-        SpxVariant::Sha2256S
-        | SpxVariant::Sha2256F
-        | SpxVariant::Shake256S
-        | SpxVariant::Shake256F => "256-bit security",
-    };
-    let speed = match v {
-        SpxVariant::Sha2128S
-        | SpxVariant::Sha2192S
-        | SpxVariant::Sha2256S
-        | SpxVariant::Shake128S
-        | SpxVariant::Shake192S
-        | SpxVariant::Shake256S => "Compact signatures",
-        _ => "Fast signing",
-    };
-    (security, speed)
+fn variant_parts(v: SpxVariant) -> (&'static str, &'static str) {
+    match v {
+        SpxVariant::Sha2128S => ("SHA2", "128S"),
+        SpxVariant::Sha2128F => ("SHA2", "128F"),
+        SpxVariant::Shake128S => ("SHAKE", "128S"),
+        SpxVariant::Shake128F => ("SHAKE", "128F"),
+        SpxVariant::Sha2192S => ("SHA2", "192S"),
+        SpxVariant::Sha2192F => ("SHA2", "192F"),
+        SpxVariant::Shake192S => ("SHAKE", "192S"),
+        SpxVariant::Shake192F => ("SHAKE", "192F"),
+        SpxVariant::Sha2256S => ("SHA2", "256S"),
+        SpxVariant::Sha2256F => ("SHA2", "256F"),
+        SpxVariant::Shake256S => ("SHAKE", "256S"),
+        SpxVariant::Shake256F => ("SHAKE", "256F"),
+    }
 }

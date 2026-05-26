@@ -236,10 +236,12 @@ impl App {
     /// Trim the wallet name and claim the next available wallet ID.
     /// Name uniqueness is enforced by core during creation/import.
     pub(crate) fn prepare_new_wallet(&self) -> Result<(u32, String), String> {
-        let name = self.new_wallet_name.trim().to_string();
-        if name.is_empty() {
-            return Err("Wallet name is required.".to_string());
-        }
+        let trimmed = self.new_wallet_name.trim();
+        let name = if trimmed.is_empty() {
+            names::Generator::default().next().unwrap_or_else(|| "wallet".to_string())
+        } else {
+            trimmed.to_string()
+        };
         let wallet_id = qpv2_core::db::wallets::next_wallet_id().map_err(|e| e.to_string())?;
         Ok((wallet_id, name))
     }

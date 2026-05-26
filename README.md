@@ -108,7 +108,7 @@ The CLI build includes codesigning with entitlements, which is required for keyc
 
 ### Use CLI
 
-The CLI supports multiple wallets. The global `--wallet <name>` option selects which wallet to operate on. It is required for `init` and `mnemonic import` (to name the wallet being created). For other commands, it auto-selects if only one wallet exists; if multiple wallets exist, it must be specified.
+The CLI supports multiple wallets. The global `--wallet <name>` option selects which wallet to operate on. For `init` and `mnemonic import`, the name is optional — a random name (e.g. "brave-curie") is auto-generated if omitted. For other commands, it auto-selects if only one wallet exists; if multiple wallets exist, it must be specified. Wallets can be renamed later.
 
 ```shell
 # Show help
