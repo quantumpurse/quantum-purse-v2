@@ -1,6 +1,6 @@
 # QPV2
 
-Quantum Purse version 2 built entirely in Rust. Secure and Performant. There are 2 UI options: CLI and GUI (egui).
+Rust Quantum Purse. Secure and Performant. There are 2 UI options: CLI and GUI (egui).
 
 Developed in collaboration with Claude Opus (4.5 / 4.6): developer-led architecture, abstraction boundaries, and design decisions; Claude-authored implementation under review.
 
