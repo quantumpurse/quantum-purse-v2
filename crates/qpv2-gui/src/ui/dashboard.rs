@@ -84,7 +84,7 @@ impl App {
 
                 // Render balance with the fractional part in accent green
                 // to match the mockup style (e.g. "142,840." white + "50" green + " CKB" white).
-                let syne = egui::FontFamily::Name("syne".into());
+                let hero_font = egui::FontFamily::Name("hero".into());
 
                 let whole = total_shannons / crate::types::CKB_DECIMAL_PLACES;
                 let frac = total_shannons % crate::types::CKB_DECIMAL_PLACES;
@@ -96,7 +96,8 @@ impl App {
                         ui.label(
                             egui::RichText::new(format!("{} CKB", format_with_commas(whole)))
                                 .size(bal_size)
-                                .family(syne.clone())
+                                .strong()
+                                .family(hero_font.clone())
                                 .color(self.colors.text),
                         );
                     } else {
@@ -104,19 +105,22 @@ impl App {
                         ui.label(
                             egui::RichText::new(format!("{}.", format_with_commas(whole)))
                                 .size(bal_size)
-                                .family(syne.clone())
+                                .strong()
+                                .family(hero_font.clone())
                                 .color(self.colors.text),
                         );
                         ui.label(
                             egui::RichText::new(&frac_str[..2])
                                 .size(bal_size)
-                                .family(syne.clone())
+                                .strong()
+                                .family(hero_font.clone())
                                 .color(self.colors.accent),
                         );
                         ui.label(
                             egui::RichText::new(" CKB")
                                 .size(bal_size)
-                                .family(syne.clone())
+                                .strong()
+                                .family(hero_font.clone())
                                 .color(self.colors.text),
                         );
                     }
@@ -155,7 +159,7 @@ impl App {
                         ui.label(
                             egui::RichText::new(format_ckb_balance(available))
                                 .size(15.0)
-                                .family(syne.clone())
+                                .family(hero_font.clone())
                                 .color(self.colors.accent),
                         );
                     });
@@ -173,7 +177,7 @@ impl App {
                         ui.label(
                             egui::RichText::new(format!("{}", self.accounts.len()))
                                 .size(15.0)
-                                .family(syne.clone())
+                                .family(hero_font.clone())
                                 .color(self.colors.accent2),
                         );
                     });
@@ -191,7 +195,7 @@ impl App {
                         ui.label(
                             egui::RichText::new(format_ckb_balance(dao_locked))
                                 .size(15.0)
-                                .family(syne.clone())
+                                .family(hero_font.clone())
                                 .color(self.colors.accent3),
                         );
                     });
@@ -291,13 +295,13 @@ impl App {
                 ui.add_space(20.0);
 
                 // ── Recent Transactions ──
-                let syne = egui::FontFamily::Name("syne".into());
+                let hero_font = egui::FontFamily::Name("hero".into());
 
                 ui.horizontal(|ui| {
                     ui.label(
                         egui::RichText::new("Recent Transactions")
                             .size(15.0)
-                            .family(syne)
+                            .family(hero_font)
                             .strong()
                             .color(self.colors.text),
                     );
@@ -358,7 +362,7 @@ impl App {
         account_index: Option<usize>,
         counterparty_index: Option<usize>,
     ) {
-        let syne = egui::FontFamily::Name("syne".into());
+        let hero_font = egui::FontFamily::Name("hero".into());
 
         // Pick icon and icon background color based on transaction type.
         let (icon, icon_bg) = match record.tx_kind {
@@ -475,7 +479,7 @@ impl App {
                                     ui.label(
                                         egui::RichText::new("Pending")
                                             .size(14.0)
-                                            .family(syne.clone())
+                                            .family(hero_font.clone())
                                             .color(colors.warn),
                                     );
                                 } else {
@@ -505,7 +509,7 @@ impl App {
                                     ui.label(
                                         egui::RichText::new(amount_str)
                                             .size(14.0)
-                                            .family(syne.clone())
+                                            .family(hero_font.clone())
                                             .color(color),
                                     );
                                 }

@@ -4,7 +4,7 @@ use eframe::egui;
 use qpv2_core::types::AuthMethod;
 use qpv2_core::KeyVault;
 
-use super::common::CardHover;
+use super::common::{paint_corner_accent, CardHover};
 use crate::types::{format_ckb_balance, Status};
 use crate::App;
 
@@ -62,6 +62,12 @@ impl App {
                         })
                         .response;
 
+                    paint_corner_accent(
+                        cols[0].painter(),
+                        single_card.rect,
+                        18.0,
+                        self.colors.accent,
+                    );
                     hover.commit(&single_card);
 
                     if single_card.interact(egui::Sense::click()).clicked() {
@@ -113,6 +119,12 @@ impl App {
                         })
                         .response;
 
+                    paint_corner_accent(
+                        cols[1].painter(),
+                        multisig_card.rect,
+                        18.0,
+                        self.colors.accent2,
+                    );
                     hover.commit(&multisig_card);
                 });
 

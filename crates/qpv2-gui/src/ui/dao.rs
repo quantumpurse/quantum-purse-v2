@@ -447,13 +447,16 @@ impl App {
                     _ => "Confirm Deposit",
                 };
 
+                let btn_fill = if can_deposit {
+                    self.colors.accent
+                } else if is_busy {
+                    self.colors.accent.linear_multiply(0.5)
+                } else {
+                    self.colors.surface2
+                };
                 let deposit_btn =
                     egui::Button::new(egui::RichText::new(btn_text).size(15.0).strong().color(self.colors.bg))
-                        .fill(if can_deposit {
-                            self.colors.accent
-                        } else {
-                            self.colors.surface2
-                        })
+                        .fill(btn_fill)
                         .min_size(egui::vec2(ui.available_width(), 44.0));
 
                 if ui.add_enabled(can_deposit, deposit_btn).clicked() {
@@ -671,14 +674,10 @@ impl App {
                                 );
                             });
 
-                            let hash_str = format!("{:#x}", cell.out_point.tx_hash());
-                            let short = format!(
-                                "{}...{}",
-                                &hash_str[..16],
-                                &hash_str[hash_str.len().saturating_sub(14)..]
-                            );
+                            let idx: u32 = cell.out_point.index().unpack();
+                            let cell_id = format!("{:#x}/{}", cell.out_point.tx_hash(), idx);
                             ui.label(
-                                egui::RichText::new(&short)
+                                egui::RichText::new(&cell_id)
                                     .size(10.0)
                                     .color(self.colors.text_muted)
                                     .font(egui::FontId::monospace(10.0)),

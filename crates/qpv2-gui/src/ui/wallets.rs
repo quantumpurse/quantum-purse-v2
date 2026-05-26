@@ -4,7 +4,7 @@ use eframe::egui;
 use qpv2_core::types::AuthMethod;
 use qpv2_core::KeyVault;
 
-use super::common::CardHover;
+use super::common::{paint_corner_accent, CardHover};
 use crate::types::Status;
 use crate::App;
 
@@ -60,6 +60,12 @@ impl App {
                         })
                         .response;
 
+                    paint_corner_accent(
+                        cols[0].painter(),
+                        create_card.rect,
+                        14.0,
+                        self.colors.accent,
+                    );
                     hover.commit(&create_card);
 
                     if create_card.interact(egui::Sense::click()).clicked() {
@@ -97,6 +103,12 @@ impl App {
                         })
                         .response;
 
+                    paint_corner_accent(
+                        cols[1].painter(),
+                        import_card.rect,
+                        14.0,
+                        self.colors.warn,
+                    );
                     hover.commit(&import_card);
 
                     if import_card.interact(egui::Sense::click()).clicked() {
@@ -134,6 +146,12 @@ impl App {
                         })
                         .response;
 
+                    paint_corner_accent(
+                        cols[2].painter(),
+                        export_card.rect,
+                        14.0,
+                        self.colors.accent2,
+                    );
                     hover.commit(&export_card);
 
                     if export_card.interact(egui::Sense::click()).clicked() {

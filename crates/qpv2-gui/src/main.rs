@@ -196,16 +196,16 @@ impl App {
         // Register custom fonts.
         let mut fonts = egui::FontDefinitions::default();
 
-        // Syne ExtraBold for hero balance display.
+        // Audiowide for hero balance display and headings.
         fonts.font_data.insert(
-            "syne_extrabold".to_owned(),
+            "audiowide".to_owned(),
             std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
-                "../../../assets/fonts/Syne-ExtraBold.ttf"
+                "../../../assets/fonts/Audiowide-Regular.ttf"
             ))),
         );
         fonts.families.insert(
-            egui::FontFamily::Name("syne".into()),
-            vec!["syne_extrabold".to_owned()],
+            egui::FontFamily::Name("hero".into()),
+            vec!["audiowide".to_owned()],
         );
 
         // Noto Sans Symbols for arrows and basic symbol glyphs (U+2190–U+21FF, etc.).

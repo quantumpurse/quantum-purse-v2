@@ -510,7 +510,7 @@ impl App {
                     ui.label(egui::RichText::new("DAO").size(8.0).color(self.colors.text));
                 });
                 ui.add_space(4.0);
-                self.draw_nav_item(ui, Tab::DaoOperations, "\u{2b21}", "NERVOS DAO");
+                self.draw_nav_item(ui, Tab::DaoOperations, "\u{2b21}", "Nervos DAO");
 
                 ui.add_space(10.0);
 

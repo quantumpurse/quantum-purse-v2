@@ -278,13 +278,16 @@ impl App {
                             _ => "Confirm Send",
                         };
 
+                        let btn_fill = if can_send {
+                            self.colors.accent
+                        } else if is_busy {
+                            self.colors.accent.linear_multiply(0.5)
+                        } else {
+                            self.colors.surface2
+                        };
                         let send_btn =
                             egui::Button::new(egui::RichText::new(btn_text).size(15.0).strong().color(self.colors.bg))
-                                .fill(if can_send {
-                                    self.colors.accent
-                                } else {
-                                    self.colors.surface2
-                                })
+                                .fill(btn_fill)
                                 .min_size(egui::vec2(ui.available_width(), 44.0));
 
                         if ui.add_enabled(can_send, send_btn).clicked() {
