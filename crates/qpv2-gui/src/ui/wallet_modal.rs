@@ -49,7 +49,7 @@ impl App {
                 egui::Frame::new()
                     .fill(self.colors.surface)
                     .stroke(egui::Stroke::new(1.0, self.colors.border2))
-                    .corner_radius(14.0)
+                    .corner_radius(18.0)
                     .inner_margin(egui::Margin::symmetric(28, 24))
                     .show(ui, |ui| {
                         ui.set_width(modal_width);

@@ -116,7 +116,9 @@ impl App {
                     hover.commit(&multisig_card);
                 });
 
-                ui.add_space(18.0);
+                ui.add_space(10.0);
+                self.paint_entanglement_divider(ui);
+                ui.add_space(10.0);
 
                 // ── Section title ──
                 // Shared pill builder: identical shape/size/font across all badges.

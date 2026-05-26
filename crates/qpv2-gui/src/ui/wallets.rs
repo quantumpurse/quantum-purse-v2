@@ -36,7 +36,7 @@ impl App {
 
                     let create_card = egui::Frame::new()
                         .fill(hover.fill)
-                        .corner_radius(18.0)
+                        .corner_radius(14.0)
                         .inner_margin(egui::Margin::symmetric(20, 24))
                         .stroke(hover.stroke)
                         .show(&mut cols[0], |ui| {
@@ -73,7 +73,7 @@ impl App {
 
                     let import_card = egui::Frame::new()
                         .fill(hover.fill)
-                        .corner_radius(18.0)
+                        .corner_radius(14.0)
                         .inner_margin(egui::Margin::symmetric(20, 24))
                         .stroke(hover.stroke)
                         .show(&mut cols[1], |ui| {
@@ -110,7 +110,7 @@ impl App {
 
                     let export_card = egui::Frame::new()
                         .fill(hover.fill)
-                        .corner_radius(18.0)
+                        .corner_radius(14.0)
                         .inner_margin(egui::Margin::symmetric(20, 24))
                         .stroke(hover.stroke)
                         .show(&mut cols[2], |ui| {
@@ -157,7 +157,9 @@ impl App {
                     }
                 });
 
-                ui.add_space(22.0);
+                ui.add_space(10.0);
+                self.paint_entanglement_divider(ui);
+                ui.add_space(10.0);
 
                 // ── Saved Wallets section ──
                 let wallet_count = self.wallet_cache.len();
@@ -166,7 +168,7 @@ impl App {
                     |ui: &mut egui::Ui, fill: egui::Color32, text: String, color: egui::Color32| {
                         egui::Frame::new()
                             .fill(fill)
-                            .corner_radius(10.0)
+                            .corner_radius(4.0)
                             .inner_margin(egui::Margin::symmetric(8, 2))
                             .show(ui, |ui| {
                                 ui.label(
@@ -220,7 +222,7 @@ impl App {
 
                         let row_resp = egui::Frame::new()
                             .fill(hover.fill)
-                            .corner_radius(9.0)
+                            .corner_radius(8.0)
                             .inner_margin(egui::Margin::symmetric(18, 14))
                             .stroke(hover.stroke)
                             .show(ui, |ui| {
@@ -372,7 +374,7 @@ impl App {
                                                         255, 77, 109, 77,
                                                     ),
                                                 ))
-                                                .corner_radius(10.0)
+                                                .corner_radius(4.0)
                                                 .inner_margin(egui::Margin::symmetric(8, 2))
                                                 .show(ui, |ui| {
                                                     ui.label(
@@ -402,7 +404,7 @@ impl App {
                                                 paint_hold_border(
                                                     ui.painter(),
                                                     del_resp.rect,
-                                                    10.0,
+                                                    4.0,
                                                     progress,
                                                     egui::Stroke::new(
                                                         1.0,

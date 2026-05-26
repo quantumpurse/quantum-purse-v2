@@ -147,7 +147,7 @@ impl App {
             ),
         };
 
-        paint_separator(ui, self.colors.border);
+        self.paint_entanglement_divider(ui);
         ui.add_space(14.0);
 
         let header = ui.horizontal(|ui| {
@@ -479,16 +479,6 @@ impl App {
             });
         });
     }
-}
-
-fn paint_separator(ui: &mut egui::Ui, color: egui::Color32) {
-    let width = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 1.0), egui::Sense::hover());
-    ui.painter().hline(
-        rect.x_range(),
-        rect.center().y,
-        egui::Stroke::new(1.0, color),
-    );
 }
 
 fn draw_donut_gauge(

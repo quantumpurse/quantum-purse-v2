@@ -97,23 +97,6 @@ impl App {
                                                         );
                                                     });
 
-                                                ui.add_space(4.0);
-
-                                                egui::Frame::new()
-                                                    .fill(self.colors.surface2)
-                                                    .corner_radius(4.0)
-                                                    .inner_margin(egui::Margin::symmetric(6, 1))
-                                                    .show(ui, |ui| {
-                                                        ui.label(
-                                                            egui::RichText::new(format!(
-                                                                "{}",
-                                                                cw.spx_variant
-                                                            ))
-                                                            .size(8.5)
-                                                            .family(egui::FontFamily::Monospace)
-                                                            .color(self.colors.text_muted),
-                                                        );
-                                                    });
                                             },
                                         );
                                     });

@@ -300,7 +300,7 @@ impl App {
                         rect,
                         9.0,
                         egui::Stroke::new(1.0, self.colors.border),
-                        egui::StrokeKind::Outside,
+                        egui::StrokeKind::Inside,
                     );
 
                     let inner = rect.shrink2(egui::vec2(12.0, 5.0));
@@ -385,7 +385,7 @@ impl App {
                         rect,
                         9.0,
                         egui::Stroke::new(1.0, self.colors.border),
-                        egui::StrokeKind::Outside,
+                        egui::StrokeKind::Inside,
                     );
 
                     // Content layout
@@ -485,7 +485,7 @@ impl App {
                     ui.label(
                         egui::RichText::new("WALLET")
                             .size(8.0)
-                            .color(self.colors.text_muted),
+                            .color(self.colors.text),
                     );
                 });
                 ui.add_space(4.0);
@@ -500,7 +500,7 @@ impl App {
                     ui.label(
                         egui::RichText::new("NERVOSDAO")
                             .size(8.0)
-                            .color(self.colors.text_muted),
+                            .color(self.colors.text),
                     );
                 });
                 ui.add_space(4.0);
@@ -508,30 +508,17 @@ impl App {
 
                 ui.add_space(10.0);
 
-                // Section: Network
-                ui.horizontal(|ui| {
-                    ui.add_space(20.0);
-                    ui.label(
-                        egui::RichText::new("NETWORK")
-                            .size(8.0)
-                            .color(self.colors.text_muted),
-                    );
-                });
-                ui.add_space(4.0);
-                self.draw_nav_item(ui, Tab::NodeManager, "\u{25c9}", "Node Manager");
-
-                ui.add_space(10.0);
-
-                // Section: Security
+                // Section: Setting
                 ui.horizontal(|ui| {
                     ui.add_space(20.0);
                     ui.label(
                         egui::RichText::new("SETTING")
                             .size(8.0)
-                            .color(self.colors.text_muted),
+                            .color(self.colors.text),
                     );
                 });
                 ui.add_space(4.0);
+                self.draw_nav_item(ui, Tab::NodeManager, "\u{25c9}", "Node Manager");
                 self.draw_nav_item(ui, Tab::Accounts, "\u{25ce}", "Accounts");
                 self.draw_nav_item(ui, Tab::Wallets, "\u{2318}", "Wallets");
 
@@ -546,11 +533,27 @@ impl App {
                         ui.horizontal(|ui| {
                             ui.add_space(14.0);
                             let lock_btn = egui::Button::new(
-                                egui::RichText::new("\u{1f512} Lock Wallet").size(12.0),
+                                egui::RichText::new("\u{1f512} Lock Wallet")
+                                    .size(12.0)
+                                    .color(self.colors.accent3),
                             )
-                            .fill(egui::Color32::TRANSPARENT)
-                            .stroke(egui::Stroke::new(1.0, self.colors.border))
-                            .min_size(egui::vec2(194.0, 32.0));
+                            .fill(egui::Color32::from_rgba_unmultiplied(
+                                self.colors.accent3.r(),
+                                self.colors.accent3.g(),
+                                self.colors.accent3.b(),
+                                12,
+                            ))
+                            .stroke(egui::Stroke::new(
+                                1.0,
+                                egui::Color32::from_rgba_unmultiplied(
+                                    self.colors.accent3.r(),
+                                    self.colors.accent3.g(),
+                                    self.colors.accent3.b(),
+                                    40,
+                                ),
+                            ))
+                            .corner_radius(8.0)
+                            .min_size(egui::vec2(208.0, 34.0));
 
                             if ui.add(lock_btn).clicked() {
                                 self.lock_wallet();
