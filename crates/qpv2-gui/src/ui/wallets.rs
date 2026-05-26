@@ -157,9 +157,7 @@ impl App {
                     }
                 });
 
-                ui.add_space(10.0);
-                self.paint_entanglement_divider(ui);
-                ui.add_space(10.0);
+                ui.add_space(20.0);
 
                 // ── Saved Wallets section ──
                 let wallet_count = self.wallet_cache.len();
@@ -219,6 +217,7 @@ impl App {
                         let cw_variant = cw.spx_variant;
                         let cw_auth = cw.auth_method.clone();
                         let cw_acct_count = cw.account_count;
+                        let cw_path = cw.path.clone();
 
                         let row_resp = egui::Frame::new()
                             .fill(hover.fill)
@@ -432,6 +431,14 @@ impl App {
                                                 );
                                             }
                                         });
+
+                                        ui.add_space(2.0);
+                                        pill(
+                                            ui,
+                                            self.colors.surface2,
+                                            cw_path.clone(),
+                                            self.colors.text_muted,
+                                        );
                                     });
                                 });
                             });

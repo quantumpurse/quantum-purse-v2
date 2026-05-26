@@ -58,7 +58,7 @@ impl App {
                 rect.bottom() - rect.height() * 0.22,
             ),
             corner_radius,
-            self.colors.accent2,
+            egui::Color32::from_rgb(255, 160, 30),
             13,
         );
         draw_smooth_glow(
@@ -98,7 +98,7 @@ impl App {
                 rect.bottom() - rect.height() * 0.22,
             ),
             glow_radius * 0.9,
-            egui::Color32::from_rgb(0, 200, 255),
+            egui::Color32::from_rgb(255, 160, 30),
         );
 
         // 3. Lattice — low-alpha dots at a 48-px grid.

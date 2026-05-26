@@ -32,9 +32,9 @@ impl App {
                 self.draw_network_toggle(ui);
                 ui.add_space(14.0);
 
-                self.draw_backend_section(ui, NodeType::FullNode);
-                self.draw_backend_section(ui, NodeType::LightClient);
                 self.draw_backend_section(ui, NodeType::PublicRpc);
+                self.draw_backend_section(ui, NodeType::LightClient);
+                self.draw_backend_section(ui, NodeType::FullNode);
             });
         });
     }
@@ -52,23 +52,79 @@ impl App {
         let mut selected = current_network;
 
         ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new("Network")
-                    .size(12.0)
-                    .family(egui::FontFamily::Monospace)
-                    .color(self.colors.text_muted),
+            let seg_w = 80.0;
+            let seg_h = 28.0;
+            let total_w = seg_w * 2.0 + 2.0;
+            let (outer_rect, _) =
+                ui.allocate_exact_size(egui::vec2(total_w, seg_h), egui::Sense::hover());
+            let painter = ui.painter();
+
+            painter.rect_filled(outer_rect, 6.0, self.colors.surface2);
+            painter.rect_stroke(
+                outer_rect,
+                6.0,
+                egui::Stroke::new(1.0, self.colors.border),
+                egui::StrokeKind::Inside,
             );
-            ui.add_space(8.0);
-            ui.scope(|ui| {
-                let vis = &mut ui.style_mut().visuals;
-                vis.override_text_color = None;
-                vis.widgets.hovered.fg_stroke.color = self.colors.accent;
-                vis.widgets.hovered.weak_bg_fill = self.colors.accent_tint;
-                ui.radio_value(&mut selected, NetworkType::Mainnet, "Mainnet")
-                    .on_hover_cursor(egui::CursorIcon::PointingHand);
-                ui.radio_value(&mut selected, NetworkType::Testnet, "Testnet")
-                    .on_hover_cursor(egui::CursorIcon::PointingHand);
-            });
+
+            let segments = [
+                (NetworkType::Mainnet, "Mainnet", self.colors.accent),
+                (NetworkType::Testnet, "Testnet", self.colors.accent2),
+            ];
+
+            for (i, &(net, label, accent)) in segments.iter().enumerate() {
+                let x = outer_rect.left() + 1.0 + i as f32 * seg_w;
+                let seg_rect = egui::Rect::from_min_size(
+                    egui::pos2(x, outer_rect.top() + 1.0),
+                    egui::vec2(seg_w, seg_h - 2.0),
+                );
+
+                let is_active = selected == net;
+                let resp = ui.interact(
+                    seg_rect,
+                    ui.id().with(("net-seg", i)),
+                    egui::Sense::click(),
+                );
+
+                if is_active {
+                    painter.rect_filled(
+                        seg_rect,
+                        5.0,
+                        egui::Color32::from_rgba_unmultiplied(
+                            accent.r(),
+                            accent.g(),
+                            accent.b(),
+                            25,
+                        ),
+                    );
+                } else if resp.hovered() {
+                    painter.rect_filled(
+                        seg_rect,
+                        5.0,
+                        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 6),
+                    );
+                }
+
+                let text_color = if is_active {
+                    accent
+                } else {
+                    self.colors.text_muted
+                };
+                painter.text(
+                    seg_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    label,
+                    egui::FontId::proportional(12.0),
+                    text_color,
+                );
+
+                if resp.clicked() {
+                    selected = net;
+                }
+                if resp.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                }
+            }
         });
 
         if selected != current_network {
@@ -137,7 +193,7 @@ impl App {
             ),
             NodeType::PublicRpc => (
                 "\u{1F310}",
-                "Public RPC Node",
+                "Remote RPC Node",
                 "Remote endpoint \u{00B7} No local storage",
             ),
             NodeType::FullNode => (

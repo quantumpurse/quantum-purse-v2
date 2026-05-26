@@ -276,88 +276,6 @@ impl App {
                     ui.add_space(1.0);
                 });
 
-                // ── Wallet selector ──
-                ui.add_space(10.0);
-                ui.horizontal(|ui| {
-                    ui.add_space(14.0);
-
-                    let (response, painter) =
-                        ui.allocate_painter(egui::vec2(208.0, 42.0), egui::Sense::click());
-
-                    let rect = response.rect;
-                    let is_hovered = response.hovered();
-
-                    self.wallet_selector_rect = Some(rect);
-
-                    let bg_color = if is_hovered {
-                        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 10)
-                    } else {
-                        self.colors.surface2
-                    };
-
-                    painter.rect_filled(rect, 9.0, bg_color);
-                    painter.rect_stroke(
-                        rect,
-                        9.0,
-                        egui::Stroke::new(1.0, self.colors.border),
-                        egui::StrokeKind::Inside,
-                    );
-
-                    let inner = rect.shrink2(egui::vec2(12.0, 5.0));
-
-                    painter.text(
-                        inner.left_top(),
-                        egui::Align2::LEFT_TOP,
-                        "ACTIVE WALLET",
-                        egui::FontId::proportional(8.0),
-                        self.colors.text_muted,
-                    );
-
-                    let row_y = inner.top() + 14.0;
-
-                    painter.circle_filled(
-                        egui::pos2(inner.left() + 4.0, row_y + 7.0),
-                        3.0,
-                        self.colors.accent,
-                    );
-
-                    painter.text(
-                        egui::pos2(inner.left() + 14.0, row_y),
-                        egui::Align2::LEFT_TOP,
-                        &self.wallet_name,
-                        egui::FontId::proportional(13.0),
-                        self.colors.text,
-                    );
-
-                    painter.text(
-                        egui::pos2(inner.right() - 45.0, row_y),
-                        egui::Align2::RIGHT_TOP,
-                        "\u{25bc}",
-                        egui::FontId::proportional(9.0),
-                        self.colors.text_muted,
-                    );
-
-                    // Variant badge (from cache — no disk I/O).
-                    if let Some(cw) = self.wallet_cache.iter().find(|w| w.id == self.wallet_id) {
-                        painter.text(
-                            egui::pos2(inner.right() - 5.0, row_y),
-                            egui::Align2::RIGHT_TOP,
-                            format!("{}", cw.spx_variant),
-                            egui::FontId::proportional(8.0),
-                            self.colors.accent2,
-                        );
-                    }
-
-                    if response.clicked() {
-                        self.wallet_selector_open = !self.wallet_selector_open;
-                        self.node_selector_open = false;
-                    }
-
-                    if is_hovered {
-                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                    }
-                });
-
                 // ── Node selector ──
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
@@ -397,7 +315,7 @@ impl App {
                         egui::Align2::LEFT_TOP,
                         "ACTIVE NODE",
                         egui::FontId::proportional(8.0),
-                        self.colors.text_muted,
+                        self.colors.text,
                     );
 
                     // Node info row
@@ -415,7 +333,7 @@ impl App {
 
                     // Node type
                     let node_name = match self.qp_client.config().node_type {
-                        NodeType::PublicRpc => "Public RPC",
+                        NodeType::PublicRpc => "Remote RPC",
                         NodeType::LightClient => "Light Client",
                         NodeType::FullNode => "Full Node",
                     };
@@ -476,6 +394,88 @@ impl App {
                     }
                 });
 
+                // ── Wallet selector ──
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    ui.add_space(14.0);
+
+                    let (response, painter) =
+                        ui.allocate_painter(egui::vec2(208.0, 42.0), egui::Sense::click());
+
+                    let rect = response.rect;
+                    let is_hovered = response.hovered();
+
+                    self.wallet_selector_rect = Some(rect);
+
+                    let bg_color = if is_hovered {
+                        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 10)
+                    } else {
+                        self.colors.surface2
+                    };
+
+                    painter.rect_filled(rect, 9.0, bg_color);
+                    painter.rect_stroke(
+                        rect,
+                        9.0,
+                        egui::Stroke::new(1.0, self.colors.border),
+                        egui::StrokeKind::Inside,
+                    );
+
+                    let inner = rect.shrink2(egui::vec2(12.0, 5.0));
+
+                    painter.text(
+                        inner.left_top(),
+                        egui::Align2::LEFT_TOP,
+                        "ACTIVE WALLET",
+                        egui::FontId::proportional(8.0),
+                        self.colors.text,
+                    );
+
+                    let row_y = inner.top() + 14.0;
+
+                    painter.circle_filled(
+                        egui::pos2(inner.left() + 4.0, row_y + 7.0),
+                        3.0,
+                        self.colors.accent,
+                    );
+
+                    painter.text(
+                        egui::pos2(inner.left() + 14.0, row_y),
+                        egui::Align2::LEFT_TOP,
+                        &self.wallet_name,
+                        egui::FontId::proportional(13.0),
+                        self.colors.text,
+                    );
+
+                    painter.text(
+                        egui::pos2(inner.right() - 45.0, row_y),
+                        egui::Align2::RIGHT_TOP,
+                        "\u{25bc}",
+                        egui::FontId::proportional(9.0),
+                        self.colors.text_muted,
+                    );
+
+                    // Variant badge (from cache — no disk I/O).
+                    if let Some(cw) = self.wallet_cache.iter().find(|w| w.id == self.wallet_id) {
+                        painter.text(
+                            egui::pos2(inner.right() - 5.0, row_y),
+                            egui::Align2::RIGHT_TOP,
+                            format!("{}", cw.spx_variant),
+                            egui::FontId::proportional(8.0),
+                            self.colors.accent2,
+                        );
+                    }
+
+                    if response.clicked() {
+                        self.wallet_selector_open = !self.wallet_selector_open;
+                        self.node_selector_open = false;
+                    }
+
+                    if is_hovered {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                    }
+                });
+
                 // ── Navigation ──
                 ui.add_space(14.0);
 
@@ -498,13 +498,13 @@ impl App {
                 ui.horizontal(|ui| {
                     ui.add_space(20.0);
                     ui.label(
-                        egui::RichText::new("NERVOSDAO")
+                        egui::RichText::new("DAO")
                             .size(8.0)
                             .color(self.colors.text),
                     );
                 });
                 ui.add_space(4.0);
-                self.draw_nav_item(ui, Tab::DaoOperations, "\u{2b21}", "DAO Operations");
+                self.draw_nav_item(ui, Tab::DaoOperations, "\u{2b21}", "DAO");
 
                 ui.add_space(10.0);
 
@@ -518,9 +518,9 @@ impl App {
                     );
                 });
                 ui.add_space(4.0);
-                self.draw_nav_item(ui, Tab::NodeManager, "\u{25c9}", "Node Manager");
+                self.draw_nav_item(ui, Tab::NodeManager, "\u{25c9}", "Node Types");
+                self.draw_nav_item(ui, Tab::Wallets, "\u{25EB}", "Wallets");
                 self.draw_nav_item(ui, Tab::Accounts, "\u{25ce}", "Accounts");
-                self.draw_nav_item(ui, Tab::Wallets, "\u{2318}", "Wallets");
 
                 // ── Bottom: Lock Wallet ──
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {

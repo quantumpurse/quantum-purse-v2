@@ -279,16 +279,12 @@ impl App {
         let startup_status = match local_node.spawn() {
             Ok(()) => {
                 if local_node.has_local_process() {
-                    // For LC, the QR-lock-script cell dep warmup runs
-                    // from the poller (see `poll_node_status`) so it
-                    // can wait for the LC's RPC port to come up
-                    // without racing this synchronous boot path.
                     Status::Info("Local node started.".to_string())
                 } else {
-                    // `spawn()` returns Ok(()) on PublicRpc even though
-                    // no process is started — it's a no-op backend. Emit
-                    // no banner so we don't misleadingly claim a spawn.
-                    Status::None
+                    Status::Info(format!(
+                        "Connected to {} ({}).",
+                        node_config.network, node_config.node_type,
+                    ))
                 }
             }
             Err(e) => {
@@ -422,8 +418,9 @@ impl eframe::App for App {
             self.fetch_node_status();
         }
 
+        self.tick_status(ctx);
+
         if self.screen == Screen::Unlocked {
-            self.tick_status(ctx);
             self.poll_all_balances();
             self.poll_spendable_capacity();
             self.poll_transaction_build();
@@ -509,8 +506,8 @@ fn main() -> eframe::Result {
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1100.0, 600.0])
-            .with_min_inner_size([1100.0, 600.0])
+            .with_inner_size([1200.0, 600.0])
+            .with_min_inner_size([1200.0, 600.0])
             .with_title("Quantum Purse"),
         ..Default::default()
     };

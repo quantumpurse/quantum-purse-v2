@@ -1,5 +1,6 @@
 //! DAO Operations tab rendering.
 
+use ckb_types::prelude::Unpack;
 use eframe::egui;
 
 use super::common::{paint_corner_accent, CardHover};
@@ -67,7 +68,7 @@ impl App {
                         ),
                         (
                             active_cells.to_string(),
-                            "Active Cells",
+                            "Active Deposits",
                             Some(self.colors.accent3),
                         ),
                     ];
@@ -226,7 +227,7 @@ impl App {
 
                         ui.add_space(22.0);
 
-                        // ── Active Positions Table ──
+                        // ── Active Deposits Table ──
                         self.show_dao_positions_table(ui);
                     }
 
@@ -522,10 +523,10 @@ impl App {
         }
     }
 
-    /// Renders the Active Positions table.
+    /// Renders the Active Deposits table.
     pub(crate) fn show_dao_positions_table(&mut self, ui: &mut egui::Ui) {
         ui.label(
-            egui::RichText::new("Active Positions")
+            egui::RichText::new("Active Deposits")
                 .size(16.0)
                 .strong()
                 .color(self.colors.text_muted),
@@ -567,8 +568,9 @@ impl App {
             .fill(self.colors.surface)
             .corner_radius(12.0)
             .stroke(egui::Stroke::new(1.0, self.colors.border))
-            .inner_margin(egui::Margin::symmetric(0, 0))
+            .inner_margin(egui::Margin::symmetric(12, 8))
             .show(ui, |ui| {
+                ui.set_width(ui.available_width());
                 egui::Grid::new("dao_positions")
                     .num_columns(7)
                     .min_col_width(60.0)
@@ -596,21 +598,19 @@ impl App {
                         // Deposited cells
                         for (lock_args, cell) in &self.dao_deposited_cells {
                             let acct_idx = account_index(lock_args, &self.accounts);
-                            ui.label(
-                                egui::RichText::new(format!("#{}", acct_idx))
-                                    .size(10.5)
-                                    .color(self.colors.accent2)
-                                    .family(egui::FontFamily::Monospace),
-                            );
+                            ui.vertical_centered(|ui| {
+                                ui.label(
+                                    egui::RichText::new(format!("#{}", acct_idx))
+                                        .size(10.5)
+                                        .color(self.colors.accent2)
+                                        .family(egui::FontFamily::Monospace),
+                                );
+                            });
 
-                            let hash_str = format!("{:#x}", cell.out_point.tx_hash());
-                            let short = format!(
-                                "{}...{}",
-                                &hash_str[..16],
-                                &hash_str[hash_str.len().saturating_sub(14)..]
-                            );
+                            let idx: u32 = cell.out_point.index().unpack();
+                            let cell_id = format!("{:#x}/{}", cell.out_point.tx_hash(), idx);
                             ui.label(
-                                egui::RichText::new(&short)
+                                egui::RichText::new(&cell_id)
                                     .size(10.0)
                                     .color(self.colors.text_muted)
                                     .font(egui::FontId::monospace(10.0)),
@@ -662,12 +662,14 @@ impl App {
                         // Prepared cells
                         for (lock_args, cell) in &self.dao_prepared_cells {
                             let acct_idx = account_index(lock_args, &self.accounts);
-                            ui.label(
-                                egui::RichText::new(format!("#{}", acct_idx))
-                                    .size(10.5)
-                                    .color(self.colors.accent2)
-                                    .family(egui::FontFamily::Monospace),
-                            );
+                            ui.vertical_centered(|ui| {
+                                ui.label(
+                                    egui::RichText::new(format!("#{}", acct_idx))
+                                        .size(10.5)
+                                        .color(self.colors.accent2)
+                                        .family(egui::FontFamily::Monospace),
+                                );
+                            });
 
                             let hash_str = format!("{:#x}", cell.out_point.tx_hash());
                             let short = format!(

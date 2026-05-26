@@ -45,7 +45,7 @@ impl App {
                                 ui.label(egui::RichText::new("\u{2726}").size(26.0));
                                 ui.add_space(6.0);
                                 ui.label(
-                                    egui::RichText::new("Single Account")
+                                    egui::RichText::new("Create Single Account")
                                         .size(14.0)
                                         .strong()
                                         .color(self.colors.text),
@@ -98,7 +98,7 @@ impl App {
                                 ui.label(egui::RichText::new("\u{1f512}").size(26.0));
                                 ui.add_space(6.0);
                                 ui.label(
-                                    egui::RichText::new("Multi-sig Account")
+                                    egui::RichText::new("Create Multi-sig Account")
                                         .size(14.0)
                                         .strong()
                                         .color(self.colors.text_muted),
@@ -116,9 +116,7 @@ impl App {
                     hover.commit(&multisig_card);
                 });
 
-                ui.add_space(10.0);
-                self.paint_entanglement_divider(ui);
-                ui.add_space(10.0);
+                ui.add_space(20.0);
 
                 // ── Section title ──
                 // Shared pill builder: identical shape/size/font across all badges.
