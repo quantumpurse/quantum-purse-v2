@@ -73,29 +73,38 @@ impl App {
         );
     }
 
-    pub(crate) fn draw_gradient_bg(&self, ui: &mut egui::Ui) {
+    pub(crate) fn draw_gradient_bg(&self, ui: &mut egui::Ui, animate: bool) {
         let rect = ui.clip_rect();
         let painter = ui.painter();
+        let t = if animate {
+            ui.input(|i| i.time) as f32
+        } else {
+            0.0
+        };
 
         // 1. Deep fill.
         painter.rect_filled(rect, 0.0, self.colors.bg);
 
-        // 2. Ambient corner glows — softer and smaller.
+        // 2. Ambient corner glows — slow orbital drift when animated.
         let glow_radius = rect.width().min(rect.height()) * 0.55;
+        let glow1_x = 0.15 + 0.03 * (t * 0.2).sin();
+        let glow1_y = 0.20 + 0.03 * (t * 0.15).cos();
         draw_soft_glow(
             painter,
             egui::pos2(
-                rect.left() + rect.width() * 0.15,
-                rect.top() + rect.height() * 0.20,
+                rect.left() + rect.width() * glow1_x,
+                rect.top() + rect.height() * glow1_y,
             ),
             glow_radius,
             egui::Color32::from_rgb(0, 255, 180),
         );
+        let glow2_x = 0.82 + 0.03 * (t * 0.17).cos();
+        let glow2_y = 0.78 + 0.03 * (t * 0.22).sin();
         draw_soft_glow(
             painter,
             egui::pos2(
-                rect.left() + rect.width() * 0.82,
-                rect.bottom() - rect.height() * 0.22,
+                rect.left() + rect.width() * glow2_x,
+                rect.top() + rect.height() * glow2_y,
             ),
             glow_radius * 0.9,
             egui::Color32::from_rgb(255, 160, 30),
@@ -114,7 +123,7 @@ impl App {
             gx += spacing;
         }
 
-        // 4. Constellation nodes.
+        // 4. Constellation nodes — each star twinkles at its own phase.
         let stars: [(f32, f32, f32, u8, bool); 22] = [
             (0.06, 0.12, 1.8, 160, false),
             (0.11, 0.19, 0.9, 80, false),
@@ -141,19 +150,24 @@ impl App {
         ];
         let accent = egui::Color32::from_rgb(0, 255, 180);
         let accent2 = egui::Color32::from_rgb(0, 200, 255);
-        for (xr, yr, r, alpha, is_cyan) in stars {
+        for (i, (xr, yr, r, alpha, is_cyan)) in stars.iter().enumerate() {
+            let phase = i as f32 * 1.7;
+            let twinkle = if animate {
+                0.6 + 0.4 * (t * 0.8 + phase).sin()
+            } else {
+                1.0
+            };
+            let a = (*alpha as f32 * twinkle).clamp(0.0, 255.0) as u8;
             let pos = egui::pos2(
                 rect.left() + xr * rect.width(),
                 rect.top() + yr * rect.height(),
             );
-            let base = if is_cyan { accent2 } else { accent };
-            let color = egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), alpha);
-            painter.circle_filled(pos, r, color);
+            let base = if *is_cyan { accent2 } else { accent };
+            let color = egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), a);
+            painter.circle_filled(pos, *r, color);
         }
 
-        // 5. Sparse edges — imply a signature-graph / Merkle-adjacent
-        // structure without drawing a full tree. Each `(a, b, alpha)`
-        // connects `stars[a]` → `stars[b]`.
+        // 5. Sparse edges — alpha follows their connected stars.
         let edges: [(usize, usize, u8); 8] = [
             (0, 2, 22),
             (2, 3, 28),
@@ -167,6 +181,14 @@ impl App {
         for (a, b, alpha) in edges {
             let (xa, ya, _, _, cyan_a) = stars[a];
             let (xb, yb, _, _, _) = stars[b];
+            let twinkle = if animate {
+                let phase_a = a as f32 * 1.7;
+                let phase_b = b as f32 * 1.7;
+                0.5 * ((t * 0.8 + phase_a).sin() + (t * 0.8 + phase_b).sin()) * 0.5 + 0.5
+            } else {
+                1.0
+            };
+            let a_mod = (alpha as f32 * twinkle).clamp(0.0, 255.0) as u8;
             let pa = egui::pos2(
                 rect.left() + xa * rect.width(),
                 rect.top() + ya * rect.height(),
@@ -176,8 +198,13 @@ impl App {
                 rect.top() + yb * rect.height(),
             );
             let base = if cyan_a { accent2 } else { accent };
-            let color = egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), alpha);
+            let color =
+                egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), a_mod);
             painter.line_segment([pa, pb], egui::Stroke::new(0.6, color));
+        }
+
+        if animate {
+            ui.ctx().request_repaint();
         }
     }
 

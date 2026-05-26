@@ -457,7 +457,7 @@ impl eframe::App for App {
                 egui::CentralPanel::default()
                     .frame(egui::Frame::new().fill(self.colors.bg))
                     .show(ctx, |ui| {
-                        self.draw_gradient_bg(ui);
+                        self.draw_gradient_bg(ui, false);
                         self.show_welcome(ui);
                     });
             }
@@ -465,7 +465,7 @@ impl eframe::App for App {
                 egui::CentralPanel::default()
                     .frame(egui::Frame::new().fill(self.colors.bg))
                     .show(ctx, |ui| {
-                        self.draw_gradient_bg(ui);
+                        self.draw_gradient_bg(ui, true);
                         self.show_locked(ui);
                     });
             }
