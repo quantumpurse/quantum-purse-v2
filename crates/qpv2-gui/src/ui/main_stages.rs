@@ -504,7 +504,7 @@ impl App {
                     );
                 });
                 ui.add_space(4.0);
-                self.draw_nav_item(ui, Tab::DaoOperations, "\u{2b21}", "DAO");
+                self.draw_nav_item(ui, Tab::DaoOperations, "\u{2b21}", "NERVOS DAO");
 
                 ui.add_space(10.0);
 
