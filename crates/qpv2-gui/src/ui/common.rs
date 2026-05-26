@@ -33,7 +33,7 @@ impl App {
         // flattening contrast against the hero. 0.30 / 0.20 keep the
         // glows tucked at their anchors so most of the bg stays the
         // solid `colors.bg` the mockup intends.
-        let corner_radius = rect.width().min(rect.height()) * 0.30;
+        let corner_radius = rect.width().min(rect.height()) * 0.40;
         let center_radius = rect.width().min(rect.height()) * 0.20;
 
         // Peak alphas mirror the mockup's CSS exactly — 5%, 5%, 3%.
@@ -59,7 +59,7 @@ impl App {
             ),
             corner_radius,
             egui::Color32::from_rgb(255, 160, 30),
-            13,
+            20,
         );
         draw_smooth_glow(
             painter,
@@ -69,7 +69,7 @@ impl App {
             ),
             center_radius,
             self.colors.accent3,
-            8,
+            10,
         );
     }
 
