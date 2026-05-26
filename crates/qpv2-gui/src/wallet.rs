@@ -238,7 +238,9 @@ impl App {
     pub(crate) fn prepare_new_wallet(&self) -> Result<(u32, String), String> {
         let trimmed = self.new_wallet_name.trim();
         let name = if trimmed.is_empty() {
-            names::Generator::default().next().unwrap_or_else(|| "wallet".to_string())
+            names::Generator::default()
+                .next()
+                .unwrap_or_else(|| "wallet".to_string())
         } else {
             trimmed.to_string()
         };
@@ -249,7 +251,11 @@ impl App {
     /// Switch the active wallet. Clears previous wallet state, loads
     /// the new wallet's metadata, and transitions directly to Unlocked.
     pub(crate) fn switch_wallet(&mut self, wallet_id: u32, wallet_name: &str) {
-        tracing::info!("Switching wallet (wallet_id={}, name={})", wallet_id, wallet_name);
+        tracing::info!(
+            "Switching wallet (wallet_id={}, name={})",
+            wallet_id,
+            wallet_name
+        );
         self.clear_wallet_state();
         self.wallet_id = wallet_id;
         self.wallet_name = wallet_name.to_string();
@@ -337,7 +343,11 @@ impl App {
         self.lc_scripts_registered = false;
 
         self.status = Status::Info("Configuration saved. RPC reconnected.".to_string());
-        tracing::info!("Node config applied (node_type={:?}, network={:?})", self.temp_node_type, self.temp_network);
+        tracing::info!(
+            "Node config applied (node_type={:?}, network={:?})",
+            self.temp_node_type,
+            self.temp_network
+        );
 
         // Refresh balances + node status against the new connection so
         // the card repopulates promptly instead of waiting for the
@@ -465,7 +475,11 @@ impl App {
         let vault = KeyVault::new(variant, self.wallet_id);
         match vault.gen_new_account(AuthKey::Password(pw)) {
             Ok(lock_args) => {
-                tracing::info!("Account created (wallet_id={}, lock_args={}...)", self.wallet_id, &lock_args[..8.min(lock_args.len())]);
+                tracing::info!(
+                    "Account created (wallet_id={}, lock_args={}...)",
+                    self.wallet_id,
+                    &lock_args[..8.min(lock_args.len())]
+                );
                 self.balances.insert(lock_args.clone(), None);
                 let qp_client = self.qp_client.clone();
                 let args = lock_args.clone();
@@ -678,7 +692,10 @@ impl App {
                     self.fetch_tx_history(true);
                     self.fetch_dao_cells();
                     self.fetch_node_status();
-                    tracing::info!("Wallet unlocked via keychain (wallet_id={})", self.wallet_id);
+                    tracing::info!(
+                        "Wallet unlocked via keychain (wallet_id={})",
+                        self.wallet_id
+                    );
                 }
                 Err(e) => {
                     let msg = format!("Failed to unlock: {}", e);
@@ -716,7 +733,11 @@ impl App {
         let vault = KeyVault::new(variant, self.wallet_id);
         match vault.gen_new_account(AuthKey::CryptoKey(key)) {
             Ok(lock_args) => {
-                tracing::info!("Account created (wallet_id={}, lock_args={}...)", self.wallet_id, &lock_args[..8.min(lock_args.len())]);
+                tracing::info!(
+                    "Account created (wallet_id={}, lock_args={}...)",
+                    self.wallet_id,
+                    &lock_args[..8.min(lock_args.len())]
+                );
                 self.balances.insert(lock_args.clone(), None);
                 let qp_client = self.qp_client.clone();
                 let args = lock_args.clone();
@@ -1039,7 +1060,11 @@ impl App {
         let vault = KeyVault::new(variant, self.wallet_id);
         match vault.gen_new_account(AuthKey::CryptoKey(key)) {
             Ok(lock_args) => {
-                tracing::info!("Account created (wallet_id={}, lock_args={}...)", self.wallet_id, &lock_args[..8.min(lock_args.len())]);
+                tracing::info!(
+                    "Account created (wallet_id={}, lock_args={}...)",
+                    self.wallet_id,
+                    &lock_args[..8.min(lock_args.len())]
+                );
                 self.balances.insert(lock_args.clone(), None);
                 let qp_client = self.qp_client.clone();
                 let args = lock_args.clone();

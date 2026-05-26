@@ -44,7 +44,9 @@ fn retry_until_ready<T, E: Display>(tag: &str, mut f: impl FnMut() -> Result<Opt
             Err(e) => {
                 tracing::warn!(
                     "tx history: {} failed ({}), retrying in {:?}",
-                    tag, e, delay
+                    tag,
+                    e,
+                    delay
                 );
             }
         }

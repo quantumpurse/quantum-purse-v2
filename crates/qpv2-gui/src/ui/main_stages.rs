@@ -59,151 +59,157 @@ impl App {
             ui.horizontal(|ui| {
                 ui.add_space(left_pad.max(0.0));
                 // ── Left column: CREATE ──
-                ui.allocate_ui_with_layout(egui::vec2(btn_w, thread_h), egui::Layout::top_down(egui::Align::Center), |ui| {
-                    ui.add_space(btn_top_pad);
+                ui.allocate_ui_with_layout(
+                    egui::vec2(btn_w, thread_h),
+                    egui::Layout::top_down(egui::Align::Center),
+                    |ui| {
+                        ui.add_space(btn_top_pad);
 
-                    for group_idx in 0..3u8 {
-                        let label = match group_idx {
-                            0 => format!("Create with {}", keychain::short_name()),
-                            1 => "Create with Security Key".to_string(),
-                            _ => "Create with Password".to_string(),
-                        };
-                        let (fill, text_color, stroke) = self.auth_button_style(group_idx);
+                        for group_idx in 0..3u8 {
+                            let label = match group_idx {
+                                0 => format!("Create with {}", keychain::short_name()),
+                                1 => "Create with Security Key".to_string(),
+                                _ => "Create with Password".to_string(),
+                            };
+                            let (fill, text_color, stroke) = self.auth_button_style(group_idx);
 
-                        let btn = egui::Button::new(
-                            egui::RichText::new(&label)
-                                .size(12.0)
-                                .color(text_color),
-                        )
-                        .fill(fill)
-                        .stroke(stroke)
-                        .corner_radius(8.0)
-                        .min_size(egui::vec2(btn_w, btn_h));
+                            let btn = egui::Button::new(
+                                egui::RichText::new(&label).size(12.0).color(text_color),
+                            )
+                            .fill(fill)
+                            .stroke(stroke)
+                            .corner_radius(8.0)
+                            .min_size(egui::vec2(btn_w, btn_h));
 
-                        if ui.add(btn).clicked() {
-                            let v = self.selected_variant;
-                            match group_idx {
-                                0 => self.create_wallet_with_keychain(v),
-                                1 => self.create_wallet_with_fido2(v),
-                                _ => self.create_wallet_with_password(v),
+                            if ui.add(btn).clicked() {
+                                let v = self.selected_variant;
+                                match group_idx {
+                                    0 => self.create_wallet_with_keychain(v),
+                                    1 => self.create_wallet_with_fido2(v),
+                                    _ => self.create_wallet_with_password(v),
+                                }
+                            }
+
+                            if group_idx < 2 {
+                                ui.add_space(btn_gap);
                             }
                         }
-
-                        if group_idx < 2 {
-                            ui.add_space(btn_gap);
-                        }
-                    }
-                });
+                    },
+                );
 
                 // ── Center column: Variant thread ──
-                ui.allocate_ui_with_layout(egui::vec2(center_w, thread_h), egui::Layout::top_down(egui::Align::Center), |ui| {
-                    let (response, painter) = ui.allocate_painter(
-                        egui::vec2(center_w, thread_h),
-                        egui::Sense::click(),
-                    );
-                    let rect = response.rect;
-                    let line_x = rect.center().x;
+                ui.allocate_ui_with_layout(
+                    egui::vec2(center_w, thread_h),
+                    egui::Layout::top_down(egui::Align::Center),
+                    |ui| {
+                        let (response, painter) = ui
+                            .allocate_painter(egui::vec2(center_w, thread_h), egui::Sense::click());
+                        let rect = response.rect;
+                        let line_x = rect.center().x;
 
-                    let first_y = rect.top();
-                    let last_y = rect.bottom();
+                        let first_y = rect.top();
+                        let last_y = rect.bottom();
 
-                    painter.line_segment(
-                        [egui::pos2(line_x, first_y), egui::pos2(line_x, last_y)],
-                        egui::Stroke::new(1.0, self.colors.border),
-                    );
-
-                    for (i, variant) in variants.iter().enumerate() {
-                        let group = i / 4;
-                        let in_group = i % 4;
-                        let y = rect.top()
-                            + group as f32 * (group_h + group_gap)
-                            + in_group as f32 * row_h
-                            + row_h / 2.0;
-
-                        let is_selected = *variant == self.selected_variant;
-                        let (dot_color, dot_r, text_color) = if is_selected {
-                            (self.colors.accent, 5.0, self.colors.text)
-                        } else {
-                            (self.colors.border2, 3.0, self.colors.text_muted)
-                        };
-
-                        let (hash, param) = variant_parts(*variant);
-
-                        painter.circle_filled(egui::pos2(line_x, y), dot_r, dot_color);
-                        painter.text(
-                            egui::pos2(line_x - 12.0, y),
-                            egui::Align2::RIGHT_CENTER,
-                            hash,
-                            egui::FontId::proportional(11.0),
-                            text_color,
+                        painter.line_segment(
+                            [egui::pos2(line_x, first_y), egui::pos2(line_x, last_y)],
+                            egui::Stroke::new(1.0, self.colors.border),
                         );
-                        painter.text(
-                            egui::pos2(line_x + 12.0, y),
-                            egui::Align2::LEFT_CENTER,
-                            param,
-                            egui::FontId::proportional(11.0),
-                            text_color,
-                        );
-                    }
 
-                    if response.clicked() {
-                        if let Some(pos) = response.interact_pointer_pos() {
-                            for (i, variant) in variants.iter().enumerate() {
-                                let group = i / 4;
-                                let in_group = i % 4;
-                                let y = rect.top()
-                                    + group as f32 * (group_h + group_gap)
-                                    + in_group as f32 * row_h
-                                    + row_h / 2.0;
-                                if (pos.y - y).abs() < row_h / 2.0 {
-                                    self.selected_variant = *variant;
-                                    break;
+                        for (i, variant) in variants.iter().enumerate() {
+                            let group = i / 4;
+                            let in_group = i % 4;
+                            let y = rect.top()
+                                + group as f32 * (group_h + group_gap)
+                                + in_group as f32 * row_h
+                                + row_h / 2.0;
+
+                            let is_selected = *variant == self.selected_variant;
+                            let (dot_color, dot_r, text_color) = if is_selected {
+                                (self.colors.accent, 5.0, self.colors.text)
+                            } else {
+                                (self.colors.border2, 3.0, self.colors.text_muted)
+                            };
+
+                            let (hash, param) = variant_parts(*variant);
+
+                            painter.circle_filled(egui::pos2(line_x, y), dot_r, dot_color);
+                            painter.text(
+                                egui::pos2(line_x - 12.0, y),
+                                egui::Align2::RIGHT_CENTER,
+                                hash,
+                                egui::FontId::proportional(11.0),
+                                text_color,
+                            );
+                            painter.text(
+                                egui::pos2(line_x + 12.0, y),
+                                egui::Align2::LEFT_CENTER,
+                                param,
+                                egui::FontId::proportional(11.0),
+                                text_color,
+                            );
+                        }
+
+                        if response.clicked() {
+                            if let Some(pos) = response.interact_pointer_pos() {
+                                for (i, variant) in variants.iter().enumerate() {
+                                    let group = i / 4;
+                                    let in_group = i % 4;
+                                    let y = rect.top()
+                                        + group as f32 * (group_h + group_gap)
+                                        + in_group as f32 * row_h
+                                        + row_h / 2.0;
+                                    if (pos.y - y).abs() < row_h / 2.0 {
+                                        self.selected_variant = *variant;
+                                        break;
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    if response.hovered() {
-                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                    }
-                });
+                        if response.hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        }
+                    },
+                );
 
                 // ── Right column: IMPORT ──
-                ui.allocate_ui_with_layout(egui::vec2(btn_w, thread_h), egui::Layout::top_down(egui::Align::Center), |ui| {
-                    ui.add_space(btn_top_pad);
+                ui.allocate_ui_with_layout(
+                    egui::vec2(btn_w, thread_h),
+                    egui::Layout::top_down(egui::Align::Center),
+                    |ui| {
+                        ui.add_space(btn_top_pad);
 
-                    for group_idx in 0..3u8 {
-                        let label = match group_idx {
-                            0 => format!("Import with {}", keychain::short_name()),
-                            1 => "Import with Security Key".to_string(),
-                            _ => "Import with Password".to_string(),
-                        };
-                        let (fill, text_color, stroke) = self.auth_button_style(group_idx);
+                        for group_idx in 0..3u8 {
+                            let label = match group_idx {
+                                0 => format!("Import with {}", keychain::short_name()),
+                                1 => "Import with Security Key".to_string(),
+                                _ => "Import with Password".to_string(),
+                            };
+                            let (fill, text_color, stroke) = self.auth_button_style(group_idx);
 
-                        let btn = egui::Button::new(
-                            egui::RichText::new(&label)
-                                .size(12.0)
-                                .color(text_color),
-                        )
-                        .fill(fill)
-                        .stroke(stroke)
-                        .corner_radius(8.0)
-                        .min_size(egui::vec2(btn_w, btn_h));
+                            let btn = egui::Button::new(
+                                egui::RichText::new(&label).size(12.0).color(text_color),
+                            )
+                            .fill(fill)
+                            .stroke(stroke)
+                            .corner_radius(8.0)
+                            .min_size(egui::vec2(btn_w, btn_h));
 
-                        if ui.add(btn).clicked() {
-                            let v = self.selected_variant;
-                            match group_idx {
-                                0 => self.import_seed_phrase_with_keychain(v),
-                                1 => self.import_seed_phrase_with_fido2(v),
-                                _ => self.import_seed_phrase_with_password(v),
+                            if ui.add(btn).clicked() {
+                                let v = self.selected_variant;
+                                match group_idx {
+                                    0 => self.import_seed_phrase_with_keychain(v),
+                                    1 => self.import_seed_phrase_with_fido2(v),
+                                    _ => self.import_seed_phrase_with_password(v),
+                                }
+                            }
+
+                            if group_idx < 2 {
+                                ui.add_space(btn_gap);
                             }
                         }
-
-                        if group_idx < 2 {
-                            ui.add_space(btn_gap);
-                        }
-                    }
-                });
+                    },
+                );
             });
 
             ui.add_space(24.0);

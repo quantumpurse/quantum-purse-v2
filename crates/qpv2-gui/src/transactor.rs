@@ -77,8 +77,7 @@ impl App {
             Err(e) => {
                 let msg = format!("Failed to read wallet variant: {}", e);
                 tracing::error!("{}", msg);
-                self.tx_status =
-                    TransactionStatus::Error(msg);
+                self.tx_status = TransactionStatus::Error(msg);
                 return;
             }
         };
@@ -104,7 +103,11 @@ impl App {
         tracing::info!(
             "Transfer started: to={}, amount={}, send_all={}, wallet_id={}",
             &to_addr_str.get(..8).unwrap_or(&to_addr_str),
-            if send_all { "all".to_string() } else { self.transfer_amount.clone() },
+            if send_all {
+                "all".to_string()
+            } else {
+                self.transfer_amount.clone()
+            },
             send_all,
             self.wallet_id
         );
@@ -203,8 +206,7 @@ impl App {
             Err(e) => {
                 let msg = format!("Failed to read wallet variant: {}", e);
                 tracing::error!("{}", msg);
-                self.tx_status =
-                    TransactionStatus::Error(msg);
+                self.tx_status = TransactionStatus::Error(msg);
                 return;
             }
         };
@@ -299,8 +301,7 @@ impl App {
             Err(e) => {
                 let msg = format!("Failed to read wallet variant: {}", e);
                 tracing::error!("{}", msg);
-                self.tx_status =
-                    TransactionStatus::Error(msg);
+                self.tx_status = TransactionStatus::Error(msg);
                 return;
             }
         };
@@ -369,8 +370,7 @@ impl App {
             Err(e) => {
                 let msg = format!("Failed to read wallet variant: {}", e);
                 tracing::error!("{}", msg);
-                self.tx_status =
-                    TransactionStatus::Error(msg);
+                self.tx_status = TransactionStatus::Error(msg);
                 return;
             }
         };
@@ -594,8 +594,7 @@ impl App {
         {
             let msg = format!("Failed to compute tx message: {:?}", e);
             tracing::error!("{}", msg);
-            self.tx_status =
-                TransactionStatus::Error(msg);
+            self.tx_status = TransactionStatus::Error(msg);
             return;
         }
         let message = hasher.hash().to_vec();

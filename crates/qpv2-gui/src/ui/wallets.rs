@@ -66,7 +66,6 @@ impl App {
                         self.wallet_modal = crate::types::WalletModal::Create;
                         self.new_wallet_name.clear();
                         self.new_wallet_variant = qpv2_core::types::SpxVariant::Sha2128S;
-
                     }
 
                     // Import Seed
@@ -104,7 +103,6 @@ impl App {
                         self.wallet_modal = crate::types::WalletModal::Import;
                         self.new_wallet_name.clear();
                         self.new_wallet_variant = qpv2_core::types::SpxVariant::Sha2128S;
-
                     }
 
                     // Export Seed
@@ -247,8 +245,7 @@ impl App {
                                     let info_width = ui.available_width();
                                     ui.vertical(|ui| {
                                         ui.set_width(info_width);
-                                        let is_renaming =
-                                            self.rename_wallet_id == Some(cw_id);
+                                        let is_renaming = self.rename_wallet_id == Some(cw_id);
 
                                         if is_renaming {
                                             ui.horizontal(|ui| {
@@ -260,12 +257,12 @@ impl App {
                                                 let response = ui.add(field);
 
                                                 if response.lost_focus()
-                                                    && ui.input(|i| {
-                                                        i.key_pressed(egui::Key::Enter)
-                                                    })
+                                                    && ui.input(|i| i.key_pressed(egui::Key::Enter))
                                                 {
-                                                    rename_target =
-                                                        Some((cw_id, self.rename_wallet_buf.clone()));
+                                                    rename_target = Some((
+                                                        cw_id,
+                                                        self.rename_wallet_buf.clone(),
+                                                    ));
                                                 }
 
                                                 let ok_btn = egui::Button::new(
@@ -276,8 +273,10 @@ impl App {
                                                 .fill(egui::Color32::TRANSPARENT);
 
                                                 if ui.add(ok_btn).clicked() {
-                                                    rename_target =
-                                                        Some((cw_id, self.rename_wallet_buf.clone()));
+                                                    rename_target = Some((
+                                                        cw_id,
+                                                        self.rename_wallet_buf.clone(),
+                                                    ));
                                                 }
 
                                                 let cancel_btn = egui::Button::new(
@@ -312,7 +311,6 @@ impl App {
                                                 if pen.clicked() {
                                                     self.rename_wallet_id = Some(cw_id);
                                                     self.rename_wallet_buf = cw_name.clone();
-                            
                                                 }
                                             });
                                         }
@@ -398,9 +396,9 @@ impl App {
                                                     });
                                                 }
                                                 let start = press_start.unwrap_or(now);
-                                                let progress =
-                                                    ((now - start) / HOLD_SECS).clamp(0.0, 1.0)
-                                                        as f32;
+                                                let progress = ((now - start) / HOLD_SECS)
+                                                    .clamp(0.0, 1.0)
+                                                    as f32;
                                                 paint_hold_border(
                                                     ui.painter(),
                                                     del_resp.rect,
@@ -456,7 +454,6 @@ impl App {
 
                         match KeyVault::remove_wallet(id) {
                             Ok(()) => {
-        
                                 if id == self.wallet_id {
                                     self.lock_wallet();
                                     self.refresh_wallet_cache();
@@ -476,7 +473,6 @@ impl App {
                                     Status::Info("Wallet removed successfully.".to_string());
                             }
                             Err(e) => {
-        
                                 let msg = format!("Failed to remove wallet: {}", e);
                                 tracing::error!("{}", msg);
                                 self.status = Status::Error(msg);
@@ -494,16 +490,11 @@ impl App {
                                     self.wallet_name = trimmed.to_string();
                                 }
                                 self.refresh_wallet_cache();
-                                self.status = Status::Info(format!(
-                                    "Wallet renamed to '{}'.",
-                                    trimmed,
-                                ));
+                                self.status =
+                                    Status::Info(format!("Wallet renamed to '{}'.", trimmed,));
                             }
                             Err(e) => {
-                                let msg = format!(
-                                    "Failed to rename wallet: {}",
-                                    e,
-                                );
+                                let msg = format!("Failed to rename wallet: {}", e,);
                                 tracing::error!("{}", msg);
                                 self.status = Status::Error(msg);
                             }
@@ -620,22 +611,28 @@ fn paint_wallet_tile(
 ) {
     let cr = 8.0;
     painter.rect_filled(rect, cr, fill);
-    painter.rect_stroke(rect, cr, egui::Stroke::new(1.0, border), egui::StrokeKind::Inside);
-
-    let stripe = egui::Color32::from_rgba_unmultiplied(
-        border.r(),
-        border.g(),
-        border.b(),
-        40,
+    painter.rect_stroke(
+        rect,
+        cr,
+        egui::Stroke::new(1.0, border),
+        egui::StrokeKind::Inside,
     );
+
+    let stripe = egui::Color32::from_rgba_unmultiplied(border.r(), border.g(), border.b(), 40);
     let step = 8.0;
     let clip = rect.shrink(1.0);
     let mut x = rect.left() - rect.height();
     while x < rect.right() {
         let p0 = egui::pos2(x, rect.bottom());
         let p1 = egui::pos2(x + rect.height(), rect.top());
-        let p0c = egui::pos2(p0.x.clamp(clip.left(), clip.right()), p0.y.clamp(clip.top(), clip.bottom()));
-        let p1c = egui::pos2(p1.x.clamp(clip.left(), clip.right()), p1.y.clamp(clip.top(), clip.bottom()));
+        let p0c = egui::pos2(
+            p0.x.clamp(clip.left(), clip.right()),
+            p0.y.clamp(clip.top(), clip.bottom()),
+        );
+        let p1c = egui::pos2(
+            p1.x.clamp(clip.left(), clip.right()),
+            p1.y.clamp(clip.top(), clip.bottom()),
+        );
         painter.line_segment([p0c, p1c], egui::Stroke::new(0.5, stripe));
         x += step;
     }
