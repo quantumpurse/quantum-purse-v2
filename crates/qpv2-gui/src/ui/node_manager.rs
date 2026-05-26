@@ -100,7 +100,9 @@ impl App {
 		self.local_node.stop();
 		self.apply_node_config();
 		if let Err(e) = self.local_node.spawn() {
-			self.status = Status::Error(format!("Failed to start local node: {}", e));
+			let msg = format!("Failed to start local node: {}", e);
+			tracing::error!("{}", msg);
+			self.status = Status::Error(msg);
 		}
 		if self.temp_network != old_network {
 			self.tx_history_rx = None;

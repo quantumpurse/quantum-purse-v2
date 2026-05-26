@@ -55,7 +55,9 @@ impl App {
         let start_block = match self.qp_client.get_tip_header() {
             Ok(h) => h.inner.number.value(),
             Err(e) => {
-                self.status = Status::Error(format!("Failed to get tip header: {}", e));
+                let msg = format!("Failed to get tip header: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
                 return;
             }
         };
@@ -64,7 +66,9 @@ impl App {
             lock_args_list,
             start_block,
         ) {
-            self.status = Status::Error(format!("Failed to register scripts: {}", e));
+            let msg = format!("Failed to register scripts: {}", e);
+            tracing::error!("{}", msg);
+            self.status = Status::Error(msg);
         }
     }
 
@@ -97,9 +101,12 @@ impl App {
                 self.fetch_tx_history(true);
                 self.fetch_dao_cells();
                 self.fetch_node_status();
+                tracing::info!("Wallet setup finalized (wallet_id={})", self.wallet_id);
             }
             Err(e) => {
-                self.status = Status::Error(format!("Failed to read accounts: {}", e));
+                let msg = format!("Failed to read accounts: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
                 self.auth_method = Some(auth_method);
             }
         }
@@ -154,7 +161,9 @@ impl App {
             &accounts,
             start_block,
         ) {
-            self.status = Status::Error(format!("Failed to set scan block: {}", e));
+            let msg = format!("Failed to set scan block: {}", e);
+            tracing::error!("{}", msg);
+            self.status = Status::Error(msg);
         } else {
             // Reflect the new value in the Synced cell immediately.
             self.node_status.synced_block = Some(start_block);
@@ -221,6 +230,7 @@ impl App {
         self.clear_wallet_state();
         self.screen = Screen::Locked;
         self.status = Status::None;
+        tracing::info!("Wallet locked (wallet_id={})", self.wallet_id);
     }
 
     /// Trim the wallet name and claim the next available wallet ID.
@@ -237,6 +247,7 @@ impl App {
     /// Switch the active wallet. Clears previous wallet state, loads
     /// the new wallet's metadata, and transitions directly to Unlocked.
     pub(crate) fn switch_wallet(&mut self, wallet_id: u32, wallet_name: &str) {
+        tracing::info!("Switching wallet (wallet_id={}, name={})", wallet_id, wallet_name);
         self.clear_wallet_state();
         self.wallet_id = wallet_id;
         self.wallet_name = wallet_name.to_string();
@@ -295,7 +306,9 @@ impl App {
         }
 
         if let Err(e) = new_cfg.save() {
-            self.status = Status::Error(format!("Failed to save config: {}", e));
+            let msg = format!("Failed to save config: {}", e);
+            tracing::error!("{}", msg);
+            self.status = Status::Error(msg);
             return;
         }
 
@@ -322,6 +335,7 @@ impl App {
         self.lc_scripts_registered = false;
 
         self.status = Status::Info("Configuration saved. RPC reconnected.".to_string());
+        tracing::info!("Node config applied (node_type={:?}, network={:?})", self.temp_node_type, self.temp_network);
 
         // Refresh balances + node status against the new connection so
         // the card repopulates promptly instead of waiting for the
@@ -346,7 +360,9 @@ impl App {
             }
             Err(e) => {
                 self.tx_history.clear();
-                self.status = Status::Error(format!("Failed to read cached tx history: {}", e));
+                let msg = format!("Failed to read cached tx history: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
             }
         }
     }
@@ -362,6 +378,7 @@ impl App {
         let (wallet_id, wallet_name) = match self.prepare_new_wallet() {
             Ok(v) => v,
             Err(e) => {
+                tracing::error!("{}", e);
                 self.status = Status::Error(e);
                 return;
             }
@@ -375,6 +392,7 @@ impl App {
         ) {
             Ok(s) => s,
             Err(e) => {
+                tracing::error!("{}", e);
                 self.status = Status::Error(e);
                 return;
             }
@@ -383,7 +401,9 @@ impl App {
         let strength_str = match qpv2_core::utilities::password_checker(&pw) {
             Ok(bits) => format!(" Password strength: {} bits.", bits),
             Err(e) => {
-                self.status = Status::Error(format!("Weak password: {}", e));
+                let msg = format!("Weak password: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
                 return;
             }
         };
@@ -393,12 +413,16 @@ impl App {
         if let Err(e) =
             vault.generate_master_seed(AuthKey::Password(pw), AuthMethod::Password, &wallet_name)
         {
-            self.status = Status::Error(format!("Failed to create wallet: {}", e));
+            let msg = format!("Failed to create wallet: {}", e);
+            tracing::error!("{}", msg);
+            self.status = Status::Error(msg);
             return;
         }
 
         if let Err(e) = vault.gen_new_account(AuthKey::Password(pw_for_account)) {
-            self.status = Status::Error(format!("Failed to create first account: {}", e));
+            let msg = format!("Failed to create first account: {}", e);
+            tracing::error!("{}", msg);
+            self.status = Status::Error(msg);
             self.auth_method = Some(AuthMethod::Password);
             return;
         }
@@ -421,6 +445,7 @@ impl App {
         ) {
             Ok(s) => s,
             Err(e) => {
+                tracing::error!("{}", e);
                 self.status = Status::Error(e);
                 return;
             }
@@ -429,13 +454,16 @@ impl App {
         let variant = match KeyVault::get_spx_variant(self.wallet_id) {
             Ok(v) => v,
             Err(e) => {
-                self.status = Status::Error(format!("Failed to read wallet variant: {}", e));
+                let msg = format!("Failed to read wallet variant: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
                 return;
             }
         };
         let vault = KeyVault::new(variant, self.wallet_id);
         match vault.gen_new_account(AuthKey::Password(pw)) {
             Ok(lock_args) => {
+                tracing::info!("Account created (wallet_id={}, lock_args={}...)", self.wallet_id, &lock_args[..8.min(lock_args.len())]);
                 self.balances.insert(lock_args.clone(), None);
                 let qp_client = self.qp_client.clone();
                 let args = lock_args.clone();
@@ -454,7 +482,9 @@ impl App {
                 self.status = Status::Info("New account created!".to_string());
             }
             Err(e) => {
-                self.status = Status::Error(format!("Failed to create account: {}", e));
+                let msg = format!("Failed to create account: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
             }
         }
     }
@@ -463,6 +493,7 @@ impl App {
         let (wallet_id, wallet_name) = match self.prepare_new_wallet() {
             Ok(v) => v,
             Err(e) => {
+                tracing::error!("{}", e);
                 self.status = Status::Error(e);
                 return;
             }
@@ -470,6 +501,7 @@ impl App {
         let seed_phrase = match qpv2_core::pinentry::prompt_seed_phrase(variant) {
             Ok(s) => s,
             Err(e) => {
+                tracing::error!("{}", e);
                 self.status = Status::Error(e);
                 return;
             }
@@ -484,6 +516,7 @@ impl App {
         ) {
             Ok(s) => s,
             Err(e) => {
+                tracing::error!("{}", e);
                 self.status = Status::Error(e);
                 return;
             }
@@ -492,7 +525,9 @@ impl App {
         let strength_str = match qpv2_core::utilities::password_checker(&pw) {
             Ok(bits) => format!(" Password strength: {} bits.", bits),
             Err(e) => {
-                self.status = Status::Error(format!("Weak password: {}", e));
+                let msg = format!("Weak password: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
                 return;
             }
         };
@@ -506,12 +541,16 @@ impl App {
             AuthMethod::Password,
             &wallet_name,
         ) {
-            self.status = Status::Error(format!("Failed to import wallet: {}", e));
+            let msg = format!("Failed to import wallet: {}", e);
+            tracing::error!("{}", msg);
+            self.status = Status::Error(msg);
             return;
         }
 
         if let Err(e) = vault.gen_new_account(AuthKey::Password(pw_for_account)) {
-            self.status = Status::Error(format!("Failed to create first account: {}", e));
+            let msg = format!("Failed to create first account: {}", e);
+            tracing::error!("{}", msg);
+            self.status = Status::Error(msg);
             self.auth_method = Some(AuthMethod::Password);
             return;
         }
@@ -531,6 +570,7 @@ impl App {
         ) {
             Ok(s) => s,
             Err(e) => {
+                tracing::error!("{}", e);
                 self.status = Status::Error(e);
                 return;
             }
@@ -539,7 +579,9 @@ impl App {
         let variant = match KeyVault::get_spx_variant(self.wallet_id) {
             Ok(v) => v,
             Err(e) => {
-                self.status = Status::Error(format!("Failed to read wallet variant: {}", e));
+                let msg = format!("Failed to read wallet variant: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
                 return;
             }
         };
@@ -547,11 +589,16 @@ impl App {
         match vault.export_seed_phrase(AuthKey::Password(pw)) {
             Ok(phrase) => {
                 if let Err(e) = qpv2_core::pinentry::show_seed_phrase(&phrase) {
+                    tracing::error!("{}", e);
                     self.status = Status::Error(e);
+                } else {
+                    tracing::info!("Seed phrase exported (wallet_id={})", self.wallet_id);
                 }
             }
             Err(e) => {
-                self.status = Status::Error(format!("Failed to export seed phrase: {}", e));
+                let msg = format!("Failed to export seed phrase: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
             }
         }
     }
@@ -563,6 +610,7 @@ impl App {
         let (wallet_id, wallet_name) = match self.prepare_new_wallet() {
             Ok(v) => v,
             Err(e) => {
+                tracing::error!("{}", e);
                 self.status = Status::Error(e);
                 return;
             }
@@ -570,13 +618,17 @@ impl App {
         let key = match qpv2_core::utilities::get_random_bytes(32) {
             Ok(b) => b,
             Err(e) => {
-                self.status = Status::Error(format!("Failed to generate key: {}", e));
+                let msg = format!("Failed to generate key: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
                 return;
             }
         };
 
         if let Err(e) = keychain::store_key(wallet_id, &key) {
-            self.status = Status::Error(format!("Failed to store key in Keychain: {}", e));
+            let msg = format!("Failed to store key in Keychain: {}", e);
+            tracing::error!("{}", msg);
+            self.status = Status::Error(msg);
             return;
         }
 
@@ -587,12 +639,16 @@ impl App {
             vault.generate_master_seed(AuthKey::CryptoKey(key), AuthMethod::Keychain, &wallet_name)
         {
             let _ = keychain::delete_key(wallet_id);
-            self.status = Status::Error(format!("Failed to create wallet: {}", e));
+            let msg = format!("Failed to create wallet: {}", e);
+            tracing::error!("{}", msg);
+            self.status = Status::Error(msg);
             return;
         }
 
         if let Err(e) = vault.gen_new_account(AuthKey::CryptoKey(key_for_account)) {
-            self.status = Status::Error(format!("Failed to create first account: {}", e));
+            let msg = format!("Failed to create first account: {}", e);
+            tracing::error!("{}", msg);
+            self.status = Status::Error(msg);
             self.auth_method = Some(AuthMethod::Keychain);
             return;
         }
@@ -620,12 +676,16 @@ impl App {
                     self.fetch_tx_history(true);
                     self.fetch_dao_cells();
                     self.fetch_node_status();
+                    tracing::info!("Wallet unlocked via keychain (wallet_id={})", self.wallet_id);
                 }
                 Err(e) => {
-                    self.status = Status::Error(format!("Failed to unlock: {}", e));
+                    let msg = format!("Failed to unlock: {}", e);
+                    tracing::error!("{}", msg);
+                    self.status = Status::Error(msg);
                 }
             },
             Err(e) => {
+                tracing::error!("{}", e);
                 self.status = Status::Error(e);
             }
         }
@@ -636,6 +696,7 @@ impl App {
         let key = match keychain::retrieve_key(self.wallet_id) {
             Ok(k) => k,
             Err(e) => {
+                tracing::error!("{}", e);
                 self.status = Status::Error(e);
                 return;
             }
@@ -644,13 +705,16 @@ impl App {
         let variant = match KeyVault::get_spx_variant(self.wallet_id) {
             Ok(v) => v,
             Err(e) => {
-                self.status = Status::Error(format!("Failed to read wallet variant: {}", e));
+                let msg = format!("Failed to read wallet variant: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
                 return;
             }
         };
         let vault = KeyVault::new(variant, self.wallet_id);
         match vault.gen_new_account(AuthKey::CryptoKey(key)) {
             Ok(lock_args) => {
+                tracing::info!("Account created (wallet_id={}, lock_args={}...)", self.wallet_id, &lock_args[..8.min(lock_args.len())]);
                 self.balances.insert(lock_args.clone(), None);
                 let qp_client = self.qp_client.clone();
                 let args = lock_args.clone();
@@ -669,7 +733,9 @@ impl App {
                 self.status = Status::Info("New account created!".to_string());
             }
             Err(e) => {
-                self.status = Status::Error(format!("Failed to create account: {}", e));
+                let msg = format!("Failed to create account: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
             }
         }
     }
@@ -678,6 +744,7 @@ impl App {
         let (wallet_id, wallet_name) = match self.prepare_new_wallet() {
             Ok(v) => v,
             Err(e) => {
+                tracing::error!("{}", e);
                 self.status = Status::Error(e);
                 return;
             }
@@ -685,6 +752,7 @@ impl App {
         let seed_phrase = match qpv2_core::pinentry::prompt_seed_phrase(variant) {
             Ok(s) => s,
             Err(e) => {
+                tracing::error!("{}", e);
                 self.status = Status::Error(e);
                 return;
             }
@@ -693,13 +761,17 @@ impl App {
         let key = match qpv2_core::utilities::get_random_bytes(32) {
             Ok(b) => b,
             Err(e) => {
-                self.status = Status::Error(format!("Failed to generate key: {}", e));
+                let msg = format!("Failed to generate key: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
                 return;
             }
         };
 
         if let Err(e) = keychain::store_key(wallet_id, &key) {
-            self.status = Status::Error(format!("Failed to store key in Keychain: {}", e));
+            let msg = format!("Failed to store key in Keychain: {}", e);
+            tracing::error!("{}", msg);
+            self.status = Status::Error(msg);
             return;
         }
 
@@ -713,12 +785,16 @@ impl App {
             &wallet_name,
         ) {
             let _ = keychain::delete_key(wallet_id);
-            self.status = Status::Error(format!("Failed to import wallet: {}", e));
+            let msg = format!("Failed to import wallet: {}", e);
+            tracing::error!("{}", msg);
+            self.status = Status::Error(msg);
             return;
         }
 
         if let Err(e) = vault.gen_new_account(AuthKey::CryptoKey(key_for_account)) {
-            self.status = Status::Error(format!("Failed to create first account: {}", e));
+            let msg = format!("Failed to create first account: {}", e);
+            tracing::error!("{}", msg);
+            self.status = Status::Error(msg);
             self.auth_method = Some(AuthMethod::Keychain);
             return;
         }
@@ -735,6 +811,7 @@ impl App {
         let key = match keychain::retrieve_key(self.wallet_id) {
             Ok(k) => k,
             Err(e) => {
+                tracing::error!("{}", e);
                 self.status = Status::Error(e);
                 return;
             }
@@ -743,7 +820,9 @@ impl App {
         let variant = match KeyVault::get_spx_variant(self.wallet_id) {
             Ok(v) => v,
             Err(e) => {
-                self.status = Status::Error(format!("Failed to read wallet variant: {}", e));
+                let msg = format!("Failed to read wallet variant: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
                 return;
             }
         };
@@ -751,11 +830,16 @@ impl App {
         match vault.export_seed_phrase(AuthKey::CryptoKey(key)) {
             Ok(phrase) => {
                 if let Err(e) = qpv2_core::pinentry::show_seed_phrase(&phrase) {
+                    tracing::error!("{}", e);
                     self.status = Status::Error(e);
+                } else {
+                    tracing::info!("Seed phrase exported (wallet_id={})", self.wallet_id);
                 }
             }
             Err(e) => {
-                self.status = Status::Error(format!("Failed to export seed phrase: {}", e));
+                let msg = format!("Failed to export seed phrase: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
             }
         }
     }
@@ -767,6 +851,7 @@ impl App {
         let (wallet_id, wallet_name) = match self.prepare_new_wallet() {
             Ok(v) => v,
             Err(e) => {
+                tracing::error!("{}", e);
                 self.status = Status::Error(e);
                 return;
             }
@@ -777,6 +862,7 @@ impl App {
         ) {
             Ok(s) => s,
             Err(e) => {
+                tracing::error!("{}", e);
                 self.status = Status::Error(e);
                 return;
             }
@@ -785,7 +871,9 @@ impl App {
         let credential = match keychain::fido2::register(&pin) {
             Ok(c) => c,
             Err(e) => {
-                self.status = Status::Error(format!("FIDO2 registration failed: {}", e));
+                let msg = format!("FIDO2 registration failed: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
                 return;
             }
         };
@@ -795,7 +883,9 @@ impl App {
         let hmac_output = match keychain::fido2::authenticate(&credential.credential_id, &pin) {
             Ok(h) => h,
             Err(e) => {
-                self.status = Status::Error(format!("FIDO2 authentication failed: {}", e));
+                let msg = format!("FIDO2 authentication failed: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
                 return;
             }
         };
@@ -803,7 +893,9 @@ impl App {
         let key = match qpv2_core::utilities::derive_vault_enc_key(&hmac_output) {
             Ok(k) => k,
             Err(e) => {
-                self.status = Status::Error(format!("Key derivation failed: {}", e));
+                let msg = format!("Key derivation failed: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
                 return;
             }
         };
@@ -817,12 +909,16 @@ impl App {
         if let Err(e) =
             vault.generate_master_seed(AuthKey::CryptoKey(key), auth_method.clone(), &wallet_name)
         {
-            self.status = Status::Error(format!("Failed to create wallet: {}", e));
+            let msg = format!("Failed to create wallet: {}", e);
+            tracing::error!("{}", msg);
+            self.status = Status::Error(msg);
             return;
         }
 
         if let Err(e) = vault.gen_new_account(AuthKey::CryptoKey(key_for_account)) {
-            self.status = Status::Error(format!("Failed to create first account: {}", e));
+            let msg = format!("Failed to create first account: {}", e);
+            tracing::error!("{}", msg);
+            self.status = Status::Error(msg);
             self.auth_method = Some(auth_method);
             return;
         }
@@ -840,7 +936,9 @@ impl App {
         let cred_bytes = match hex::decode(credential_id) {
             Ok(b) => b,
             Err(e) => {
-                self.status = Status::Error(format!("Invalid credential ID: {}", e));
+                let msg = format!("Invalid credential ID: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
                 return;
             }
         };
@@ -851,6 +949,7 @@ impl App {
         ) {
             Ok(s) => s,
             Err(e) => {
+                tracing::error!("{}", e);
                 self.status = Status::Error(e);
                 return;
             }
@@ -868,12 +967,16 @@ impl App {
                     self.fetch_tx_history(true);
                     self.fetch_dao_cells();
                     self.fetch_node_status();
+                    tracing::info!("Wallet unlocked via FIDO2 (wallet_id={})", self.wallet_id);
                 }
                 Err(e) => {
-                    self.status = Status::Error(format!("Failed to unlock: {}", e));
+                    let msg = format!("Failed to unlock: {}", e);
+                    tracing::error!("{}", msg);
+                    self.status = Status::Error(msg);
                 }
             },
             Err(e) => {
+                tracing::error!("{}", e);
                 self.status = Status::Error(e);
             }
         }
@@ -884,7 +987,9 @@ impl App {
         let cred_bytes = match hex::decode(credential_id) {
             Ok(b) => b,
             Err(e) => {
-                self.status = Status::Error(format!("Invalid credential ID: {}", e));
+                let msg = format!("Invalid credential ID: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
                 return;
             }
         };
@@ -895,6 +1000,7 @@ impl App {
         ) {
             Ok(s) => s,
             Err(e) => {
+                tracing::error!("{}", e);
                 self.status = Status::Error(e);
                 return;
             }
@@ -903,6 +1009,7 @@ impl App {
         let hmac_output = match keychain::fido2::authenticate(&cred_bytes, &pin) {
             Ok(h) => h,
             Err(e) => {
+                tracing::error!("{}", e);
                 self.status = Status::Error(e);
                 return;
             }
@@ -911,7 +1018,9 @@ impl App {
         let key = match qpv2_core::utilities::derive_vault_enc_key(&hmac_output) {
             Ok(k) => k,
             Err(e) => {
-                self.status = Status::Error(format!("Key derivation failed: {}", e));
+                let msg = format!("Key derivation failed: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
                 return;
             }
         };
@@ -919,13 +1028,16 @@ impl App {
         let variant = match KeyVault::get_spx_variant(self.wallet_id) {
             Ok(v) => v,
             Err(e) => {
-                self.status = Status::Error(format!("Failed to read wallet variant: {}", e));
+                let msg = format!("Failed to read wallet variant: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
                 return;
             }
         };
         let vault = KeyVault::new(variant, self.wallet_id);
         match vault.gen_new_account(AuthKey::CryptoKey(key)) {
             Ok(lock_args) => {
+                tracing::info!("Account created (wallet_id={}, lock_args={}...)", self.wallet_id, &lock_args[..8.min(lock_args.len())]);
                 self.balances.insert(lock_args.clone(), None);
                 let qp_client = self.qp_client.clone();
                 let args = lock_args.clone();
@@ -944,7 +1056,9 @@ impl App {
                 self.status = Status::Info("New account created!".to_string());
             }
             Err(e) => {
-                self.status = Status::Error(format!("Failed to create account: {}", e));
+                let msg = format!("Failed to create account: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
             }
         }
     }
@@ -953,6 +1067,7 @@ impl App {
         let (wallet_id, wallet_name) = match self.prepare_new_wallet() {
             Ok(v) => v,
             Err(e) => {
+                tracing::error!("{}", e);
                 self.status = Status::Error(e);
                 return;
             }
@@ -961,6 +1076,7 @@ impl App {
         let seed_phrase = match qpv2_core::pinentry::prompt_seed_phrase(variant) {
             Ok(s) => s,
             Err(e) => {
+                tracing::error!("{}", e);
                 self.status = Status::Error(e);
                 return;
             }
@@ -972,6 +1088,7 @@ impl App {
         ) {
             Ok(s) => s,
             Err(e) => {
+                tracing::error!("{}", e);
                 self.status = Status::Error(e);
                 return;
             }
@@ -980,7 +1097,9 @@ impl App {
         let credential = match keychain::fido2::register(&pin) {
             Ok(c) => c,
             Err(e) => {
-                self.status = Status::Error(format!("FIDO2 registration failed: {}", e));
+                let msg = format!("FIDO2 registration failed: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
                 return;
             }
         };
@@ -990,7 +1109,9 @@ impl App {
         let hmac_output = match keychain::fido2::authenticate(&credential.credential_id, &pin) {
             Ok(h) => h,
             Err(e) => {
-                self.status = Status::Error(format!("FIDO2 authentication failed: {}", e));
+                let msg = format!("FIDO2 authentication failed: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
                 return;
             }
         };
@@ -998,7 +1119,9 @@ impl App {
         let key = match qpv2_core::utilities::derive_vault_enc_key(&hmac_output) {
             Ok(k) => k,
             Err(e) => {
-                self.status = Status::Error(format!("Key derivation failed: {}", e));
+                let msg = format!("Key derivation failed: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
                 return;
             }
         };
@@ -1015,12 +1138,16 @@ impl App {
             auth_method.clone(),
             &wallet_name,
         ) {
-            self.status = Status::Error(format!("Failed to import wallet: {}", e));
+            let msg = format!("Failed to import wallet: {}", e);
+            tracing::error!("{}", msg);
+            self.status = Status::Error(msg);
             return;
         }
 
         if let Err(e) = vault.gen_new_account(AuthKey::CryptoKey(key_for_account)) {
-            self.status = Status::Error(format!("Failed to create first account: {}", e));
+            let msg = format!("Failed to create first account: {}", e);
+            tracing::error!("{}", msg);
+            self.status = Status::Error(msg);
             self.auth_method = Some(auth_method);
             return;
         }
@@ -1040,6 +1167,7 @@ impl App {
         ) {
             Ok(s) => s,
             Err(e) => {
+                tracing::error!("{}", e);
                 self.status = Status::Error(e);
                 return;
             }
@@ -1048,7 +1176,9 @@ impl App {
         let cred_bytes = match hex::decode(credential_id) {
             Ok(b) => b,
             Err(e) => {
-                self.status = Status::Error(format!("Invalid credential ID: {}", e));
+                let msg = format!("Invalid credential ID: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
                 return;
             }
         };
@@ -1056,6 +1186,7 @@ impl App {
         let hmac_output = match keychain::fido2::authenticate(&cred_bytes, &pin) {
             Ok(h) => h,
             Err(e) => {
+                tracing::error!("{}", e);
                 self.status = Status::Error(e);
                 return;
             }
@@ -1064,7 +1195,9 @@ impl App {
         let key = match qpv2_core::utilities::derive_vault_enc_key(&hmac_output) {
             Ok(k) => k,
             Err(e) => {
-                self.status = Status::Error(format!("Key derivation failed: {}", e));
+                let msg = format!("Key derivation failed: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
                 return;
             }
         };
@@ -1072,7 +1205,9 @@ impl App {
         let variant = match KeyVault::get_spx_variant(self.wallet_id) {
             Ok(v) => v,
             Err(e) => {
-                self.status = Status::Error(format!("Failed to read wallet variant: {}", e));
+                let msg = format!("Failed to read wallet variant: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
                 return;
             }
         };
@@ -1080,11 +1215,16 @@ impl App {
         match vault.export_seed_phrase(AuthKey::CryptoKey(key)) {
             Ok(phrase) => {
                 if let Err(e) = qpv2_core::pinentry::show_seed_phrase(&phrase) {
+                    tracing::error!("{}", e);
                     self.status = Status::Error(e);
+                } else {
+                    tracing::info!("Seed phrase exported (wallet_id={})", self.wallet_id);
                 }
             }
             Err(e) => {
-                self.status = Status::Error(format!("Failed to export seed phrase: {}", e));
+                let msg = format!("Failed to export seed phrase: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
             }
         }
     }

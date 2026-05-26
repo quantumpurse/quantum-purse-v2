@@ -97,11 +97,13 @@ impl KeyVault {
         match auth {
             AuthKey::Password(password) => {
                 if password.is_empty() || password.is_uninitialized() {
+                    tracing::error!("Password cannot be empty or uninitialized");
                     return Err("Password cannot be empty or uninitialized".to_string());
                 }
             }
             AuthKey::CryptoKey(key) => {
                 if key.is_empty() || key.is_uninitialized() {
+                    tracing::error!("Derived key cannot be empty or uninitialized");
                     return Err("Derived key cannot be empty or uninitialized".to_string());
                 }
             }
@@ -114,6 +116,7 @@ impl KeyVault {
     /// **Returns**:
     /// - `Result<(), String>` - Ok on success, or an error message on failure.
     pub fn clear_database(wallet_id: u32) -> Result<(), String> {
+        tracing::info!("Clearing wallet database (wallet_id={})", wallet_id);
         db::clear_master_seed(wallet_id).map_err(|e| e.to_string())?;
         db::clear_accounts(wallet_id).map_err(|e| e.to_string())?;
         db::clear_wallet_info(wallet_id).map_err(|e| e.to_string())?;
@@ -129,6 +132,7 @@ impl KeyVault {
         let wallet_info = db::get_wallet_info(wallet_id)
             .map_err(|e| e.to_string())?
             .ok_or_else(|| {
+                tracing::error!("Wallet not initialized (wallet_id={})", wallet_id);
                 "Wallet not initialized. Run 'init' or 'import-mnemonic' first.".to_string()
             })?;
         Ok(wallet_info.spx_variant)
@@ -197,14 +201,28 @@ impl KeyVault {
         db::wallets::validate_wallet_name(name, None).map_err(|e| e.to_string())?;
 
         if Self::has_master_seed(self.wallet_id)? {
+            tracing::error!("Master seed already exists (wallet_id={})", self.wallet_id);
             return Err("Master seed already exists".to_string());
         }
 
+        tracing::info!(
+            "Generating master seed (wallet_id={}, variant={}, name={})",
+            self.wallet_id, self.variant, name
+        );
+
         let size = self.variant.required_entropy_size_total();
         let entropy = utilities::get_random_bytes(size)
-            .map_err(|e| format!("Failed generating master seed: {}", e))?;
+            .map_err(|e| {
+                let msg = format!("Failed generating master seed: {}", e);
+                tracing::error!("{}", msg);
+                msg
+            })?;
         let encrypted_seed = utilities::encrypt(&auth, entropy.as_ref())
-            .map_err(|e| format!("Encryption error: {}", e))?;
+            .map_err(|e| {
+                let msg = format!("Encryption error: {}", e);
+                tracing::error!("{}", msg);
+                msg
+            })?;
 
         db::create_wallet_dir(self.wallet_id).map_err(|e| e.to_string())?;
         db::set_encrypted_seed(self.wallet_id, encrypted_seed).map_err(|e| e.to_string())?;
@@ -232,13 +250,24 @@ impl KeyVault {
         // Get and decrypt the master seed
         let payload = db::get_encrypted_seed(self.wallet_id)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| "Master seed not found".to_string())?;
+            .ok_or_else(|| {
+                tracing::error!("Master seed not found");
+                "Master seed not found".to_string()
+            })?;
         let seed = utilities::decrypt(&auth, payload)?;
 
         let index = Self::get_all_sphincs_lock_args(self.wallet_id)?.len() as u32;
+        tracing::info!(
+            "Deriving new account (wallet_id={}, index={})",
+            self.wallet_id, index
+        );
         let (pub_key, _) = self
             .derive_spx_keys(&seed, index)
-            .map_err(|e| format!("Key derivation error: {}", e))?;
+            .map_err(|e| {
+                let msg = format!("Key derivation error: {}", e);
+                tracing::error!("{}", msg);
+                msg
+            })?;
 
         // Calculate lock script args and encrypt corresponding private key
         let lock_script_args = self.get_lock_script_arg(&pub_key);
@@ -300,6 +329,7 @@ impl KeyVault {
         db::wallets::validate_wallet_name(name, None).map_err(|e| e.to_string())?;
 
         if seed_phrase.is_empty() || seed_phrase.is_uninitialized() {
+            tracing::error!("Seed phrase cannot be empty or uninitialized");
             return Err("Seed phrase cannot be empty or uninitialized".to_string());
         }
 
@@ -307,20 +337,31 @@ impl KeyVault {
         let word_count = words.len();
 
         if word_count != self.variant.required_bip39_size_in_word_total() {
-            return Err(format!(
+            let msg = format!(
                 "Mismatch: The chosen SPHINCS+ parameter set {} requires {} words whereas the input mnemonic has {} words.",
                 self.variant,
                 self.variant.required_bip39_size_in_word_total(),
                 word_count
-            ));
+            );
+            tracing::error!("{}", msg);
+            return Err(msg);
         }
+
+        tracing::info!(
+            "Importing seed phrase (wallet_id={}, variant={}, name={})",
+            self.wallet_id, self.variant, name
+        );
 
         let mut combined_entropy = SecureVec::new_with_length(0);
         let size = self.variant.required_bip39_size_in_word_component();
         for (index, chunk) in (0_u8..).zip(words.chunks(size)) {
             let chunk_str = SecureString::from_string(chunk.join(" "));
             let mnemonic = Mnemonic::parse_in(Language::English, &*chunk_str)
-                .map_err(|e| format!("Invalid mnemonic: Chunk{} index {}: {}", size, index, e))?;
+                .map_err(|e| {
+                    let msg = format!("Invalid mnemonic: Chunk{} index {}: {}", size, index, e);
+                    tracing::error!("{}", msg);
+                    msg
+                })?;
             combined_entropy.extend(SecureVec::from_vec(mnemonic.to_entropy()));
         }
 
@@ -350,9 +391,14 @@ impl KeyVault {
     pub fn export_seed_phrase(&self, auth: AuthKey) -> Result<SecureString, String> {
         Self::validate_auth(&auth)?;
 
+        tracing::info!("Exporting seed phrase (wallet_id={})", self.wallet_id);
+
         let payload = db::get_encrypted_seed(self.wallet_id)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| "Master seed not found".to_string())?;
+            .ok_or_else(|| {
+                tracing::error!("Master seed not found");
+                "Master seed not found".to_string()
+            })?;
 
         let entropy = utilities::decrypt(&auth, payload)?;
         let size = self.variant.required_entropy_size_component();
@@ -361,7 +407,11 @@ impl KeyVault {
         let mut combined_mnemonic = SecureString::new();
         for chunk in chunks {
             let mnemonic = Mnemonic::from_entropy_in(Language::English, chunk)
-                .map_err(|e| format!("Export seed error: {}", e))?;
+                .map_err(|e| {
+                let msg = format!("Export seed error: {}", e);
+                tracing::error!("{}", msg);
+                msg
+            })?;
             for word in mnemonic.words() {
                 combined_mnemonic.extend(word); //TODO: Pre-allocate SecureString capacity to prevent push_str reallocation from leaking unzeroized copies of the mnemonic in freed heap memory.
             }
@@ -387,14 +437,25 @@ impl KeyVault {
     ) -> Result<Vec<u8>, String> {
         Self::validate_auth(&auth)?;
 
+        tracing::info!(
+            "CKB signing (wallet_id={}, lock_args={}..)",
+            self.wallet_id, &lock_args[..8.min(lock_args.len())]
+        );
+
         let account = db::get_account(self.wallet_id, &lock_args)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| "Account not found".to_string())?;
+            .ok_or_else(|| {
+                tracing::error!("Account not found");
+                "Account not found".to_string()
+            })?;
 
         // Get and decrypt the master seed
         let payload = db::get_encrypted_seed(self.wallet_id)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| "Master seed not found".to_string())?;
+            .ok_or_else(|| {
+                tracing::error!("Master seed not found");
+                "Master seed not found".to_string()
+            })?;
         let seed = utilities::decrypt(&auth, payload)?;
 
         let (_, pri_key) = self.derive_spx_keys(&seed, account.index)?;
@@ -455,14 +516,25 @@ impl KeyVault {
     ) -> Result<(Vec<u8>, Vec<u8>), String> {
         Self::validate_auth(&auth)?;
 
+        tracing::info!(
+            "Raw signing (wallet_id={}, lock_args={}..)",
+            self.wallet_id, &lock_args[..8.min(lock_args.len())]
+        );
+
         let account = db::get_account(self.wallet_id, &lock_args)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| "Account not found".to_string())?;
+            .ok_or_else(|| {
+                tracing::error!("Account not found");
+                "Account not found".to_string()
+            })?;
 
         // Get and decrypt the master seed
         let payload = db::get_encrypted_seed(self.wallet_id)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| "Master seed not found".to_string())?;
+            .ok_or_else(|| {
+                tracing::error!("Master seed not found");
+                "Master seed not found".to_string()
+            })?;
         let seed = utilities::decrypt(&auth, payload)?;
 
         let (_, pri_key) = self.derive_spx_keys(&seed, account.index)?;
@@ -581,13 +653,20 @@ impl KeyVault {
         // Get and decrypt the master seed
         let payload = db::get_encrypted_seed(self.wallet_id)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| "Master seed not found".to_string())?;
+            .ok_or_else(|| {
+                tracing::error!("Master seed not found");
+                "Master seed not found".to_string()
+            })?;
         let seed = utilities::decrypt(&auth, payload)?;
         let mut lock_args_array: Vec<String> = Vec::new();
         for index in start_index..(start_index + count) {
             let (pub_key, _) = self
                 .derive_spx_keys(&seed, index)
-                .map_err(|e| format!("Key derivation error: {}", e))?;
+                .map_err(|e| {
+                let msg = format!("Key derivation error: {}", e);
+                tracing::error!("{}", msg);
+                msg
+            })?;
 
             // Calculate lock script args
             let lock_script_args = self.get_lock_script_arg(&pub_key);
@@ -606,17 +685,28 @@ impl KeyVault {
     /// - `Result<Vec<String>, String>` - A list of newly generated sphincs+ lock script arguments (processed public keys) on success, or an error on failure.
     pub fn recover_accounts(&self, auth: AuthKey, count: u32) -> Result<Vec<String>, String> {
         Self::validate_auth(&auth)?;
+        tracing::info!(
+            "Recovering accounts (wallet_id={}, count={})",
+            self.wallet_id, count
+        );
 
         // Get and decrypt the master seed
         let payload = db::get_encrypted_seed(self.wallet_id)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| "Master seed not found".to_string())?;
+            .ok_or_else(|| {
+                tracing::error!("Master seed not found");
+                "Master seed not found".to_string()
+            })?;
         let mut lock_args_array: Vec<String> = Vec::new();
         let seed = utilities::decrypt(&auth, payload)?;
         for index in 0..count {
             let (pub_key, _) = self
                 .derive_spx_keys(&seed, index)
-                .map_err(|e| format!("Key derivation error: {}", e))?;
+                .map_err(|e| {
+                let msg = format!("Key derivation error: {}", e);
+                tracing::error!("{}", msg);
+                msg
+            })?;
 
             // Calculate lock script args and encrypt corresponding private key
             let lock_script_args = self.get_lock_script_arg(&pub_key);
@@ -644,6 +734,7 @@ impl KeyVault {
         db::get_wallet_info(wallet_id)
             .map_err(|e| e.to_string())?
             .ok_or_else(|| {
+                tracing::error!("Wallet not initialized (wallet_id={})", wallet_id);
                 "Wallet not initialized. Run 'init' or 'import-mnemonic' first.".to_string()
             })
     }
@@ -655,10 +746,19 @@ impl KeyVault {
             (AuthMethod::Password, AuthMethod::Password) => Ok(()),
             (AuthMethod::Keychain, AuthMethod::Keychain) => Ok(()),
             (AuthMethod::Fido2 { .. }, AuthMethod::Fido2 { .. }) => Ok(()),
-            (actual, attempted) => Err(format!(
-                "Authentication method mismatch: wallet uses {:?}, attempted {:?}.",
-                actual, attempted
-            )),
+            (actual, attempted) => {
+                let label = |m: &AuthMethod| match m {
+                    AuthMethod::Password => "Password",
+                    AuthMethod::Keychain => "Keychain",
+                    AuthMethod::Fido2 { .. } => "Fido2",
+                };
+                let msg = format!(
+                    "Authentication method mismatch: wallet uses {}, attempted {}.",
+                    label(actual), label(attempted)
+                );
+                tracing::error!("{}", msg);
+                Err(msg)
+            }
         }
     }
 
@@ -694,10 +794,15 @@ impl KeyVault {
     }
 
     pub fn remove_wallet(wallet_id: u32) -> Result<(), String> {
+        tracing::info!("Removing wallet (wallet_id={})", wallet_id);
         let dir = db::get_wallet_dir(wallet_id).map_err(|e| e.to_string())?;
         if dir.exists() {
             std::fs::remove_dir_all(&dir)
-                .map_err(|e| format!("Failed to remove wallet directory: {}.", e))?;
+                .map_err(|e| {
+                let msg = format!("Failed to remove wallet directory: {}.", e);
+                tracing::error!("{}", msg);
+                msg
+            })?;
         }
         Ok(())
     }

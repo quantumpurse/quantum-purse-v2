@@ -77,6 +77,7 @@ impl App {
                                 self.create_new_account_with_fido2(&cred_id);
                             }
                             None => {
+                                tracing::error!("No authentication method set.");
                                 self.status =
                                     Status::Error("No authentication method set.".to_string());
                             }

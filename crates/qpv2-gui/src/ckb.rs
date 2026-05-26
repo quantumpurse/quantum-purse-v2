@@ -39,10 +39,10 @@ fn retry_until_ready<T, E: Display>(tag: &str, mut f: impl FnMut() -> Result<Opt
         match f() {
             Ok(Some(v)) => return v,
             Ok(None) => {
-                eprintln!("tx history: {} returned None, retrying in {:?}", tag, delay);
+                tracing::warn!("tx history: {} returned None, retrying in {:?}", tag, delay);
             }
             Err(e) => {
-                eprintln!(
+                tracing::warn!(
                     "tx history: {} failed ({}), retrying in {:?}",
                     tag, e, delay
                 );
@@ -155,7 +155,7 @@ impl App {
                         Err(e) => {
                             let msg = format!("Failed to query DAO cells: {}", e);
                             if e.to_string().contains("http error") {
-                                log::error!("{}", msg);
+                                tracing::error!("{}", msg);
                             } else {
                                 let _ = tx.send(Err(msg));
                             }
@@ -192,6 +192,7 @@ impl App {
     /// The `target` determines which account index to use and where to route the result.
     pub(crate) fn fetch_spendable_capacity(&mut self, target: SpendableCapacityTarget) {
         if self.accounts.is_empty() {
+            tracing::error!("No accounts available.");
             self.tx_status = TransactionStatus::Error("No accounts available.".to_string());
             return;
         }
@@ -210,7 +211,9 @@ impl App {
         let from_addr_str = match lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
             Err(e) => {
-                self.tx_status = TransactionStatus::Error(format!("Invalid sender address: {}", e));
+                let msg = format!("Invalid sender address: {}", e);
+                tracing::error!("{}", msg);
+                self.tx_status = TransactionStatus::Error(msg);
                 return;
             }
         };

@@ -151,6 +151,7 @@ impl App {
                                 self.export_seed_phrase_with_fido2(&cred_id);
                             }
                             None => {
+                                tracing::error!("No authentication method set.");
                                 self.status =
                                     Status::Error("No authentication method set.".to_string());
                             }
@@ -476,8 +477,9 @@ impl App {
                             }
                             Err(e) => {
         
-                                self.status =
-                                    Status::Error(format!("Failed to remove wallet: {}", e));
+                                let msg = format!("Failed to remove wallet: {}", e);
+                                tracing::error!("{}", msg);
+                                self.status = Status::Error(msg);
                             }
                         }
                     }
@@ -498,10 +500,12 @@ impl App {
                                 ));
                             }
                             Err(e) => {
-                                self.status = Status::Error(format!(
+                                let msg = format!(
                                     "Failed to rename wallet: {}",
                                     e,
-                                ));
+                                );
+                                tracing::error!("{}", msg);
+                                self.status = Status::Error(msg);
                             }
                         }
                         self.rename_wallet_id = None;

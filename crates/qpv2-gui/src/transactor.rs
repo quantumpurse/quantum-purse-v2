@@ -36,6 +36,7 @@ impl App {
     pub(crate) fn transfer_async(&mut self) {
         // Validate inputs
         if self.accounts.is_empty() {
+            tracing::error!("No accounts available.");
             self.tx_status = TransactionStatus::Error("No accounts available.".to_string());
             return;
         }
@@ -47,13 +48,16 @@ impl App {
         let from_addr_str = match crate::ckb::lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
             Err(e) => {
-                self.tx_status = TransactionStatus::Error(format!("Invalid sender address: {}", e));
+                let msg = format!("Invalid sender address: {}", e);
+                tracing::error!("{}", msg);
+                self.tx_status = TransactionStatus::Error(msg);
                 return;
             }
         };
 
         let to_addr_str = self.transfer_recipient.trim().to_string();
         if to_addr_str.is_empty() {
+            tracing::error!("Recipient address is empty.");
             self.tx_status = TransactionStatus::Error("Recipient address is empty.".to_string());
             return;
         }
@@ -61,6 +65,7 @@ impl App {
         let fee_rate: u64 = match self.transfer_fee_rate.trim().parse() {
             Ok(v) => v,
             Err(_) => {
+                tracing::error!("Invalid fee rate.");
                 self.tx_status = TransactionStatus::Error("Invalid fee rate.".to_string());
                 return;
             }
@@ -70,8 +75,10 @@ impl App {
         let variant = match KeyVault::get_spx_variant(self.wallet_id) {
             Ok(v) => v,
             Err(e) => {
+                let msg = format!("Failed to read wallet variant: {}", e);
+                tracing::error!("{}", msg);
                 self.tx_status =
-                    TransactionStatus::Error(format!("Failed to read wallet variant: {}", e));
+                    TransactionStatus::Error(msg);
                 return;
             }
         };
@@ -86,6 +93,7 @@ impl App {
             let amount_ckb: f64 = match self.transfer_amount.trim().parse() {
                 Ok(v) if v > 0.0 => v,
                 _ => {
+                    tracing::error!("Invalid amount.");
                     self.tx_status = TransactionStatus::Error("Invalid amount.".to_string());
                     return;
                 }
@@ -93,6 +101,13 @@ impl App {
             (amount_ckb * CKB_DECIMAL_PLACES as f64) as u64
         };
 
+        tracing::info!(
+            "Transfer started: to={}, amount={}, send_all={}, wallet_id={}",
+            &to_addr_str.get(..8).unwrap_or(&to_addr_str),
+            if send_all { "all".to_string() } else { self.transfer_amount.clone() },
+            send_all,
+            self.wallet_id
+        );
         self.tx_status = TransactionStatus::Building;
         let qp_client = self.qp_client.clone();
         let node_type = self.qp_client.config().node_type;
@@ -155,6 +170,7 @@ impl App {
     /// Start building a DAO deposit transaction in a background thread.
     pub(crate) fn dao_deposit_async(&mut self) {
         if self.accounts.is_empty() {
+            tracing::error!("No accounts available.");
             self.tx_status = TransactionStatus::Error("No accounts available.".to_string());
             return;
         }
@@ -166,7 +182,9 @@ impl App {
         let from_addr_str = match crate::ckb::lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
             Err(e) => {
-                self.tx_status = TransactionStatus::Error(format!("Invalid sender address: {}", e));
+                let msg = format!("Invalid sender address: {}", e);
+                tracing::error!("{}", msg);
+                self.tx_status = TransactionStatus::Error(msg);
                 return;
             }
         };
@@ -174,6 +192,7 @@ impl App {
         let fee_rate: u64 = match self.dao_deposit_fee_rate.trim().parse() {
             Ok(v) => v,
             Err(_) => {
+                tracing::error!("Invalid fee rate.");
                 self.tx_status = TransactionStatus::Error("Invalid fee rate.".to_string());
                 return;
             }
@@ -182,8 +201,10 @@ impl App {
         let variant = match KeyVault::get_spx_variant(self.wallet_id) {
             Ok(v) => v,
             Err(e) => {
+                let msg = format!("Failed to read wallet variant: {}", e);
+                tracing::error!("{}", msg);
                 self.tx_status =
-                    TransactionStatus::Error(format!("Failed to read wallet variant: {}", e));
+                    TransactionStatus::Error(msg);
                 return;
             }
         };
@@ -198,6 +219,7 @@ impl App {
             let amount_ckb: f64 = match self.dao_deposit_amount.trim().parse() {
                 Ok(v) if v > 0.0 => v,
                 _ => {
+                    tracing::error!("Invalid amount.");
                     self.tx_status = TransactionStatus::Error("Invalid amount.".to_string());
                     return;
                 }
@@ -205,6 +227,11 @@ impl App {
             (amount_ckb * CKB_DECIMAL_PLACES as f64) as u64
         };
 
+        tracing::info!(
+            "DAO deposit started: deposit_all={}, wallet_id={}",
+            deposit_all,
+            self.wallet_id
+        );
         self.tx_status = TransactionStatus::Building;
         let qp_client = self.qp_client.clone();
         let node_type = self.qp_client.config().node_type;
@@ -258,7 +285,9 @@ impl App {
         let from_addr_str = match crate::ckb::lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
             Err(e) => {
-                self.tx_status = TransactionStatus::Error(format!("Invalid sender address: {}", e));
+                let msg = format!("Invalid sender address: {}", e);
+                tracing::error!("{}", msg);
+                self.tx_status = TransactionStatus::Error(msg);
                 return;
             }
         };
@@ -268,13 +297,16 @@ impl App {
         let variant = match KeyVault::get_spx_variant(self.wallet_id) {
             Ok(v) => v,
             Err(e) => {
+                let msg = format!("Failed to read wallet variant: {}", e);
+                tracing::error!("{}", msg);
                 self.tx_status =
-                    TransactionStatus::Error(format!("Failed to read wallet variant: {}", e));
+                    TransactionStatus::Error(msg);
                 return;
             }
         };
         let witness_lock_size = spx_witness_lock_size(variant);
 
+        tracing::info!("DAO prepare started: wallet_id={}", self.wallet_id);
         self.tx_status = TransactionStatus::Building;
         let qp_client = self.qp_client.clone();
         let node_type = self.qp_client.config().node_type;
@@ -323,7 +355,9 @@ impl App {
         let from_addr_str = match crate::ckb::lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
             Err(e) => {
-                self.tx_status = TransactionStatus::Error(format!("Invalid sender address: {}", e));
+                let msg = format!("Invalid sender address: {}", e);
+                tracing::error!("{}", msg);
+                self.tx_status = TransactionStatus::Error(msg);
                 return;
             }
         };
@@ -333,13 +367,16 @@ impl App {
         let variant = match KeyVault::get_spx_variant(self.wallet_id) {
             Ok(v) => v,
             Err(e) => {
+                let msg = format!("Failed to read wallet variant: {}", e);
+                tracing::error!("{}", msg);
                 self.tx_status =
-                    TransactionStatus::Error(format!("Failed to read wallet variant: {}", e));
+                    TransactionStatus::Error(msg);
                 return;
             }
         };
         let witness_lock_size = spx_witness_lock_size(variant);
 
+        tracing::info!("DAO withdraw started: wallet_id={}", self.wallet_id);
         self.tx_status = TransactionStatus::Building;
         let qp_client = self.qp_client.clone();
         let node_type = self.qp_client.config().node_type;
@@ -390,6 +427,7 @@ impl App {
         ) {
             Ok(s) => s,
             Err(e) => {
+                tracing::error!("Password prompt failed: {}", e);
                 self.tx_status = TransactionStatus::Idle;
                 self.status = Status::Error(e);
                 return;
@@ -415,6 +453,7 @@ impl App {
         let key = match keychain::retrieve_key(self.wallet_id) {
             Ok(k) => k,
             Err(e) => {
+                tracing::error!("Keychain retrieval failed: {}", e);
                 self.tx_status = TransactionStatus::Idle;
                 self.status = Status::Error(e);
                 return;
@@ -441,8 +480,10 @@ impl App {
         let cred_bytes = match hex::decode(credential_id) {
             Ok(b) => b,
             Err(e) => {
+                let msg = format!("Invalid credential ID: {}", e);
+                tracing::error!("{}", msg);
                 self.tx_status = TransactionStatus::Idle;
-                self.status = Status::Error(format!("Invalid credential ID: {}", e));
+                self.status = Status::Error(msg);
                 return;
             }
         };
@@ -453,6 +494,7 @@ impl App {
         ) {
             Ok(s) => s,
             Err(e) => {
+                tracing::error!("FIDO2 PIN prompt failed: {}", e);
                 self.tx_status = TransactionStatus::Idle;
                 self.status = Status::Error(e);
                 return;
@@ -462,6 +504,7 @@ impl App {
         let hmac_output = match keychain::fido2::authenticate(&cred_bytes, &pin) {
             Ok(h) => h,
             Err(e) => {
+                tracing::error!("FIDO2 authentication failed: {}", e);
                 self.tx_status = TransactionStatus::Idle;
                 self.status = Status::Error(e);
                 return;
@@ -471,8 +514,10 @@ impl App {
         let key = match qpv2_core::utilities::derive_vault_enc_key(&hmac_output) {
             Ok(k) => k,
             Err(e) => {
+                let msg = format!("Key derivation failed: {}", e);
+                tracing::error!("{}", msg);
                 self.tx_status = TransactionStatus::Idle;
-                self.status = Status::Error(format!("Key derivation failed: {}", e));
+                self.status = Status::Error(msg);
                 return;
             }
         };
@@ -504,10 +549,18 @@ impl App {
         let variant = match KeyVault::get_spx_variant(self.wallet_id) {
             Ok(v) => v,
             Err(e) => {
-                self.tx_status = TransactionStatus::Error(format!("Failed to read variant: {}", e));
+                let msg = format!("Failed to read variant: {}", e);
+                tracing::error!("{}", msg);
+                self.tx_status = TransactionStatus::Error(msg);
                 return;
             }
         };
+
+        tracing::info!(
+            "Signing initiated: variant={:?}, wallet_id={}",
+            variant,
+            self.wallet_id
+        );
 
         let packed_tx = unsigned_tx.data();
         let mut hasher = ckb_fips205_utils::Hasher::message_hasher();
@@ -539,8 +592,10 @@ impl App {
                 &mut hasher,
             )
         {
+            let msg = format!("Failed to compute tx message: {:?}", e);
+            tracing::error!("{}", msg);
             self.tx_status =
-                TransactionStatus::Error(format!("Failed to compute tx message: {:?}", e));
+                TransactionStatus::Error(msg);
             return;
         }
         let message = hasher.hash().to_vec();
@@ -549,7 +604,9 @@ impl App {
         let signature_bytes = match vault.ckb_sign(auth, lock_args, message) {
             Ok(sig) => sig,
             Err(e) => {
-                self.tx_status = TransactionStatus::Error(format!("Signing failed: {}", e));
+                let msg = format!("Signing failed: {}", e);
+                tracing::error!("{}", msg);
+                self.tx_status = TransactionStatus::Error(msg);
                 return;
             }
         };
@@ -557,11 +614,14 @@ impl App {
         let signed_tx = match ckb_node::fill_witness(unsigned_tx, 0, signature_bytes) {
             Ok(tx) => tx,
             Err(e) => {
-                self.tx_status = TransactionStatus::Error(format!("Failed to fill witness: {}", e));
+                let msg = format!("Failed to fill witness: {}", e);
+                tracing::error!("{}", msg);
+                self.tx_status = TransactionStatus::Error(msg);
                 return;
             }
         };
 
+        tracing::info!("Transaction signed successfully, sending to network.");
         self.tx_status = TransactionStatus::Sending;
         let qp_client = self.qp_client.clone();
         let (tx_send, rx_send) = mpsc::channel();

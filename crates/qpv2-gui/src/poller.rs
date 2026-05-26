@@ -32,6 +32,7 @@ impl App {
             }
             Ok(Err(e)) => {
                 self.spendable_capacity_rx = None;
+                tracing::error!("Spendable capacity error: {}", e);
                 self.tx_status = TransactionStatus::Error(e);
             }
             Err(mpsc::TryRecvError::Empty) => {}
@@ -72,6 +73,7 @@ impl App {
                         );
                     }
                     None => {
+                        tracing::error!("No authentication method set.");
                         self.tx_status =
                             TransactionStatus::Error("No authentication method set.".to_string());
                     }
@@ -79,12 +81,14 @@ impl App {
             }
             Ok(Err(e)) => {
                 self.transaction_build_rx = None;
+                tracing::error!("Transaction build failed: {}", e);
                 self.tx_status = TransactionStatus::Error(e);
             }
             Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => {
                 self.transaction_build_rx = None;
                 if matches!(self.tx_status, TransactionStatus::Building) {
+                    tracing::error!("Build thread terminated unexpectedly.");
                     self.tx_status = TransactionStatus::Error(
                         "Build thread terminated unexpectedly.".to_string(),
                     );
@@ -120,12 +124,14 @@ impl App {
             }
             Ok((_, Err(e))) => {
                 self.transaction_send_rx = None;
+                tracing::error!("Transaction send failed: {}", e);
                 self.tx_status = TransactionStatus::Error(e);
             }
             Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => {
                 self.transaction_send_rx = None;
                 if matches!(self.tx_status, TransactionStatus::Sending) {
+                    tracing::error!("Send thread terminated unexpectedly.");
                     self.tx_status = TransactionStatus::Error(
                         "Send thread terminated unexpectedly.".to_string(),
                     );
@@ -152,9 +158,8 @@ impl App {
                     // Transient HTTP errors are expected when the local RPC node is
                     // momentarily busy (light client compaction, full node sync bursts).
                     // Log to file but don't surface in the UI to avoid noisy false alarms.
-                    if e.contains("http error") {
-                        log::error!("{}", msg);
-                    } else {
+                    tracing::error!("{}", msg);
+                    if !e.contains("http error") {
                         self.status = Status::Error(msg);
                     }
                 }
@@ -214,9 +219,8 @@ impl App {
                     // Transient HTTP errors are expected when the local RPC node is
                     // momentarily busy (light client compaction, full node sync bursts).
                     // Log to file but don't surface in the UI to avoid noisy false alarms.
-                    if e.contains("http error") {
-                        log::error!("{}", e);
-                    } else {
+                    tracing::error!("{}", e);
+                    if !e.contains("http error") {
                         self.status = Status::Error(e);
                     }
                     break;
@@ -264,7 +268,7 @@ impl App {
                         records: self.tx_history.clone(),
                     };
                     if let Err(e) = store.save(self.wallet_id, self.qp_client.network().tag()) {
-                        eprintln!("tx_history: failed to persist: {}", e);
+                        tracing::error!("tx_history: failed to persist: {}", e);
                     }
                     break;
                 }
@@ -272,9 +276,8 @@ impl App {
                     // Transient HTTP errors are expected when the local RPC node is
                     // momentarily busy (light client compaction, full node sync bursts).
                     // Log to file but don't surface in the UI to avoid noisy false alarms.
-                    if e.contains("http error") {
-                        log::error!("tx_history: {}", e);
-                    } else {
+                    tracing::error!("tx_history: {}", e);
+                    if !e.contains("http error") {
                         self.status = Status::Error(e);
                     }
                 }
@@ -298,6 +301,7 @@ impl App {
     /// latency.
     pub(crate) fn poll_node_status(&mut self) {
         if self.local_node.has_local_process() && !self.local_node.is_alive() {
+            tracing::error!("Local node exited unexpectedly. See node.log in the data dir.");
             self.status = Status::Error(
                 "Local node exited unexpectedly. See node.log in the data dir.".to_string(),
             );
@@ -318,7 +322,7 @@ impl App {
             }
             Ok(Err(e)) => {
                 self.node_status_rx = None;
-                eprintln!("node status: {}", e);
+                tracing::error!("node status: {}", e);
             }
             Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => {
@@ -346,7 +350,7 @@ impl App {
                 match ckb_node::wallet_helpers::lc::fetch_qr_lock_dep(&self.qp_client) {
                     Ok(true) => self.lc_qr_dep_warmup_done = true,
                     Ok(false) => {} // pending — retry next tick
-                    Err(e) => eprintln!("lc warmup: fetch_qr_lock_dep: {}", e),
+                    Err(e) => tracing::error!("lc warmup: fetch_qr_lock_dep: {}", e),
                 }
             }
 
@@ -364,7 +368,7 @@ impl App {
                     start_block,
                 ) {
                     Ok(()) => self.lc_scripts_registered = true,
-                    Err(e) => eprintln!("lc warmup: register_lock_scripts: {}", e),
+                    Err(e) => tracing::error!("lc warmup: register_lock_scripts: {}", e),
                 }
             }
         }
@@ -404,9 +408,8 @@ impl App {
                 // Transient HTTP errors are expected when the local RPC node is
                 // momentarily busy (light client compaction, full node sync bursts).
                 // Log to file but don't surface in the UI to avoid noisy false alarms.
-                if e.contains("http error") {
-                    log::error!("{}", msg);
-                } else {
+                tracing::error!("{}", msg);
+                if !e.contains("http error") {
                     self.status = Status::Error(msg);
                 }
                 self.earliest_funding_block_rx = None;

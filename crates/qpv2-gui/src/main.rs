@@ -291,7 +291,11 @@ impl App {
                     Status::None
                 }
             }
-            Err(e) => Status::Error(format!("Failed to auto-start node: {}", e)),
+            Err(e) => {
+                let msg = format!("Failed to auto-start node: {}", e);
+                tracing::error!("{}", msg);
+                Status::Error(msg)
+            }
         };
 
         let settings_rpc_url = node_config.rpc_url.clone();
@@ -485,13 +489,21 @@ impl eframe::App for App {
 
 fn main() -> eframe::Result {
     if let Ok(data_dir) = qpv2_core::db::get_data_dir() {
-        let log_path = data_dir.join("qpv2-gui.log");
-        if let Ok(file) = std::fs::File::create(&log_path) {
-            let _ = simplelog::WriteLogger::init(
-                simplelog::LevelFilter::Warn,
-                simplelog::Config::default(),
-                file,
-            );
+        let log_path = data_dir.join("qpv2.log");
+        if let Ok(file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+        {
+            let subscriber = tracing_subscriber::fmt()
+                .with_writer(file)
+                .with_ansi(false)
+                .with_target(true)
+                .with_file(true)
+                .with_line_number(true)
+                .with_max_level(tracing::Level::INFO)
+                .finish();
+            let _ = tracing::subscriber::set_global_default(subscriber);
         }
     }
 
