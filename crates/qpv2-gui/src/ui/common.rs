@@ -200,8 +200,7 @@ impl App {
                 rect.top() + yb * rect.height(),
             );
             let base = if cyan_a { accent2 } else { accent };
-            let color =
-                egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), a_mod);
+            let color = egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), a_mod);
             painter.line_segment([pa, pb], egui::Stroke::new(0.6, color));
         }
 
