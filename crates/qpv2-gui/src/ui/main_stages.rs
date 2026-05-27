@@ -524,7 +524,7 @@ impl App {
                     );
                 });
                 ui.add_space(4.0);
-                self.draw_nav_item(ui, Tab::NodeManager, "\u{25c9}", "Nodes");
+                self.draw_nav_item(ui, Tab::NodeManager, "\u{25c9}", "Networks");
                 self.draw_nav_item(ui, Tab::Wallets, "\u{25EB}", "Wallets");
                 self.draw_nav_item(ui, Tab::Accounts, "\u{25ce}", "Accounts");
 

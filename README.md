@@ -1,30 +1,15 @@
 # QPV2
 
-Rust Quantum Purse. Secure and Performant. There are 2 UI options: CLI and GUI (egui).
-
-Developed in collaboration with Claude Opus (4.5 / 4.6): developer-led architecture, abstraction boundaries, and design decisions; Claude-authored implementation under review.
+Rust Quantum Purse. Secure and Performant. There are 2 UI options: CLI and GUI (egui). Design by human, developed in collaboration with Claude Opus (4.5 / 4.6).
 
 ### Crates
 
 - **`qpv2-core`** — Core library. Seed generation, AES-256-GCM encryption, HKDF-SHA256 key derivation, Scrypt password hashing, SPHINCS+ signing across all 12 parameter sets, and file-based JSON storage with multi-wallet support.
 - **`qpv2-cli`** — CLI binary built with `clap`. Supports all authentication methods (password, keychain, FIDO2). Multi-wallet management, account derivation, raw signing, and CKB transaction signing.
-- **`qpv2-gui`** — GUI binary built with `egui`/`eframe`. Supports all authentication methods. Provides node management, CKB transfers, NervosDAO operations (deposit/prepare/withdraw), and account overview with balance display.
+- **`qpv2-gui`** — GUI binary built with `egui`/`eframe`. Supports all authentication methods. Provides node management, CKB transfers, NervosDAO operations.
 - **`keychain`** — Multi-platform credential storage. Touch ID via Data Protection Keychain (macOS), Windows Hello + TPM via Microsoft Passport KSP (Windows), TPM 2.0 seal/unseal with PIN (Linux), and FIDO2 hmac-secret extension for hardware security keys.
-- **`node-manager`** — CKB node lifecycle and RPC abstraction. Unified `Client` trait over public RPC endpoints, light client (header-only sync), and full node (complete chain verification). Transaction builders for transfers and NervosDAO operations.
+- **`node-manager`** — CKB node lifecycle and RPC abstraction.
 - **`ckb-fips205-utils`** — CKB transaction hashing utilities for SPHINCS+. Computes `CKB_TX_MESSAGE_ALL` signing message from mock transactions. Feature-gated for verifying, signing, message extraction, and serde support.
-
-###### <u>Feature list</u>:
-
-| Feature               | Details              |
-|-----------------------|----------------------|
-| **Signature type**    | SPHINCS+             |
-| **Store model**       | File-based (JSON)    |
-| **Mnemonic standard** | Custom BIP39 English |
-| **Local encryption**  | AES256               |
-| **Key derivation**    | HKDF-SHA256          |
-| **Authentication**    | Password / Platform credential store (Touch ID, Windows Hello, TPM) / FIDO2 |
-| **Password hashing**  | Scrypt               |
-| **Platform**          | macOS, Windows, Linux |
 
 ### Custom BIP39
 BIP39 is chosen as the mnemonic backup format due to its user-friendliness and quantum resistance.
@@ -152,51 +137,6 @@ reads the final password from a kernel pipe at the moment the user
 submits, copies it once into a zeroize-on-drop `SecureString`, and
 drops it the moment the vault op (sign / decrypt / new account)
 returns.
-
-#### Why not just use an egui text field?
-
-A straightforward `egui::TextEdit::singleline(&mut String).password(true)`
-would have the password live inside the wallet's own heap **for the
-entire typing duration** (potentially many seconds), with `String`
-reallocations during keystrokes leaving orphan plaintext fragments in
-freed memory that no application code can zero. Out-of-process entry
-sidesteps both: typing happens in the dialog program's address space,
-and our process gets the bytes as a single small read at the end —
-sub-millisecond exposure window before the bytes enter `SecureString`.
-
-#### How: the `pinentry` crate
-
-QPV2 uses the [`pinentry`](https://docs.rs/pinentry) Rust crate, which
-wraps the GnuPG-project `pinentry-*` family of dialog binaries via the
-[Assuan protocol](https://www.gnupg.org/documentation/manuals/assuan/)
-(line-based text over stdin/stdout pipes). The same Rust call site
-works on every supported OS — only the bundled binary differs:
-
-| OS      | Bundled binary       | UI rendering |
-|---------|----------------------|----------------------------------------------|
-| macOS   | `pinentry-mac`       | Native Cocoa window with `NSSecureTextField` (mlock'd buffer + `EnableSecureEventInput()` to block other apps from tapping the keystrokes) |
-| Windows | `pinentry-w64.exe`   | Native Win32 dialog (with `SecureZeroMemory` backing) |
-| Linux   | `pinentry-gtk-2`     | GTK 2 dialog with secure-entry mode (mlock + clipboard blocking); `pinentry-curses` ncurses fallback for headless |
-
-The binaries ship inside the application bundle / installer — end
-users install nothing. Each platform's dialog inherits that OS's
-**purpose-built secure-input infrastructure**: NSSecureTextField on
-macOS prevents accessibility-API observers, screen recorders, and IME
-services from seeing the field's content; the equivalent Win32 and
-GTK widgets do similar.
-
-#### What pinentry does *not* protect against
-
-- An OS-level keylogger above the dialog still sees keystrokes — same
-  as it would for any password input on the system. Hardware wallets
-  / Touch ID / Windows Hello / Secure Enclave are the only categorical
-  defenses.
-- A compromised bundled `pinentry-*` binary is game-over (same threat
-  as a compromised wallet binary). Both are signed/notarized at build
-  time.
-
-The "PIN" in pinentry is historical naming — the binaries handle full
-passphrases (any length, full Unicode), not just numeric PINs.
 
 ### Credential Store Authentication
 
@@ -337,46 +277,3 @@ hardware operation gated by authentication produces or releases a key.
 | Authentication gate | PIN (verified on-device, 8 retries) | Windows Hello biometric/PIN | TPM authorization policy | Touch ID (biometric match in Secure Enclave) |
 | Secret origin | Generated inside the device (CredRandom) | Generated on the client | Generated on the client | Generated on the client |
 | Key leaves hardware? | Never — only HMAC derivative returned | Only during unseal operation | Only during unseal operation | Only during decrypt operation |
-
-### Authentication Roadmap
-
-| Platform | Primary | Fallback |
-|---|---|---|
-| macOS | Secure Enclave + Touch ID (done) | Password via Pinentry |
-| Windows | TPM + Windows Hello via `windows-sys` NCrypt (done) | Password via Pinentry |
-| Linux | TPM seal via `tss-esapi` (done) | Password via Pinentry |
-| All | FIDO2 via `ctap-hid-fido2` (done) | Password via Pinentry |
-
-### Data Storage
-
-Wallet state lives in the platform-standard application data dir:
-
-- macOS:   `~/Library/Application Support/quantum-purse/`
-- Linux:   `~/.local/share/quantum-purse/`
-- Windows: `%APPDATA%\quantum-purse\`
-
-Directory layout:
-
-```
-quantum-purse/
-  wallets/
-    0/                              # First wallet
-      seed.json              — encrypted master seed
-      accounts.json                 — derived SPHINCS+ accounts
-      meta.json              — name + variant + auth method
-      tx_history_<network>.json     — per-network tx-history cache
-    1/                              # Second wallet
-      ...
-  node/                             — node-manager state (shared)
-```
-
-Each wallet is identified by a numeric ID (auto-assigned). The display name is stored in `meta.json`.
-
-### Supported SPHINCS+ Variants
-
-- Sha2128F, Sha2128S
-- Sha2192F, Sha2192S
-- Sha2256F, Sha2256S
-- Shake128F, Shake128S
-- Shake192F, Shake192S
-- Shake256F, Shake256S
