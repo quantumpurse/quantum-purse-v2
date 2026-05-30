@@ -7,7 +7,6 @@ use crate::client::QpClient;
 use crate::error::NodeManagerError;
 use ckb_sdk::traits::{CellQueryOptions, LiveCell, ValueRangeOption};
 use ckb_types::packed::Script;
-use ckb_types::prelude::*;
 
 /// Collects all spendable cells for a given lock script.
 /// "Spendable" means live cells with no type script and no output data.
@@ -31,19 +30,34 @@ pub(crate) fn collect_spendable_cells(
     Ok(cells)
 }
 
-/// Returns the total spendable capacity (in shannons) for the given address.
-/// "Spendable" means live cells with no type script and no output data.
+/// Returns the total spendable capacity (in shannons) via a single
+/// `get_cells_capacity` RPC call — no cell collection or pagination.
 pub fn spendable_capacity(
     qp_client: &QpClient,
     from_address: &ckb_sdk::Address,
 ) -> Result<u64, NodeManagerError> {
-    let lock_script = Script::from(from_address.payload());
-    let cells = collect_spendable_cells(qp_client, &lock_script)?;
-    Ok(cells
-        .iter()
-        .map(|c| {
-            let cap: u64 = c.output.capacity().unpack();
-            cap
-        })
-        .sum())
+    use ckb_sdk::rpc::ckb_indexer::{ScriptType, SearchKey, SearchKeyFilter};
+
+    let lock_script: ckb_jsonrpc_types::Script = Script::from(from_address.payload()).into();
+    let search_key = SearchKey {
+        script: lock_script,
+        script_type: ScriptType::Lock,
+        script_search_mode: None,
+        filter: Some(SearchKeyFilter {
+            script: None,
+            script_len_range: Some([0u64.into(), 1u64.into()]),
+            output_data: None,
+            output_data_filter_mode: None,
+            output_data_len_range: Some([0u64.into(), 1u64.into()]),
+            output_capacity_range: None,
+            block_range: None,
+        }),
+        with_data: None,
+        group_by_transaction: None,
+    };
+
+    match qp_client.get_cells_capacity(search_key)? {
+        Some(capacity) => Ok(capacity.capacity.value()),
+        None => Ok(0),
+    }
 }

@@ -16,20 +16,18 @@ pub(crate) fn spx_witness_lock_size(variant: SpxVariant) -> usize {
 }
 
 /// Result of a single account balance fetch from a background thread.
-pub(crate) type BalanceResult = (String, Result<u64, String>);
+/// Tuple fields: (lock_args, total_balance, spendable_capacity).
+///
+/// Total and spendable are independent RPC calls, so each carries its own
+/// `Result`: a transient failure on one must not discard the other's value,
+/// nor overwrite the last good cached value with a fake zero.
+pub(crate) type BalanceResult = (String, Result<u64, String>, Result<u64, String>);
 
 /// Identifies which transaction flow owns a shared background operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TransactionKind {
     Transfer,
     Dao,
-}
-
-/// Identifies which flow triggered a spendable capacity fetch.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SpendableCapacityTarget {
-    Transfer,
-    DaoDeposit,
 }
 
 /// Result type for transaction building (unsigned tx, input cells, lock_args).

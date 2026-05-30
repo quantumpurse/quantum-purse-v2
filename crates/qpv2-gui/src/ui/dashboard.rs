@@ -145,10 +145,14 @@ impl App {
                     .map(|(_, c)| c.capacity)
                     .chain(self.dao_prepared_cells.iter().map(|(_, c)| c.capacity))
                     .sum();
-                let available = total_shannons.saturating_sub(dao_locked);
+                let available: u64 = self
+                    .spendable_balances
+                    .values()
+                    .filter_map(|b| b.as_ref().copied())
+                    .sum();
 
                 ui.horizontal(|ui| {
-                    // Available (total minus DAO-locked)
+                    // Available (spendable cells only — no type script, no data)
                     ui.vertical(|ui| {
                         ui.label(
                             egui::RichText::new("AVAILABLE")

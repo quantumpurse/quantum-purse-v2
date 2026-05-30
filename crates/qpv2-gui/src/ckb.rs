@@ -10,10 +10,7 @@ use qpv2_core::constants::{
     CKB_MAINNET_CODE_HASH, CKB_MAINNET_HASH_TYPE, CKB_TESTNET_CODE_HASH, CKB_TESTNET_HASH_TYPE,
 };
 
-use crate::types::{
-    DaoQueryEvent, NodeStatus, NodeStatusUpdate, SpendableCapacityTarget, TransactionStatus,
-    TxHistoryEvent, TxKind, TxRecord,
-};
+use crate::types::{DaoQueryEvent, NodeStatus, NodeStatusUpdate, TxHistoryEvent, TxKind, TxRecord};
 use crate::App;
 
 /// Initial backoff between retry attempts on a transient RPC failure.
@@ -195,54 +192,6 @@ impl App {
             if all_ok {
                 let _ = tx.send(Ok(DaoQueryEvent::Done));
             }
-        });
-    }
-
-    /// Fetch the total spendable capacity for an account in a background thread.
-    /// The `target` determines which account index to use and where to route the result.
-    pub(crate) fn fetch_spendable_capacity(&mut self, target: SpendableCapacityTarget) {
-        if self.accounts.is_empty() {
-            tracing::error!("No accounts available.");
-            self.tx_status = TransactionStatus::Error("No accounts available.".to_string());
-            return;
-        }
-        if self.spendable_capacity_rx.is_some() {
-            return;
-        }
-
-        let from_idx = match target {
-            SpendableCapacityTarget::Transfer => self.transfer_from_account,
-            SpendableCapacityTarget::DaoDeposit => self.dao_deposit_from_account,
-        }
-        .min(self.accounts.len() - 1);
-        let lock_args = self.accounts[from_idx].clone();
-
-        let is_mainnet = self.qp_client.is_mainnet();
-        let from_addr_str = match lock_args_to_address(&lock_args, is_mainnet) {
-            Ok(a) => a,
-            Err(e) => {
-                let msg = format!("Invalid sender address: {}", e);
-                tracing::error!("{}", msg);
-                self.tx_status = TransactionStatus::Error(msg);
-                return;
-            }
-        };
-
-        let qp_client = self.qp_client.clone();
-        let (tx, rx) = mpsc::channel();
-        self.spendable_capacity_rx = Some((target, rx));
-
-        std::thread::spawn(move || {
-            let result = (|| -> Result<u64, String> {
-                let from_address: ckb_sdk::Address = from_addr_str
-                    .parse()
-                    .map_err(|e| format!("Invalid sender address: {}", e))?;
-
-                ckb_node::wallet_helpers::queries::spendable_capacity(&qp_client, &from_address)
-                    .map_err(|e| format!("Failed to fetch spendable capacity: {}", e))
-            })();
-
-            let _ = tx.send(result);
         });
     }
 
@@ -600,20 +549,36 @@ impl App {
 
         for lock_args in &accounts {
             self.balances.entry(lock_args.clone()).or_insert(None);
+            self.spendable_balances
+                .entry(lock_args.clone())
+                .or_insert(None);
         }
 
         let qp_client = self.qp_client.clone();
+        let is_mainnet = self.qp_client.is_mainnet();
         let (tx, rx) = mpsc::channel();
         self.balance_receiver = Some(rx);
 
         std::thread::spawn(move || {
             for lock_args in accounts {
-                let result = ckb_node::wallet_helpers::queries::fetch_quantum_lock_balance(
+                let total = ckb_node::wallet_helpers::queries::fetch_quantum_lock_balance(
                     &qp_client, &lock_args,
                 )
                 .map_err(|e| e.to_string());
+
+                // Independent RPC call: keep its error distinct from `total` so a
+                // transient failure here doesn't get masked as a real zero balance.
+                let spendable = (|| -> Result<u64, String> {
+                    let addr_str = lock_args_to_address(&lock_args, is_mainnet)?;
+                    let address: ckb_sdk::Address = addr_str
+                        .parse()
+                        .map_err(|e| format!("Invalid address: {}", e))?;
+                    ckb_node::wallet_helpers::queries::spendable_capacity(&qp_client, &address)
+                        .map_err(|e| e.to_string())
+                })();
+
                 // If the receiver is dropped (e.g. wallet locked), stop.
-                if tx.send((lock_args, result)).is_err() {
+                if tx.send((lock_args, total, spendable)).is_err() {
                     break;
                 }
             }

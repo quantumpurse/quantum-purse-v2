@@ -1,47 +1,12 @@
 //! Async polling for background operations (balances, transactions).
 
 use crate::types::{
-    DaoQueryEvent, SpendableCapacityTarget, Status, TransactionKind, TransactionStatus,
-    TxHistoryEvent,
+    BalanceResult, DaoQueryEvent, Status, TransactionKind, TransactionStatus, TxHistoryEvent,
 };
 use crate::App;
 use std::sync::mpsc;
 
 impl App {
-    /// Poll the spendable capacity channel and route the result by target.
-    pub(crate) fn poll_spendable_capacity(&mut self) {
-        let (target, rx) = match &self.spendable_capacity_rx {
-            Some((t, rx)) => (*t, rx),
-            None => return,
-        };
-
-        match rx.try_recv() {
-            Ok(Ok(total_spendable_sh)) => {
-                self.spendable_capacity_rx = None;
-                let formatted = crate::types::format_ckb(total_spendable_sh);
-                match target {
-                    SpendableCapacityTarget::Transfer => {
-                        self.transfer_all = true;
-                        self.transfer_amount = formatted;
-                    }
-                    SpendableCapacityTarget::DaoDeposit => {
-                        self.dao_deposit_all = true;
-                        self.dao_deposit_amount = formatted;
-                    }
-                }
-            }
-            Ok(Err(e)) => {
-                self.spendable_capacity_rx = None;
-                tracing::error!("Spendable capacity error: {}", e);
-                self.tx_status = TransactionStatus::Error(e);
-            }
-            Err(mpsc::TryRecvError::Empty) => {}
-            Err(mpsc::TryRecvError::Disconnected) => {
-                self.spendable_capacity_rx = None;
-            }
-        }
-    }
-
     /// Poll the transaction from channel and trigger signing on success.
     pub(crate) fn poll_transaction_build(&mut self) {
         let rx = match &self.transaction_build_rx {
@@ -147,22 +112,12 @@ impl App {
             None => return,
         };
 
-        // fetching all available results from the mpsc::channel's buffer.
+        // Drain the channel buffer into a local batch first, so the immutable
+        // borrow of `self.balance_receiver` ends before we mutate `self` below.
+        let mut batch: Vec<BalanceResult> = Vec::new();
         loop {
             match rx.try_recv() {
-                Ok((lock_args, Ok(balance))) => {
-                    self.balances.insert(lock_args, Some(balance));
-                }
-                Ok((_, Err(e))) => {
-                    let msg = format!("Failed to fetch balance: {}", e);
-                    // Transient HTTP errors are expected when the local RPC node is
-                    // momentarily busy (light client compaction, full node sync bursts).
-                    // Log to file but don't surface in the UI to avoid noisy false alarms.
-                    tracing::error!("{}", msg);
-                    if !e.contains("http error") {
-                        self.status = Status::Error(msg);
-                    }
-                }
+                Ok(result) => batch.push(result),
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => {
                     // Background thread finished; drop the receiver.
@@ -170,6 +125,35 @@ impl App {
                     break;
                 }
             }
+        }
+
+        for (lock_args, total, spendable) in batch {
+            // Update each cache only on success. On a transient RPC error,
+            // leave the previous value untouched.
+            match total {
+                Ok(t) => {
+                    self.balances.insert(lock_args.clone(), Some(t));
+                }
+                Err(e) => self.report_balance_error(&e),
+            }
+            match spendable {
+                Ok(s) => {
+                    self.spendable_balances.insert(lock_args, Some(s));
+                }
+                Err(e) => self.report_balance_error(&e),
+            }
+        }
+    }
+
+    /// Log a balance-fetch error, surfacing it in the UI only when it is not a
+    /// transient HTTP error. Transient HTTP errors are expected when the local
+    /// RPC node is momentarily busy (light client compaction, full node sync
+    /// bursts), so logging them to file avoids noisy false alarms.
+    fn report_balance_error(&mut self, e: &str) {
+        let msg = format!("Failed to fetch balance: {}", e);
+        tracing::error!("{}", msg);
+        if !e.contains("http error") {
+            self.status = Status::Error(msg);
         }
     }
 

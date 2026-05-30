@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use eframe::egui;
 
-use crate::types::{format_ckb_balance, SpendableCapacityTarget, TransactionStatus, TxKind};
+use crate::types::{format_ckb, format_ckb_balance, TransactionStatus, TxKind};
 use crate::App;
 
 impl App {
@@ -52,10 +52,6 @@ impl App {
                                 | TransactionStatus::Success(_)
                                 | TransactionStatus::Error(_)
                         );
-                        let is_calculating_max = matches!(
-                            self.spendable_capacity_rx,
-                            Some((SpendableCapacityTarget::Transfer, _))
-                        );
 
                         // ── From Account ──
                         ui.label(
@@ -71,7 +67,7 @@ impl App {
                             let idx = self.transfer_from_account.min(self.accounts.len() - 1);
                             let lock_args = &self.accounts[idx];
                             let bal = self
-                                .balances
+                                .spendable_balances
                                 .get(lock_args)
                                 .and_then(|b| b.as_ref())
                                 .copied();
@@ -89,7 +85,7 @@ impl App {
                             .show_ui(ui, |ui| {
                                 for (i, lock_args) in self.accounts.iter().enumerate() {
                                     let bal = self
-                                        .balances
+                                        .spendable_balances
                                         .get(lock_args)
                                         .and_then(|b| b.as_ref())
                                         .copied();
@@ -177,20 +173,30 @@ impl App {
                                     }
 
                                     let can_calculate_max = !is_busy
-                                        && !is_calculating_max
                                         && !self.transfer_all
                                         && !self.accounts.is_empty();
-                                    let max_label = if is_calculating_max { "..." } else { "MAX" };
                                     if ui
                                         .add_enabled(
                                             can_calculate_max,
-                                            egui::Button::new(max_label).small(),
+                                            egui::Button::new("MAX").small(),
                                         )
                                         .clicked()
                                     {
-                                        self.fetch_spendable_capacity(
-                                            SpendableCapacityTarget::Transfer,
-                                        );
+                                        // Fill the displayed amount from the cached
+                                        // spendable balance; send-all recomputes the
+                                        // exact amount from fresh cells at build time.
+                                        let idx = self
+                                            .transfer_from_account
+                                            .min(self.accounts.len() - 1);
+                                        if let Some(sh) = self
+                                            .spendable_balances
+                                            .get(&self.accounts[idx])
+                                            .copied()
+                                            .flatten()
+                                        {
+                                            self.transfer_amount = format_ckb(sh);
+                                        }
+                                        self.transfer_all = true;
                                     }
                                 },
                             );
@@ -209,13 +215,6 @@ impl App {
                             ui.add_space(6.0);
                             ui.label(
                                 egui::RichText::new("Fee will be deducted at send time.")
-                                    .size(11.0)
-                                    .color(self.colors.text_muted),
-                            );
-                        } else if is_calculating_max {
-                            ui.add_space(6.0);
-                            ui.label(
-                                egui::RichText::new("Fetching spendable balance...")
                                     .size(11.0)
                                     .color(self.colors.text_muted),
                             );

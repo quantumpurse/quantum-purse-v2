@@ -209,7 +209,7 @@ impl App {
                             Err(_) => format!("0x{}", lock_args),
                         };
 
-                        let balance_text = match self.balances.get(lock_args) {
+                        let balance_text = match self.spendable_balances.get(lock_args) {
                             Some(Some(shannons)) => format_ckb_balance(*shannons),
                             Some(None) => "Loading...".to_string(),
                             None => "--".to_string(),

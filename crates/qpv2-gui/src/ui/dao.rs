@@ -4,9 +4,7 @@ use ckb_types::prelude::Unpack;
 use eframe::egui;
 
 use super::common::{paint_corner_accent, CardHover};
-use crate::types::{
-    format_ckb, format_ckb_balance, DaoView, SpendableCapacityTarget, TransactionStatus,
-};
+use crate::types::{format_ckb, format_ckb_balance, DaoView, TransactionStatus};
 use crate::App;
 
 impl App {
@@ -17,7 +15,7 @@ impl App {
                 ui.set_width(ui.available_width() - 30.0);
 
                 ui.heading(
-                    egui::RichText::new("NervosDAO")
+                    egui::RichText::new("Nervos DAO")
                         .size(26.0)
                         .strong()
                         .color(self.colors.text),
@@ -288,7 +286,7 @@ impl App {
                     let idx = self.dao_deposit_from_account.min(self.accounts.len() - 1);
                     let lock_args = &self.accounts[idx];
                     let bal = self
-                        .balances
+                        .spendable_balances
                         .get(lock_args)
                         .and_then(|b| b.as_ref())
                         .copied();
@@ -306,7 +304,7 @@ impl App {
                     .show_ui(ui, |ui| {
                         for (i, lock_args) in self.accounts.iter().enumerate() {
                             let bal = self
-                                .balances
+                                .spendable_balances
                                 .get(lock_args)
                                 .and_then(|b| b.as_ref())
                                 .copied();
@@ -329,11 +327,6 @@ impl App {
 
                 ui.add_space(16.0);
 
-                let is_calculating_max = matches!(
-                    self.spendable_capacity_rx,
-                    Some((SpendableCapacityTarget::DaoDeposit, _))
-                );
-
                 // Amount input
                 ui.horizontal(|ui| {
                     ui.label(
@@ -351,18 +344,26 @@ impl App {
                         }
 
                         let can_calculate_max = !is_busy
-                            && !is_calculating_max
                             && !self.dao_deposit_all
                             && !self.accounts.is_empty();
-                        let max_label = if is_calculating_max { "..." } else { "MAX" };
                         if ui
-                            .add_enabled(
-                                can_calculate_max,
-                                egui::Button::new(max_label).small(),
-                            )
+                            .add_enabled(can_calculate_max, egui::Button::new("MAX").small())
                             .clicked()
                         {
-                            self.fetch_spendable_capacity(SpendableCapacityTarget::DaoDeposit);
+                            // Fill the displayed amount from the cached spendable
+                            // balance; deposit-all recomputes the exact amount from
+                            // fresh cells at build time.
+                            let idx =
+                                self.dao_deposit_from_account.min(self.accounts.len() - 1);
+                            if let Some(sh) = self
+                                .spendable_balances
+                                .get(&self.accounts[idx])
+                                .copied()
+                                .flatten()
+                            {
+                                self.dao_deposit_amount = format_ckb(sh);
+                            }
+                            self.dao_deposit_all = true;
                         }
                     });
                 });
@@ -380,13 +381,6 @@ impl App {
                     ui.add_space(6.0);
                     ui.label(
                         egui::RichText::new("Fee will be deducted at deposit time.")
-                            .size(11.0)
-                            .color(self.colors.text_muted),
-                    );
-                } else if is_calculating_max {
-                    ui.add_space(6.0);
-                    ui.label(
-                        egui::RichText::new("Fetching spendable balance...")
                             .size(11.0)
                             .color(self.colors.text_muted),
                     );

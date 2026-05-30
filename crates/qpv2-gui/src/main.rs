@@ -26,8 +26,7 @@ const STATUS_DURATION: Duration = Duration::from_secs(5);
 
 use types::{
     AppColors, BalanceResult, DaoQueryResult, DaoView, NodeStatus, NodeStatusUpdate, Screen,
-    SpendableCapacityTarget, Status, Tab, TransactionSendResult, TransactionStatus, TxBuildResult,
-    TxHistoryEvent, TxRecord,
+    Status, Tab, TransactionSendResult, TransactionStatus, TxBuildResult, TxHistoryEvent, TxRecord,
 };
 
 pub(crate) struct App {
@@ -65,6 +64,8 @@ pub(crate) struct App {
 
     // Balance cache: lock_args -> balance in shannons (None = not yet fetched).
     pub(crate) balances: HashMap<String, Option<u64>>,
+    // Spendable balance cache: lock_args -> spendable shannons (None = not yet fetched).
+    pub(crate) spendable_balances: HashMap<String, Option<u64>>,
 
     /// Single-owner slot for the local CKB node child process.
     /// Not `Clone` and not shared — its `Drop` is what stops the child
@@ -96,8 +97,6 @@ pub(crate) struct App {
     pub(crate) tx_status: TransactionStatus,
     pub(crate) transaction_send_rx: Option<mpsc::Receiver<TransactionSendResult>>,
     pub(crate) transaction_build_rx: Option<mpsc::Receiver<TxBuildResult>>,
-    pub(crate) spendable_capacity_rx:
-        Option<(SpendableCapacityTarget, mpsc::Receiver<Result<u64, String>>)>,
 
     // Transfer form state.
     pub(crate) transfer_recipient: String,
@@ -328,6 +327,7 @@ impl App {
             rename_wallet_id: None,
             rename_wallet_buf: String::new(),
             balances: HashMap::new(),
+            spendable_balances: HashMap::new(),
             local_node,
             qp_client,
             settings_rpc_url,
@@ -343,7 +343,6 @@ impl App {
             transfer_fee_rate: "1000".to_string(),
             transfer_from_account: 0,
             transfer_all: false,
-            spendable_capacity_rx: None,
             tx_status: TransactionStatus::Idle,
             transaction_build_rx: None,
             transaction_send_rx: None,
@@ -427,7 +426,6 @@ impl eframe::App for App {
 
         if self.screen == Screen::Unlocked {
             self.poll_all_balances();
-            self.poll_spendable_capacity();
             self.poll_transaction_build();
             self.poll_transaction_send();
             self.poll_dao_cells();
@@ -477,7 +475,6 @@ impl eframe::App for App {
 
         // Request repaint while an async operation is pending so we poll promptly.
         let async_pending = self.balance_receiver.is_some()
-            || self.spendable_capacity_rx.is_some()
             || self.transaction_build_rx.is_some()
             || self.transaction_send_rx.is_some()
             || self.dao_cells_query_rx.is_some()

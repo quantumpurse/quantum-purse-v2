@@ -194,6 +194,7 @@ impl App {
     fn clear_wallet_state(&mut self) {
         self.accounts.clear();
         self.balances.clear();
+        self.spendable_balances.clear();
         self.rename_wallet_id = None;
         self.rename_wallet_buf.clear();
         self.import_mode = false;
@@ -205,7 +206,6 @@ impl App {
         // previous wallet can't land stale results into the new one.
         self.tx_history_rx = None;
         self.balance_receiver = None;
-        self.spendable_capacity_rx = None;
         self.transaction_build_rx = None;
         self.transaction_send_rx = None;
         self.node_status_rx = None;
@@ -484,18 +484,8 @@ impl App {
                     self.wallet_id,
                     &lock_args[..8.min(lock_args.len())]
                 );
-                self.balances.insert(lock_args.clone(), None);
-                let qp_client = self.qp_client.clone();
-                let args = lock_args.clone();
-                let (tx, rx) = std::sync::mpsc::channel();
-                self.balance_receiver = Some(rx);
-                std::thread::spawn(move || {
-                    let result = ckb_node::wallet_helpers::queries::fetch_quantum_lock_balance(
-                        &qp_client, &args,
-                    )
-                    .map_err(|e| e.to_string());
-                    let _ = tx.send((args, result));
-                });
+                self.balances.insert(lock_args.clone(), Some(0));
+                self.spendable_balances.insert(lock_args.clone(), Some(0));
                 self.accounts.push(lock_args.clone());
                 self.register_lock_scripts_with_light_client(std::slice::from_ref(&lock_args));
                 self.refresh_wallet_cache();
@@ -742,18 +732,8 @@ impl App {
                     self.wallet_id,
                     &lock_args[..8.min(lock_args.len())]
                 );
-                self.balances.insert(lock_args.clone(), None);
-                let qp_client = self.qp_client.clone();
-                let args = lock_args.clone();
-                let (tx, rx) = std::sync::mpsc::channel();
-                self.balance_receiver = Some(rx);
-                std::thread::spawn(move || {
-                    let result = ckb_node::wallet_helpers::queries::fetch_quantum_lock_balance(
-                        &qp_client, &args,
-                    )
-                    .map_err(|e| e.to_string());
-                    let _ = tx.send((args, result));
-                });
+                self.balances.insert(lock_args.clone(), Some(0));
+                self.spendable_balances.insert(lock_args.clone(), Some(0));
                 self.accounts.push(lock_args.clone());
                 self.register_lock_scripts_with_light_client(std::slice::from_ref(&lock_args));
                 self.refresh_wallet_cache();
@@ -1069,18 +1049,8 @@ impl App {
                     self.wallet_id,
                     &lock_args[..8.min(lock_args.len())]
                 );
-                self.balances.insert(lock_args.clone(), None);
-                let qp_client = self.qp_client.clone();
-                let args = lock_args.clone();
-                let (tx, rx) = std::sync::mpsc::channel();
-                self.balance_receiver = Some(rx);
-                std::thread::spawn(move || {
-                    let result = ckb_node::wallet_helpers::queries::fetch_quantum_lock_balance(
-                        &qp_client, &args,
-                    )
-                    .map_err(|e| e.to_string());
-                    let _ = tx.send((args, result));
-                });
+                self.balances.insert(lock_args.clone(), Some(0));
+                self.spendable_balances.insert(lock_args.clone(), Some(0));
                 self.accounts.push(lock_args.clone());
                 self.register_lock_scripts_with_light_client(std::slice::from_ref(&lock_args));
                 self.refresh_wallet_cache();
