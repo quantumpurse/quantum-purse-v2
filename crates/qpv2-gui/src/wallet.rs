@@ -227,6 +227,8 @@ impl App {
         self.dao_deposited_staging.clear();
         self.dao_prepared_staging.clear();
         self.dao_cells_query_rx = None;
+        self.deposit_headers.clear();
+        self.deposit_headers_rx = None;
     }
 
     /// Lock the wallet: clear state and return to the Locked screen.
@@ -339,6 +341,8 @@ impl App {
         // *after* the reset and resurrect old values.
         self.node_status = crate::types::NodeStatus::default();
         self.node_status_rx = None;
+        self.deposit_headers.clear();
+        self.deposit_headers_rx = None;
 
         // Both LC latches are per-instance. Reset so the poller
         // re-warms the cell dep and re-registers lock scripts against

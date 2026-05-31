@@ -120,8 +120,9 @@ pub(crate) enum Tab {
 /// applicable to the active backend (e.g. peer count for PublicRpc).
 #[derive(Debug, Clone, Default)]
 pub(crate) struct NodeStatus {
-    /// Tip block number from `get_tip_header`.
-    pub tip_block: Option<u64>,
+    /// Full tip header from `get_tip_header`. Contains DAO AR data
+    /// needed for estimating deposited-cell interest at render time.
+    pub tip_header: Option<ckb_types::core::HeaderView>,
     /// Peer count; `None` for PublicRpc backends.
     pub peer_count: Option<usize>,
     /// RPC port parsed from `config.rpc_url`.
@@ -135,6 +136,13 @@ pub(crate) struct NodeStatus {
     pub sync_state: Option<ckb_jsonrpc_types::SyncState>,
     /// True when the most recent poll reached the node successfully.
     pub online: bool,
+}
+
+impl NodeStatus {
+    /// Tip block number derived from the cached header.
+    pub fn tip_block(&self) -> Option<u64> {
+        self.tip_header.as_ref().map(|h| h.number())
+    }
 }
 
 /// Result type for the node-status background poll.

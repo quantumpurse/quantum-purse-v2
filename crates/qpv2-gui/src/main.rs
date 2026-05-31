@@ -114,6 +114,10 @@ pub(crate) struct App {
     dao_deposited_staging: Vec<(String, ckb_node::DepositedCell)>,
     dao_prepared_staging: Vec<(String, ckb_node::PreparedCell)>,
     pub(crate) dao_cells_query_rx: Option<mpsc::Receiver<DaoQueryResult>>,
+    // Immutable deposit block headers for DAO interest estimation.
+    // Keyed by block number; fetched once per deposit, never expires.
+    pub(crate) deposit_headers: HashMap<u64, ckb_types::core::HeaderView>,
+    pub(crate) deposit_headers_rx: Option<mpsc::Receiver<HashMap<u64, ckb_types::core::HeaderView>>>,
     pub(crate) dao_deposit_amount: String,
     pub(crate) dao_deposit_fee_rate: String,
     pub(crate) dao_deposit_from_account: usize,
@@ -352,6 +356,8 @@ impl App {
             dao_deposited_staging: Vec::new(),
             dao_prepared_staging: Vec::new(),
             dao_cells_query_rx: None,
+            deposit_headers: HashMap::new(),
+            deposit_headers_rx: None,
             dao_deposit_amount: String::new(),
             dao_deposit_fee_rate: "1000".to_string(),
             dao_deposit_from_account: 0,
@@ -429,6 +435,7 @@ impl eframe::App for App {
             self.poll_transaction_build();
             self.poll_transaction_send();
             self.poll_dao_cells();
+            self.poll_deposit_headers();
             self.poll_tx_history();
             self.poll_node_status();
             self.poll_earliest_funding_block();
@@ -479,6 +486,7 @@ impl eframe::App for App {
             || self.transaction_build_rx.is_some()
             || self.transaction_send_rx.is_some()
             || self.dao_cells_query_rx.is_some()
+            || self.deposit_headers_rx.is_some()
             || self.tx_history_rx.is_some();
 
         if async_pending {

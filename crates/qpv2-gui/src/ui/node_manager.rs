@@ -178,7 +178,7 @@ impl App {
     fn sync_pct(&self, backend: NodeType) -> f32 {
         match backend {
             NodeType::LightClient => {
-                match (self.node_status.synced_block, self.node_status.tip_block) {
+                match (self.node_status.synced_block, self.node_status.tip_block()) {
                     (Some(s), Some(t)) if t > 0 => (s as f64 / t as f64).clamp(0.0, 1.0) as f32,
                     _ => 0.0,
                 }
@@ -387,7 +387,7 @@ impl App {
                     fallback_url
                 };
                 let block_height = if active {
-                    block_height_text(self.node_status.tip_block)
+                    block_height_text(self.node_status.tip_block())
                 } else {
                     DASH.into()
                 };
@@ -488,7 +488,7 @@ impl App {
     }
 
     fn draw_sync_edit_row(&mut self, ui: &mut egui::Ui) {
-        let tip = self.node_status.tip_block;
+        let tip = self.node_status.tip_block();
 
         ui.horizontal(|ui| {
             ui.add_space(ROW_INDENT);
@@ -651,7 +651,7 @@ fn target_tip_value(backend: NodeType, status: &crate::types::NodeStatus) -> Str
             Some(s) => format!("#{}", format_int(s.best_known_block_number.value())),
             None => "\u{2014}".into(),
         },
-        NodeType::LightClient => match status.tip_block {
+        NodeType::LightClient => match status.tip_block() {
             Some(t) => format!("#{}", format_int(t)),
             None => "\u{2014}".into(),
         },

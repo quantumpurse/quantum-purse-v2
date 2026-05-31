@@ -195,6 +195,64 @@ impl App {
         });
     }
 
+    /// Fetch deposit block headers that aren't cached yet.
+    /// Skips if a fetch is already in flight or all headers are cached.
+    pub(crate) fn fetch_deposit_headers(&mut self) {
+        if self.deposit_headers_rx.is_some() {
+            return;
+        }
+
+        let missing: Vec<u64> = self
+            .dao_deposited_cells
+            .iter()
+            .map(|(_, c)| c.block_number)
+            .filter(|bn| !self.deposit_headers.contains_key(bn))
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        if missing.is_empty() {
+            return;
+        }
+
+        let qp_client = self.qp_client.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.deposit_headers_rx = Some(rx);
+
+        std::thread::spawn(move || {
+            let calls: Vec<(&str, serde_json::Value)> = missing
+                .iter()
+                .map(|n| {
+                    (
+                        "get_header_by_number",
+                        serde_json::json!([format!("{:#x}", n)]),
+                    )
+                })
+                .collect();
+
+            let mut result = HashMap::new();
+            match qp_client.batch_rpc(&calls) {
+                Ok(responses) => {
+                    for (block_number, value) in missing.into_iter().zip(responses) {
+                        match serde_json::from_value::<ckb_jsonrpc_types::HeaderView>(value) {
+                            Ok(header) => {
+                                let core_header: ckb_types::core::HeaderView = header.into();
+                                result.insert(block_number, core_header);
+                            }
+                            Err(e) => {
+                                tracing::warn!("Failed to parse header for block {}: {}", block_number, e);
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to fetch deposit headers: {}", e);
+                }
+            }
+            let _ = tx.send(result);
+        });
+    }
+
     /// Fetch recent transaction history for all accounts in a background thread.
     ///
     /// When `incremental` is false (cold start), clears existing records and fetches. When true,
@@ -622,9 +680,9 @@ impl App {
             // falls back to cached so transient errors don't flicker.
             let tip_result = qp_client.get_tip_header();
             let online = tip_result.is_ok();
-            let tip_block = match tip_result {
-                Ok(h) => Some(h.inner.number.value()),
-                Err(_) => cached.tip_block,
+            let tip_header: Option<ckb_types::core::HeaderView> = match tip_result {
+                Ok(h) => Some(h.into()),
+                Err(_) => cached.tip_header.clone(),
             };
 
             // Peer count — `Ok(None)` only for PublicRpc (policy).
@@ -647,7 +705,7 @@ impl App {
             };
 
             let status = NodeStatus {
-                tip_block,
+                tip_header,
                 peer_count,
                 rpc_port,
                 synced_block,

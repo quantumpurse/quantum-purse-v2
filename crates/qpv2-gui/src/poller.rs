@@ -196,6 +196,9 @@ impl App {
                     );
                     std::mem::swap(&mut self.dao_prepared_cells, &mut self.dao_prepared_staging);
                     self.dao_cells_query_rx = None;
+
+                    // Fetch deposit block headers we haven't cached yet.
+                    self.fetch_deposit_headers();
                     break;
                 }
                 Ok(Err(e)) => {
@@ -214,6 +217,25 @@ impl App {
                     self.dao_cells_query_rx = None;
                     break;
                 }
+            }
+        }
+    }
+
+    /// Poll the deposit headers channel and merge into the cache.
+    pub(crate) fn poll_deposit_headers(&mut self) {
+        let rx = match &self.deposit_headers_rx {
+            Some(rx) => rx,
+            None => return,
+        };
+
+        match rx.try_recv() {
+            Ok(headers) => {
+                self.deposit_headers.extend(headers);
+                self.deposit_headers_rx = None;
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.deposit_headers_rx = None;
             }
         }
     }
