@@ -652,7 +652,7 @@ impl App {
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 egui::Grid::new("dao_positions")
-                    .num_columns(6)
+                    .num_columns(7)
                     .spacing(egui::vec2(12.0, 8.0))
                     .striped(true)
                     .show(ui, |ui| {
@@ -670,6 +670,7 @@ impl App {
                         header(ui, "Deposited");
                         header(ui, "Earned");
                         header(ui, "Locked");
+                        header(ui, "Status");
                         header(ui, "Action");
                         ui.end_row();
 
@@ -747,6 +748,12 @@ impl App {
                                     .color(self.colors.text_muted),
                             );
 
+                            ui.label(
+                                egui::RichText::new("Active")
+                                    .size(10.5)
+                                    .color(self.colors.accent),
+                            );
+
                             if ui
                                 .add_enabled(
                                     !is_busy,
@@ -808,6 +815,12 @@ impl App {
                                 egui::RichText::new(format_duration_ms(ms))
                                     .size(10.5)
                                     .color(self.colors.text_muted),
+                            );
+
+                            ui.label(
+                                egui::RichText::new("Pending")
+                                    .size(10.5)
+                                    .color(self.colors.warn),
                             );
 
                             if ui
