@@ -5,6 +5,41 @@ use eframe::egui;
 use crate::types::{AppColors, Status, Tab, TransactionStatus};
 use crate::App;
 
+/// Extract the DAO accumulated rate (AR) from a block header.
+/// AR is stored as a u64 at bytes 8..16 of the `dao` field, scaled by 10^16.
+pub(crate) fn extract_ar(header: &ckb_types::core::HeaderView) -> f64 {
+    let dao_data = header.dao().raw_data();
+    let ar = u64::from_le_bytes(dao_data[8..16].try_into().unwrap());
+    ar as f64 / 1e16
+}
+
+/// Compute the annualized percentage compensation from two headers.
+/// Returns `None` if the time span is too short (< 1 second).
+pub(crate) fn compute_apc(
+    deposit_header: &ckb_types::core::HeaderView,
+    tip_header: &ckb_types::core::HeaderView,
+) -> Option<f64> {
+    let ar_deposit = extract_ar(deposit_header);
+    let ar_tip = extract_ar(tip_header);
+    if ar_deposit <= 0.0 {
+        return None;
+    }
+
+    let deposit_ts = deposit_header.timestamp();
+    let tip_ts = tip_header.timestamp();
+    let elapsed_ms = tip_ts.saturating_sub(deposit_ts) as f64;
+
+    const YEAR_MS: f64 = 365.25 * 24.0 * 3_600_000.0;
+    // Reject if headers are identical or too close (< 1 second).
+    if elapsed_ms < 1_000.0 {
+        return None;
+    }
+
+    let growth = ar_tip / ar_deposit;
+    let apc = growth.powf(YEAR_MS / elapsed_ms) - 1.0;
+    Some(apc)
+}
+
 impl App {
     /// Mockup-faithful background for the Unlocked screen: solid
     /// `colors.bg` plus three soft radial tints (accent / accent2 /

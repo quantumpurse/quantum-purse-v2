@@ -76,12 +76,18 @@ impl App {
                 );
                 ui.add_space(6.0);
 
-                // Sum all balances
-                let total_shannons: u64 = self
+                // Sum all balances + DAO earned interest.
+                let base_balance: u64 = self
                     .balances
                     .values()
                     .filter_map(|b| b.as_ref().copied())
                     .sum();
+                let dao_interest: u64 = self
+                    .dao_prepared_cells
+                    .iter()
+                    .map(|(_, c)| c.maximum_withdraw.saturating_sub(c.capacity))
+                    .sum();
+                let total_shannons = base_balance + dao_interest;
 
                 let hero_font = egui::FontFamily::Name("hero".into());
                 let bal_size = 46.0;
@@ -199,6 +205,42 @@ impl App {
                                 .size(15.0)
                                 .family(hero_font.clone())
                                 .color(self.colors.accent3),
+                        );
+                    });
+
+                    ui.add_space(30.0);
+
+                    // DAO Earned
+                    ui.vertical(|ui| {
+                        ui.label(
+                            egui::RichText::new("DAO EARNED")
+                                .size(9.0)
+                                .color(self.colors.text_muted)
+                                .family(egui::FontFamily::Monospace),
+                        );
+                        ui.label(
+                            egui::RichText::new(format!("+{}", format_ckb_balance(dao_interest)))
+                                .size(15.0)
+                                .family(hero_font.clone())
+                                .color(self.colors.warn),
+                        );
+                    });
+
+                    ui.add_space(30.0);
+
+                    // APC
+                    ui.vertical(|ui| {
+                        ui.label(
+                            egui::RichText::new("APC")
+                                .size(9.0)
+                                .color(self.colors.text_muted)
+                                .family(egui::FontFamily::Monospace),
+                        );
+                        ui.label(
+                            egui::RichText::new(self.compute_dao_apc())
+                                .size(15.0)
+                                .family(hero_font.clone())
+                                .color(self.colors.accent2),
                         );
                     });
                 });

@@ -3,11 +3,27 @@
 use ckb_types::prelude::Unpack;
 use eframe::egui;
 
-use super::common::{paint_corner_accent, CardHover};
+use super::common::{compute_apc, paint_corner_accent, CardHover};
 use crate::types::{format_ckb, format_ckb_balance, DaoView, TransactionStatus};
 use crate::App;
 
 impl App {
+    /// Compute the current APC from the tip and baseline headers.
+    pub(crate) fn compute_dao_apc(&self) -> String {
+        let tip = match &self.node_status.tip_header {
+            Some(h) => h,
+            None => return "--".to_string(),
+        };
+        let prev = match &self.node_status.apc_baseline_header {
+            Some(h) => h,
+            None => return "--".to_string(),
+        };
+        match compute_apc(prev, tip) {
+            Some(apc) => format!("{:.2}%", apc * 100.0),
+            None => "--".to_string(),
+        }
+    }
+
     pub(crate) fn show_dao_tab(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.add_space(30.0);
@@ -60,7 +76,7 @@ impl App {
                             Some(self.colors.warn),
                         ),
                         (
-                            "~2-3%".to_string(),
+                            self.compute_dao_apc(),
                             "Current APC",
                             Some(self.colors.accent2),
                         ),

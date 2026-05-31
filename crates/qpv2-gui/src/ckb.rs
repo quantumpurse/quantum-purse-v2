@@ -670,6 +670,7 @@ impl App {
         let rpc_port = parse_rpc_port(&cfg.rpc_url);
         let qp_client = self.qp_client.clone();
         let cached = self.node_status.clone();
+        let network = self.qp_client.network();
 
         let (tx, rx) = mpsc::channel();
         self.node_status_rx = Some(rx);
@@ -704,7 +705,42 @@ impl App {
                 Err(_) => cached.sync_state,
             };
 
+            // Fetch a header ~7 days ago for APC calculation (same window as NervDAO).
+            // Uses the public RPC so this works regardless of the active backend.
+            // TODO: we are using remote RPC for convenient because get_header_by_number 
+            // is not supported by light client - thus the surface IF of ckb-node doesn't work.
+            const APC_BLOCK_WINDOW: u64 = 75_600;
+            let apc_baseline_header = tip_header
+                .as_ref()
+                .and_then(|tip| {
+                    let target = tip.number().saturating_sub(APC_BLOCK_WINDOW);
+                    if target == 0 {
+                        return None;
+                    }
+                    let public_rpc_url = ckb_node::NodeConfig::default_rpc_url_for(
+                        ckb_node::NodeType::PublicRpc,
+                        network,
+                    );
+                    let rpc = ckb_sdk::CkbRpcClient::new(public_rpc_url);
+                    match rpc.get_header_by_number(target.into()) {
+                        Ok(Some(h)) => Some(h.into()),
+                        Ok(None) => {
+                            tracing::warn!("APC baseline header not found (block #{})", target);
+                            None
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "Failed to fetch APC baseline header (block #{}): {}",
+                                target, e
+                            );
+                            None
+                        }
+                    }
+                })
+                .or(cached.apc_baseline_header);
+
             let status = NodeStatus {
+                apc_baseline_header,
                 tip_header,
                 peer_count,
                 rpc_port,

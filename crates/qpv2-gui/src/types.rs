@@ -123,6 +123,8 @@ pub(crate) struct NodeStatus {
     /// Full tip header from `get_tip_header`. Contains DAO AR data
     /// needed for estimating deposited-cell interest at render time.
     pub tip_header: Option<ckb_types::core::HeaderView>,
+    /// Header from ~7 days ago, used with `tip_header` to compute APC.
+    pub apc_baseline_header: Option<ckb_types::core::HeaderView>,
     /// Peer count; `None` for PublicRpc backends.
     pub peer_count: Option<usize>,
     /// RPC port parsed from `config.rpc_url`.
