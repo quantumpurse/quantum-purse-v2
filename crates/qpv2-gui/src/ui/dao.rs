@@ -4,7 +4,9 @@ use ckb_types::prelude::Unpack;
 use eframe::egui;
 
 use super::common::{compute_apc, extract_ar, paint_corner_accent, CardHover};
-use crate::types::{format_ckb, format_ckb_balance, format_ckb_with_decimals, DaoView, TransactionStatus};
+use crate::types::{
+    format_ckb, format_ckb_balance, format_ckb_with_decimals, DaoView, TransactionStatus,
+};
 use crate::App;
 
 impl App {
@@ -717,10 +719,17 @@ impl App {
                             }
 
                             ui.label(
-                                egui::RichText::new(format!("{} CKB", if wide { format_ckb_with_decimals(cell.capacity, 8) } else { format_ckb(cell.capacity) }))
-                                    .size(12.0)
-                                    .color(self.colors.text_muted)
-                                    .strong(),
+                                egui::RichText::new(format!(
+                                    "{} CKB",
+                                    if wide {
+                                        format_ckb_with_decimals(cell.capacity, 8)
+                                    } else {
+                                        format_ckb(cell.capacity)
+                                    }
+                                ))
+                                .size(12.0)
+                                .color(self.colors.text_muted)
+                                .strong(),
                             );
 
                             // Estimated earned from cached deposit header + tip.
@@ -737,14 +746,15 @@ impl App {
 
                             match estimated {
                                 Some((earned, _)) => {
-                                    let earned_str = if wide { format_ckb_with_decimals(earned, 8) } else { format_ckb(earned) };
+                                    let earned_str = if wide {
+                                        format_ckb_with_decimals(earned, 8)
+                                    } else {
+                                        format_ckb(earned)
+                                    };
                                     ui.label(
-                                        egui::RichText::new(format!(
-                                            "~+{} CKB",
-                                            earned_str
-                                        ))
-                                        .size(11.0)
-                                        .color(self.colors.warn),
+                                        egui::RichText::new(format!("~+{} CKB", earned_str))
+                                            .size(11.0)
+                                            .color(self.colors.warn),
                                     );
                                 }
                                 None => {
@@ -840,10 +850,17 @@ impl App {
 
                             let earned = cell.maximum_withdraw.saturating_sub(cell.capacity);
                             ui.label(
-                                egui::RichText::new(format!("+{} CKB", if wide { format_ckb_with_decimals(earned, 8) } else { format_ckb(earned) }))
-                                    .size(11.0)
-                                    .strong()
-                                    .color(self.colors.warn),
+                                egui::RichText::new(format!(
+                                    "+{} CKB",
+                                    if wide {
+                                        format_ckb_with_decimals(earned, 8)
+                                    } else {
+                                        format_ckb(earned)
+                                    }
+                                ))
+                                .size(11.0)
+                                .strong()
+                                .color(self.colors.warn),
                             );
 
                             // Lock duration from deposit to prepare.

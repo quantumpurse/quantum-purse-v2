@@ -197,7 +197,7 @@ impl App {
 
     /// Fetch deposit block headers that aren't cached yet.
     /// Skips if a fetch is already in flight or all headers are cached.
-    // TODO: we are using remote RPC for convenient because get_header_by_number 
+    // TODO: we are using remote RPC for convenient because get_header_by_number
     // is not supported by light client - thus the surface IF of ckb-node doesn't work.
     pub(crate) fn fetch_deposit_headers(&mut self) {
         if self.deposit_headers_rx.is_some() {
@@ -222,10 +222,8 @@ impl App {
         self.deposit_headers_rx = Some(rx);
 
         std::thread::spawn(move || {
-            let public_rpc_url = ckb_node::NodeConfig::default_rpc_url_for(
-                ckb_node::NodeType::PublicRpc,
-                network,
-            );
+            let public_rpc_url =
+                ckb_node::NodeConfig::default_rpc_url_for(ckb_node::NodeType::PublicRpc, network);
             let rpc = ckb_sdk::CkbRpcClient::new(public_rpc_url);
 
             let mut result = HashMap::new();
@@ -241,7 +239,8 @@ impl App {
                     Err(e) => {
                         tracing::warn!(
                             "Failed to fetch deposit header (block #{}): {}",
-                            block_number, e
+                            block_number,
+                            e
                         );
                     }
                 }
@@ -704,7 +703,7 @@ impl App {
 
             // Fetch a header ~7 days ago for APC calculation (same window as NervDAO).
             // Uses the public RPC so this works regardless of the active backend.
-            // TODO: we are using remote RPC for convenient because get_header_by_number 
+            // TODO: we are using remote RPC for convenient because get_header_by_number
             // is not supported by light client - thus the surface IF of ckb-node doesn't work.
             const APC_BLOCK_WINDOW: u64 = 75_600;
             let apc_baseline_header = tip_header
@@ -728,7 +727,8 @@ impl App {
                         Err(e) => {
                             tracing::warn!(
                                 "Failed to fetch APC baseline header (block #{}): {}",
-                                target, e
+                                target,
+                                e
                             );
                             None
                         }

@@ -117,7 +117,8 @@ pub(crate) struct App {
     // Immutable deposit block headers for DAO interest estimation.
     // Keyed by block number; fetched once per deposit, never expires.
     pub(crate) deposit_headers: HashMap<u64, ckb_types::core::HeaderView>,
-    pub(crate) deposit_headers_rx: Option<mpsc::Receiver<HashMap<u64, ckb_types::core::HeaderView>>>,
+    pub(crate) deposit_headers_rx:
+        Option<mpsc::Receiver<HashMap<u64, ckb_types::core::HeaderView>>>,
     pub(crate) dao_deposit_amount: String,
     pub(crate) dao_deposit_fee_rate: String,
     pub(crate) dao_deposit_from_account: usize,

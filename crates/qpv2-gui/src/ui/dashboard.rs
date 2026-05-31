@@ -4,8 +4,7 @@ use eframe::egui;
 
 use super::common::CardHover;
 use crate::types::{
-    format_ckb, format_ckb_balance, format_relative_time, format_with_commas, Tab, TxKind,
-    TxRecord,
+    format_ckb, format_ckb_balance, format_relative_time, format_with_commas, Tab, TxKind, TxRecord,
 };
 use crate::App;
 

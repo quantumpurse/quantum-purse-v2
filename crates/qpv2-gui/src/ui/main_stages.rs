@@ -599,18 +599,20 @@ impl App {
             .show(ctx, |ui| {
                 self.draw_unlocked_bg(ui);
 
-                egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
-                    ui.add_space(24.0);
+                egui::ScrollArea::vertical()
+                    .auto_shrink(false)
+                    .show(ui, |ui| {
+                        ui.add_space(24.0);
 
-                    match self.active_tab {
-                        Tab::Dashboard => self.show_dashboard_tab(ui),
-                        Tab::Transfer => self.show_transfer_tab(ui),
-                        Tab::DaoOperations => self.show_dao_tab(ui),
-                        Tab::NodeManager => self.show_node_manager_tab(ui),
-                        Tab::Accounts => self.show_accounts_tab(ui),
-                        Tab::Wallets => self.show_wallets_tab(ui),
-                    }
-                });
+                        match self.active_tab {
+                            Tab::Dashboard => self.show_dashboard_tab(ui),
+                            Tab::Transfer => self.show_transfer_tab(ui),
+                            Tab::DaoOperations => self.show_dao_tab(ui),
+                            Tab::NodeManager => self.show_node_manager_tab(ui),
+                            Tab::Accounts => self.show_accounts_tab(ui),
+                            Tab::Wallets => self.show_wallets_tab(ui),
+                        }
+                    });
             });
     }
 
