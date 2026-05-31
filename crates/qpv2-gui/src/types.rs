@@ -249,17 +249,23 @@ impl Default for AppColors {
 }
 
 /// Format shannons as a numeric CKB string without the unit suffix.
-/// Shows up to 3 decimal places, trailing zeros trimmed.
-pub(crate) fn format_ckb(shannons: u64) -> String {
+/// Shows up to `decimals` decimal places, trailing zeros trimmed.
+pub(crate) fn format_ckb_with_decimals(shannons: u64, decimals: usize) -> String {
     let whole = shannons / CKB_DECIMAL_PLACES;
     let frac = shannons % CKB_DECIMAL_PLACES;
     if frac == 0 {
         format!("{}", whole)
     } else {
         let frac_str = format!("{:08}", frac);
-        let trimmed = frac_str[..3].trim_end_matches('0');
+        let end = decimals.min(8);
+        let trimmed = frac_str[..end].trim_end_matches('0');
         format!("{}.{}", whole, trimmed)
     }
+}
+
+/// Format shannons as a numeric CKB string, up to 2 decimal places.
+pub(crate) fn format_ckb(shannons: u64) -> String {
+    format_ckb_with_decimals(shannons, 2)
 }
 
 /// Format a number with thousands separators (e.g. `9999` -> `"9,999"`).

@@ -4,7 +4,7 @@ use ckb_types::prelude::Unpack;
 use eframe::egui;
 
 use super::common::{compute_apc, extract_ar, paint_corner_accent, CardHover};
-use crate::types::{format_ckb, format_ckb_balance, DaoView, TransactionStatus};
+use crate::types::{format_ckb, format_ckb_balance, format_ckb_with_decimals, DaoView, TransactionStatus};
 use crate::App;
 
 impl App {
@@ -644,15 +644,17 @@ impl App {
             accounts.iter().position(|a| a == lock_args).unwrap_or(0)
         };
 
+        let wide = ui.available_width() > 1100.0;
+
         egui::Frame::new()
             .fill(self.colors.surface)
             .corner_radius(12.0)
             .stroke(egui::Stroke::new(1.0, self.colors.border))
             .inner_margin(egui::Margin::symmetric(12, 8))
             .show(ui, |ui| {
-                ui.set_width(ui.available_width());
+                let num_cols = if wide { 8 } else { 7 };
                 egui::Grid::new("dao_positions")
-                    .num_columns(7)
+                    .num_columns(num_cols)
                     .spacing(egui::vec2(12.0, 8.0))
                     .striped(true)
                     .show(ui, |ui| {
@@ -666,10 +668,15 @@ impl App {
                             );
                         };
                         header(ui, "Account");
-                        header(ui, "Cell");
-                        header(ui, "Deposited");
+                        if wide {
+                            header(ui, "Tx Hash");
+                            header(ui, "Index");
+                        } else {
+                            header(ui, "Cell");
+                        }
+                        header(ui, "Amount");
                         header(ui, "Earned");
-                        header(ui, "Locked");
+                        header(ui, if wide { "Lock Duration" } else { "Duration" });
                         header(ui, "Status");
                         header(ui, "Action");
                         ui.end_row();
@@ -685,16 +692,32 @@ impl App {
                             );
 
                             let idx: u32 = cell.out_point.index().unpack();
-                            let cell_id = format!("{:#x}/{}", cell.out_point.tx_hash(), idx);
-                            ui.label(
-                                egui::RichText::new(&cell_id)
-                                    .size(10.0)
-                                    .color(self.colors.text_muted)
-                                    .font(egui::FontId::monospace(10.0)),
-                            );
+                            if wide {
+                                let tx_hash = format!("{:#x}", cell.out_point.tx_hash());
+                                ui.label(
+                                    egui::RichText::new(&tx_hash)
+                                        .size(10.5)
+                                        .color(self.colors.text_muted)
+                                        .font(egui::FontId::monospace(10.0)),
+                                );
+                                ui.label(
+                                    egui::RichText::new(format!("{}", idx))
+                                        .size(10.5)
+                                        .color(self.colors.text_muted)
+                                        .font(egui::FontId::monospace(10.0)),
+                                );
+                            } else {
+                                let cell_id = format!("{:#x}/{}", cell.out_point.tx_hash(), idx);
+                                ui.label(
+                                    egui::RichText::new(&cell_id)
+                                        .size(10.5)
+                                        .color(self.colors.text_muted)
+                                        .font(egui::FontId::monospace(10.0)),
+                                );
+                            }
 
                             ui.label(
-                                egui::RichText::new(format!("{} CKB", format_ckb(cell.capacity)))
+                                egui::RichText::new(format!("{} CKB", if wide { format_ckb_with_decimals(cell.capacity, 8) } else { format_ckb(cell.capacity) }))
                                     .size(12.0)
                                     .color(self.colors.text_muted)
                                     .strong(),
@@ -714,10 +737,11 @@ impl App {
 
                             match estimated {
                                 Some((earned, _)) => {
+                                    let earned_str = if wide { format_ckb_with_decimals(earned, 8) } else { format_ckb(earned) };
                                     ui.label(
                                         egui::RichText::new(format!(
                                             "~+{} CKB",
-                                            format_ckb(earned)
+                                            earned_str
                                         ))
                                         .size(11.0)
                                         .color(self.colors.warn),
@@ -739,7 +763,7 @@ impl App {
                                 .zip(self.node_status.tip_header.as_ref())
                                 .map(|(dep_h, tip_h)| {
                                     let ms = tip_h.timestamp().saturating_sub(dep_h.timestamp());
-                                    format_duration_ms(ms)
+                                    format_duration_ms(ms, wide)
                                 })
                                 .unwrap_or_else(|| "--".to_string());
                             ui.label(
@@ -749,7 +773,7 @@ impl App {
                             );
 
                             ui.label(
-                                egui::RichText::new("Active")
+                                egui::RichText::new("Accumulating")
                                     .size(10.5)
                                     .color(self.colors.accent),
                             );
@@ -783,13 +807,29 @@ impl App {
                             );
 
                             let idx: u32 = cell.out_point.index().unpack();
-                            let cell_id = format!("{:#x}/{}", cell.out_point.tx_hash(), idx);
-                            ui.label(
-                                egui::RichText::new(&cell_id)
-                                    .size(10.0)
-                                    .color(self.colors.text_muted)
-                                    .font(egui::FontId::monospace(10.0)),
-                            );
+                            if wide {
+                                let tx_hash = format!("{:#x}", cell.out_point.tx_hash());
+                                ui.label(
+                                    egui::RichText::new(&tx_hash)
+                                        .size(10.5)
+                                        .color(self.colors.text_muted)
+                                        .font(egui::FontId::monospace(10.0)),
+                                );
+                                ui.label(
+                                    egui::RichText::new(format!("{}", idx))
+                                        .size(10.5)
+                                        .color(self.colors.text_muted)
+                                        .font(egui::FontId::monospace(10.0)),
+                                );
+                            } else {
+                                let cell_id = format!("{:#x}/{}", cell.out_point.tx_hash(), idx);
+                                ui.label(
+                                    egui::RichText::new(&cell_id)
+                                        .size(10.5)
+                                        .color(self.colors.text_muted)
+                                        .font(egui::FontId::monospace(10.0)),
+                                );
+                            }
 
                             ui.label(
                                 egui::RichText::new(format!("{} CKB", format_ckb(cell.capacity)))
@@ -800,7 +840,7 @@ impl App {
 
                             let earned = cell.maximum_withdraw.saturating_sub(cell.capacity);
                             ui.label(
-                                egui::RichText::new(format!("+{} CKB", format_ckb(earned)))
+                                egui::RichText::new(format!("+{} CKB", if wide { format_ckb_with_decimals(earned, 8) } else { format_ckb(earned) }))
                                     .size(11.0)
                                     .strong()
                                     .color(self.colors.warn),
@@ -812,13 +852,13 @@ impl App {
                                 .timestamp()
                                 .saturating_sub(cell.deposit_header.timestamp());
                             ui.label(
-                                egui::RichText::new(format_duration_ms(ms))
+                                egui::RichText::new(format_duration_ms(ms, wide))
                                     .size(10.5)
                                     .color(self.colors.text_muted),
                             );
 
                             ui.label(
-                                egui::RichText::new("Pending")
+                                egui::RichText::new("Claimable")
                                     .size(10.5)
                                     .color(self.colors.warn),
                             );
@@ -853,13 +893,15 @@ impl App {
     }
 }
 
-fn format_duration_ms(ms: u64) -> String {
+fn format_duration_ms(ms: u64, verbose: bool) -> String {
     let secs = ms / 1000;
     let mins = secs / 60;
     let hours = mins / 60;
     let days = hours / 24;
 
-    if days > 0 {
+    if verbose {
+        format!("{}d {}h {}m {}s", days, hours % 24, mins % 60, secs % 60)
+    } else if days > 0 {
         format!("{}d {}h", days, hours % 24)
     } else if hours > 0 {
         format!("{}h {}m", hours, mins % 60)
