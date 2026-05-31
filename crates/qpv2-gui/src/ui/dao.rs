@@ -3,7 +3,7 @@
 use ckb_types::prelude::Unpack;
 use eframe::egui;
 
-use super::common::{compute_apc, paint_corner_accent, CardHover};
+use super::common::{compute_apc, extract_ar, paint_corner_accent, CardHover};
 use crate::types::{format_ckb, format_ckb_balance, DaoView, TransactionStatus};
 use crate::App;
 
@@ -698,11 +698,37 @@ impl App {
                                     .strong(),
                             );
 
-                            ui.label(
-                                egui::RichText::new("--")
-                                    .size(11.0)
-                                    .color(self.colors.text_muted),
-                            );
+                            // Estimated earned from cached deposit header + tip.
+                            let estimated = self
+                                .deposit_headers
+                                .get(&cell.block_number)
+                                .zip(self.node_status.tip_header.as_ref())
+                                .map(|(dep_h, tip_h)| {
+                                    let ar_dep = extract_ar(dep_h);
+                                    let ar_tip = extract_ar(tip_h);
+                                    let growth = ar_tip / ar_dep;
+                                    ((cell.capacity as f64 * (growth - 1.0)) as u64, true)
+                                });
+
+                            match estimated {
+                                Some((earned, _)) => {
+                                    ui.label(
+                                        egui::RichText::new(format!(
+                                            "~+{} CKB",
+                                            format_ckb(earned)
+                                        ))
+                                        .size(11.0)
+                                        .color(self.colors.warn),
+                                    );
+                                }
+                                None => {
+                                    ui.label(
+                                        egui::RichText::new("--")
+                                            .size(11.0)
+                                            .color(self.colors.text_muted),
+                                    );
+                                }
+                            }
 
                             if ui
                                 .add_enabled(
