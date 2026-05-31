@@ -246,19 +246,37 @@ impl App {
 
                                     // Info
                                     ui.vertical(|ui| {
+                                        ui.horizontal(|ui| {
+                                            ui.label(
+                                                egui::RichText::new(format!("Account #{}", i))
+                                                    .size(13.0),
+                                            );
+                                            ui.label(
+                                                egui::RichText::new(&balance_text)
+                                                    .size(13.0)
+                                                    .strong()
+                                                    .color(self.colors.text_muted)
+                                                    .family(egui::FontFamily::Monospace),
+                                            );
+                                        });
+                                        let short_addr = if address_text.len() > 100 {
+                                            format!(
+                                                "{}...{}",
+                                                &address_text[..50],
+                                                &address_text[address_text.len() - 50..]
+                                            )
+                                        } else {
+                                            address_text.clone()
+                                        };
                                         ui.label(
-                                            egui::RichText::new(format!("Account #{}", i))
-                                                .size(13.0),
-                                        );
-                                        ui.label(
-                                            egui::RichText::new(&address_text)
+                                            egui::RichText::new(short_addr)
                                                 .size(9.0)
                                                 .color(self.colors.text_muted)
                                                 .family(egui::FontFamily::Monospace),
                                         );
                                     });
 
-                                    // Balance + copy (right-aligned)
+                                    // Copy button (right-aligned)
                                     ui.with_layout(
                                         egui::Layout::right_to_left(egui::Align::Center),
                                         |ui| {
@@ -271,25 +289,6 @@ impl App {
                                                 self.status =
                                                     Status::Info("Address copied!".to_string());
                                             }
-
-                                            ui.add_space(8.0);
-
-                                            ui.vertical(|ui| {
-                                                ui.with_layout(
-                                                    egui::Layout::right_to_left(egui::Align::Min),
-                                                    |ui| {
-                                                        ui.label(
-                                                            egui::RichText::new(&balance_text)
-                                                                .size(15.0)
-                                                                .strong()
-                                                                .color(self.colors.text_muted)
-                                                                .family(
-                                                                    egui::FontFamily::Monospace,
-                                                                ),
-                                                        );
-                                                    },
-                                                );
-                                            });
                                         },
                                     );
                                 });

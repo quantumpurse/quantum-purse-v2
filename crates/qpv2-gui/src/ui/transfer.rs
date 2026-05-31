@@ -14,10 +14,27 @@ impl App {
             ui.vertical(|ui| {
                 ui.set_width(ui.available_width() - 30.0);
 
-                // Aurora panel: reserve shape slots up front so the
-                // gradient + spotlight + corner bloom paint *under*
-                // the form widgets. Filled in after `Frame::show`
-                // returns, when the panel's final rect is known.
+                ui.heading(
+                    egui::RichText::new("Transfer")
+                        .size(26.0)
+                        .strong()
+                        .color(self.colors.text),
+                );
+                ui.label(
+                    egui::RichText::new("Send CKB to any Nervos address.")
+                        .size(13.0)
+                        .color(self.colors.text_muted),
+                );
+
+                ui.add_space(22.0);
+
+                let is_busy = !matches!(
+                    self.tx_status,
+                    TransactionStatus::Idle
+                        | TransactionStatus::Success(_)
+                        | TransactionStatus::Error(_)
+                );
+
                 let mut gradient_idx = None;
                 let mut spotlight_idx = None;
                 let mut glow_idx = None;
@@ -30,28 +47,6 @@ impl App {
                         gradient_idx = Some(ui.painter().add(egui::Shape::Noop));
                         spotlight_idx = Some(ui.painter().add(egui::Shape::Noop));
                         glow_idx = Some(ui.painter().add(egui::Shape::Noop));
-
-                        // ── Form title + subtitle (inside the card, matching DAO Deposit) ──
-                        ui.label(
-                            egui::RichText::new("Transfer CKB")
-                                .size(20.0)
-                                .strong()
-                                .color(self.colors.text),
-                        );
-                        ui.label(
-                            egui::RichText::new("Send CKB to any Nervos address.")
-                                .size(12.0)
-                                .color(self.colors.text_muted),
-                        );
-
-                        ui.add_space(20.0);
-
-                        let is_busy = !matches!(
-                            self.tx_status,
-                            TransactionStatus::Idle
-                                | TransactionStatus::Success(_)
-                                | TransactionStatus::Error(_)
-                        );
 
                         // ── From Account ──
                         ui.label(
@@ -146,7 +141,7 @@ impl App {
 
                         let recipient_edit =
                             egui::TextEdit::singleline(&mut self.transfer_recipient)
-                                .hint_text("ckt1q... or ckb1q...")
+                                .hint_text("Input recipient address")
                                 .desired_width(ui.available_width())
                                 .font(egui::FontId::monospace(13.0))
                                 .interactive(!is_busy);
@@ -293,127 +288,6 @@ impl App {
                             self.transfer_async();
                         }
 
-                        // ── Inline status (matches DAO Deposit layout) ──
-                        match &self.tx_status {
-                            TransactionStatus::Success(tx_hash) => {
-                                ui.add_space(8.0);
-                                ui.horizontal(|ui| {
-                                    ui.label(
-                                        egui::RichText::new("Transaction sent: ")
-                                            .size(12.0)
-                                            .color(self.colors.accent),
-                                    );
-                                    ui.label(
-                                        egui::RichText::new(format!(
-                                            "0x{}..{}",
-                                            &tx_hash[..8],
-                                            &tx_hash[tx_hash.len() - 8..]
-                                        ))
-                                        .size(11.0)
-                                        .color(self.colors.text_muted)
-                                        .family(egui::FontFamily::Monospace),
-                                    );
-                                    if ui.small_button("Copy").clicked() {
-                                        ui.ctx().copy_text(format!("0x{}", tx_hash));
-                                    }
-                                });
-                            }
-                            TransactionStatus::Error(msg) => {
-                                ui.add_space(8.0);
-                                ui.label(
-                                    egui::RichText::new(msg)
-                                        .size(12.0)
-                                        .color(self.colors.danger),
-                                );
-                            }
-                            _ => {}
-                        }
-
-                        // ── Address Book (unique external recipients from tx_history) ──
-                        // Collect up to 5 most-recent unique external recipients.
-                        // tx_history is already sorted newest-first by the poller.
-                        let mut seen: HashSet<String> = HashSet::new();
-                        let entries: Vec<String> = self
-                            .tx_history
-                            .iter()
-                            .filter(|r| matches!(r.tx_kind, TxKind::Outgoing))
-                            .filter_map(|r| r.external_recipient_address.as_ref())
-                            .filter(|a| seen.insert((*a).clone()))
-                            .take(5)
-                            .cloned()
-                            .collect();
-
-                        ui.add_space(18.0);
-                        ui.separator();
-                        ui.add_space(10.0);
-                        ui.label(
-                            egui::RichText::new("Address Book")
-                                .size(13.0)
-                                .strong()
-                                .color(self.colors.text),
-                        );
-                        ui.add_space(8.0);
-
-                        if entries.is_empty() {
-                            ui.label(
-                                egui::RichText::new(
-                                    "No recent recipients yet. Sent addresses will appear here.",
-                                )
-                                .size(11.0)
-                                .color(self.colors.text_muted),
-                            );
-                        } else {
-                            let avatar_palette = [
-                                self.colors.accent,
-                                self.colors.accent2,
-                                self.colors.accent3,
-                                self.colors.warn,
-                            ];
-                            for (i, addr) in entries.iter().enumerate() {
-                                let fill = avatar_palette[i % avatar_palette.len()];
-                                let letter = {
-                                    let sum: u32 = addr.bytes().map(u32::from).sum();
-                                    ((b'A' + (sum % 26) as u8) as char).to_string()
-                                };
-
-                                ui.horizontal(|ui| {
-                                    egui::Frame::new()
-                                        .fill(fill)
-                                        .corner_radius(8.0)
-                                        .inner_margin(egui::Margin::symmetric(8, 4))
-                                        .show(ui, |ui| {
-                                            ui.label(
-                                                egui::RichText::new(letter)
-                                                    .size(12.0)
-                                                    .strong()
-                                                    .color(self.colors.bg),
-                                            );
-                                        });
-                                    ui.add_space(10.0);
-                                    ui.label(
-                                        egui::RichText::new(addr)
-                                            .size(11.0)
-                                            .family(egui::FontFamily::Monospace)
-                                            .color(self.colors.text_muted),
-                                    );
-                                    ui.with_layout(
-                                        egui::Layout::right_to_left(egui::Align::Center),
-                                        |ui| {
-                                            let use_btn = egui::Button::new(
-                                                egui::RichText::new("Use \u{2192}")
-                                                    .size(11.0)
-                                                    .color(self.colors.accent),
-                                            )
-                                            .fill(egui::Color32::TRANSPARENT);
-                                            if ui.add_enabled(!is_busy, use_btn).clicked() {
-                                                self.transfer_recipient = addr.clone();
-                                            }
-                                        },
-                                    );
-                                });
-                                ui.add_space(6.0);
-                            }
-                        }
                     });
 
                 // Frame finalized — paint the aurora layers under
@@ -443,21 +317,15 @@ impl App {
                 }
 
                 if let Some(idx) = spotlight_idx {
-                    // Top-left ambient spotlight, behind the form
-                    // title. Same role as the hero's balance halo:
-                    // gives the panel a sense of light source and
-                    // depth.
-                    let spot_center = egui::pos2(
-                        card_rect.left() + 120.0,
-                        card_rect.top() + 80.0,
-                    );
-                    let mut mesh = crate::ui::common::smooth_glow_mesh(
+                    let spot_center = egui::pos2(card_rect.left() + 15.0, card_rect.top() + 10.0);
+                    let mesh = crate::ui::common::glow_mesh_clipped_to_rounded_rect(
                         spot_center,
-                        170.0,
+                        200.0,
                         self.colors.accent,
                         26,
+                        card_rect,
+                        18.0,
                     );
-                    crate::ui::common::clamp_mesh_to_rounded_rect(&mut mesh, card_rect, 18.0);
                     painter.set(idx, egui::Shape::mesh(mesh));
                 }
 
@@ -476,6 +344,129 @@ impl App {
                     );
                     crate::ui::common::clamp_mesh_to_rounded_rect(&mut mesh, card_rect, 18.0);
                     painter.set(idx, egui::Shape::mesh(mesh));
+                }
+
+                // ── Address Book ──
+                let mut seen: HashSet<String> = HashSet::new();
+                let entries: Vec<String> = self
+                    .tx_history
+                    .iter()
+                    .filter(|r| matches!(r.tx_kind, TxKind::Outgoing))
+                    .filter_map(|r| r.external_recipient_address.as_ref())
+                    .filter(|a| seen.insert((*a).clone()))
+                    .take(5)
+                    .cloned()
+                    .collect();
+
+                ui.add_space(20.0);
+
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new("Address Book")
+                            .size(15.0)
+                            .strong()
+                            .color(self.colors.text),
+                    );
+
+                    match &self.tx_status {
+                        TransactionStatus::Success(tx_hash) => {
+                            ui.add_space(10.0);
+                            ui.label(
+                                egui::RichText::new("Sent:")
+                                    .size(11.0)
+                                    .color(self.colors.accent),
+                            );
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "0x{}..{}",
+                                    &tx_hash[..8],
+                                    &tx_hash[tx_hash.len() - 8..]
+                                ))
+                                .size(11.0)
+                                .color(self.colors.text_muted)
+                                .family(egui::FontFamily::Monospace),
+                            );
+                            if ui.small_button("Copy").clicked() {
+                                ui.ctx().copy_text(format!("0x{}", tx_hash));
+                            }
+                        }
+                        TransactionStatus::Error(msg) => {
+                            ui.add_space(10.0);
+                            ui.label(
+                                egui::RichText::new(msg)
+                                    .size(11.0)
+                                    .color(self.colors.danger),
+                            );
+                        }
+                        _ => {}
+                    }
+                });
+                ui.add_space(8.0);
+
+                if entries.is_empty() {
+                    ui.label(
+                        egui::RichText::new(
+                            "No recent recipients yet. Sent addresses will appear here.",
+                        )
+                        .size(11.0)
+                        .color(self.colors.text_muted),
+                    );
+                } else {
+                    let avatar_palette = [
+                        self.colors.accent,
+                        self.colors.accent2,
+                        self.colors.accent3,
+                        self.colors.warn,
+                    ];
+                    for (i, addr) in entries.iter().enumerate() {
+                        let fill = avatar_palette[i % avatar_palette.len()];
+                        let letter = {
+                            let sum: u32 = addr.bytes().map(u32::from).sum();
+                            ((b'A' + (sum % 26) as u8) as char).to_string()
+                        };
+
+                        ui.horizontal(|ui| {
+                            egui::Frame::new()
+                                .fill(fill)
+                                .corner_radius(8.0)
+                                .inner_margin(egui::Margin::symmetric(8, 4))
+                                .show(ui, |ui| {
+                                    ui.label(
+                                        egui::RichText::new(letter)
+                                            .size(12.0)
+                                            .strong()
+                                            .color(self.colors.bg),
+                                    );
+                                });
+                            ui.add_space(10.0);
+                            let short_addr = if addr.len() > 60 {
+                                format!("{}...{}", &addr[..30], &addr[addr.len() - 30..])
+                            } else {
+                                addr.clone()
+                            };
+                            ui.label(
+                                egui::RichText::new(short_addr)
+                                    .size(11.0)
+                                    .family(egui::FontFamily::Monospace)
+                                    .color(self.colors.text_muted),
+                            );
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    let use_btn = egui::Button::new(
+                                        egui::RichText::new("Use \u{2192}")
+                                            .size(11.0)
+                                            .color(self.colors.accent),
+                                    )
+                                    .fill(egui::Color32::TRANSPARENT);
+                                    if ui.add_enabled(!is_busy, use_btn).clicked() {
+                                        self.transfer_recipient = addr.clone();
+                                    }
+                                },
+                            );
+                        });
+                        ui.add_space(6.0);
+                    }
                 }
             }); // vertical
         }); // horizontal

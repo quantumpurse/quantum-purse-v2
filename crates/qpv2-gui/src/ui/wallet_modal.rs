@@ -181,20 +181,25 @@ impl App {
                         ui.add_space(14.0);
 
                         // Cancel button
-                        let cancel = egui::Button::new(
-                            egui::RichText::new("Cancel")
-                                .size(12.0)
-                                .color(self.colors.text_muted),
-                        )
-                        .fill(egui::Color32::TRANSPARENT)
-                        .corner_radius(6.0);
+                        let cancel_clicked = ui
+                            .vertical_centered(|ui| {
+                                let cancel = egui::Button::new(
+                                    egui::RichText::new("Cancel")
+                                        .size(13.0)
+                                        .color(self.colors.text_muted),
+                                )
+                                .fill(egui::Color32::TRANSPARENT)
+                                .stroke(egui::Stroke::new(1.0, self.colors.border2))
+                                .corner_radius(8.0)
+                                .min_size(egui::vec2(modal_width, 36.0));
+                                ui.add(cancel).clicked()
+                            })
+                            .inner;
 
-                        ui.vertical_centered(|ui| {
-                            if ui.add(cancel).clicked() {
-                                self.wallet_modal = WalletModal::None;
-                                self.new_wallet_name.clear();
-                            }
-                        });
+                        if cancel_clicked {
+                            self.wallet_modal = WalletModal::None;
+                            self.new_wallet_name.clear();
+                        }
                     });
             });
 

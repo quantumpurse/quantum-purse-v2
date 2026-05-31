@@ -359,7 +359,7 @@ impl App {
                     // and "MAIN"/"TEST" at 8pt is ~24px wide, so its left edge sits ~-29.
                     // Anchor the arrow's RIGHT edge at -36 to leave ~7px clear of the badge.
                     painter.text(
-                        egui::pos2(inner.right() - 28.0, row_y),
+                        egui::pos2(inner.right() - 28.0, row_y - 13.0),
                         egui::Align2::RIGHT_TOP,
                         "\u{25bc}",
                         egui::FontId::proportional(9.0),
@@ -377,7 +377,7 @@ impl App {
                         self.colors.warn
                     };
                     painter.text(
-                        egui::pos2(inner.right() - 5.0, row_y),
+                        egui::pos2(inner.right() - 5.0, row_y - 13.0),
                         egui::Align2::RIGHT_TOP,
                         network,
                         egui::FontId::proportional(8.0),
@@ -458,7 +458,7 @@ impl App {
                     );
 
                     painter.text(
-                        egui::pos2(inner.right() - 45.0, row_y),
+                        egui::pos2(inner.right() - 45.0, row_y - 13.0),
                         egui::Align2::RIGHT_TOP,
                         "\u{25bc}",
                         egui::FontId::proportional(9.0),
@@ -468,7 +468,7 @@ impl App {
                     // Variant badge (from cache — no disk I/O).
                     if let Some(cw) = self.wallet_cache.iter().find(|w| w.id == self.wallet_id) {
                         painter.text(
-                            egui::pos2(inner.right() - 5.0, row_y),
+                            egui::pos2(inner.right() - 5.0, row_y - 13.0),
                             egui::Align2::RIGHT_TOP,
                             format!("{}", cw.spx_variant),
                             egui::FontId::proportional(8.0),
@@ -599,7 +599,7 @@ impl App {
             .show(ctx, |ui| {
                 self.draw_unlocked_bg(ui);
 
-                egui::ScrollArea::vertical().show(ui, |ui| {
+                egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
                     ui.add_space(24.0);
 
                     match self.active_tab {

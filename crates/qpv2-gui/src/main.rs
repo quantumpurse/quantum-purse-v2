@@ -448,6 +448,7 @@ impl eframe::App for App {
         self.show_node_selector_popup(ctx);
         self.show_wallet_selector_popup(ctx);
         self.show_wallet_modal(ctx);
+        self.show_dao_deposit_modal(ctx);
 
         // Polling main stages of the wallet.
         match self.screen.clone() {
@@ -508,8 +509,8 @@ fn main() -> eframe::Result {
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1200.0, 600.0])
-            .with_min_inner_size([1200.0, 600.0])
+            .with_inner_size([1000.0, 600.0])
+            .with_min_inner_size([1000.0, 600.0])
             .with_title("Quantum Purse"),
         ..Default::default()
     };

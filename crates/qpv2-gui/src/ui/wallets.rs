@@ -52,7 +52,7 @@ impl App {
                                 );
                                 ui.add_space(4.0);
                                 ui.label(
-                                    egui::RichText::new("Generate a new wallet with a fresh seed.")
+                                    egui::RichText::new("Generate a new wallet.")
                                         .size(11.0)
                                         .color(self.colors.text_muted),
                                 );
@@ -247,7 +247,7 @@ impl App {
                                     egui::Layout::left_to_right(egui::Align::Min),
                                     |ui| {
                                         let (tile_rect, _) = ui.allocate_exact_size(
-                                            egui::vec2(48.0, 64.0),
+                                            egui::vec2(64.0, 64.0),
                                             egui::Sense::hover(),
                                         );
                                         paint_wallet_tile(

@@ -4,7 +4,8 @@ use eframe::egui;
 
 use super::common::CardHover;
 use crate::types::{
-    format_ckb_balance, format_relative_time, format_with_commas, Tab, TxKind, TxRecord,
+    format_ckb, format_ckb_balance, format_relative_time, format_with_commas, Tab, TxKind,
+    TxRecord,
 };
 use crate::App;
 
@@ -82,26 +83,14 @@ impl App {
                     .filter_map(|b| b.as_ref().copied())
                     .sum();
 
-                // Render balance with the fractional part in accent green
-                // to match the mockup style (e.g. "142,840." white + "50" green + " CKB" white).
                 let hero_font = egui::FontFamily::Name("hero".into());
-
-                let whole = total_shannons / crate::types::CKB_DECIMAL_PLACES;
-                let frac = total_shannons % crate::types::CKB_DECIMAL_PLACES;
                 let bal_size = 46.0;
+                let formatted = format_ckb(total_shannons);
 
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
-                    if frac == 0 {
-                        ui.label(
-                            egui::RichText::new(format!("{} CKB", format_with_commas(whole)))
-                                .size(bal_size)
-                                .strong()
-                                .family(hero_font.clone())
-                                .color(self.colors.text),
-                        );
-                    } else {
-                        let frac_str = format!("{:08}", frac);
+                    if let Some((whole_str, frac_str)) = formatted.split_once('.') {
+                        let whole: u64 = whole_str.parse().unwrap_or(0);
                         ui.label(
                             egui::RichText::new(format!("{}.", format_with_commas(whole)))
                                 .size(bal_size)
@@ -110,7 +99,7 @@ impl App {
                                 .color(self.colors.text),
                         );
                         ui.label(
-                            egui::RichText::new(&frac_str[..2])
+                            egui::RichText::new(frac_str)
                                 .size(bal_size)
                                 .strong()
                                 .family(hero_font.clone())
@@ -118,6 +107,15 @@ impl App {
                         );
                         ui.label(
                             egui::RichText::new(" CKB")
+                                .size(bal_size)
+                                .strong()
+                                .family(hero_font.clone())
+                                .color(self.colors.text),
+                        );
+                    } else {
+                        let whole: u64 = formatted.parse().unwrap_or(0);
+                        ui.label(
+                            egui::RichText::new(format!("{} CKB", format_with_commas(whole)))
                                 .size(bal_size)
                                 .strong()
                                 .family(hero_font.clone())
@@ -254,12 +252,13 @@ impl App {
                 ui.set_width(ui.available_width() - content_padding);
 
                 // ── Quick actions ──
-                ui.columns(4, |cols| {
+                ui.columns(5, |cols| {
                     let actions = [
                         ("\u{2191}", "Send", Tab::Transfer),
                         ("\u{2193}", "Receive", Tab::Accounts),
                         ("\u{2b21}", "DAO", Tab::DaoOperations),
-                        ("\u{25ce}", "Accounts", Tab::Accounts),
+                        ("\u{25c9}", "Nodes", Tab::NodeManager),
+                        ("\u{25EB}", "Wallets", Tab::Wallets),
                     ];
 
                     for (i, (icon, label, target_tab)) in actions.iter().enumerate() {
@@ -395,7 +394,12 @@ impl App {
         let is_hovered = last_rect.is_some_and(|r| ui.rect_contains_pointer(r));
 
         let fill = if is_hovered {
-            colors.surface2
+            egui::Color32::from_rgba_unmultiplied(
+                colors.accent.r(),
+                colors.accent.g(),
+                colors.accent.b(),
+                10,
+            )
         } else {
             colors.surface
         };

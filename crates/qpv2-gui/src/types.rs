@@ -239,7 +239,7 @@ impl Default for AppColors {
 }
 
 /// Format shannons as a numeric CKB string without the unit suffix.
-/// For example: 100_000_000 -> "1", 150_000_000 -> "1.5".
+/// Shows up to 3 decimal places, trailing zeros trimmed.
 pub(crate) fn format_ckb(shannons: u64) -> String {
     let whole = shannons / CKB_DECIMAL_PLACES;
     let frac = shannons % CKB_DECIMAL_PLACES;
@@ -247,7 +247,7 @@ pub(crate) fn format_ckb(shannons: u64) -> String {
         format!("{}", whole)
     } else {
         let frac_str = format!("{:08}", frac);
-        let trimmed = frac_str.trim_end_matches('0');
+        let trimmed = frac_str[..3].trim_end_matches('0');
         format!("{}.{}", whole, trimmed)
     }
 }
