@@ -2,7 +2,7 @@
 
 use eframe::egui;
 
-use super::common::CardHover;
+use super::utils::CardHover;
 use crate::types::{
     format_ckb, format_ckb_balance, format_relative_time, format_with_commas, Tab, TxKind, TxRecord,
 };
@@ -259,13 +259,13 @@ impl App {
             let brc = egui::Color32::from_rgba_unmultiplied(123, 94, 167, 13);
             let bl = egui::Color32::from_rgba_unmultiplied(0, 200, 255, 10);
             let mesh =
-                crate::ui::common::rounded_rect_gradient_mesh(card_rect, 20.0, tl, tr, brc, bl);
+                crate::ui::utils::rounded_rect_gradient_mesh(card_rect, 20.0, tl, tr, brc, bl);
             painter.set(idx, egui::Shape::mesh(mesh));
         }
 
         if let Some(idx) = spotlight_idx {
             let spot_center = egui::pos2(card_rect.left() + 15.0, card_rect.top() + 10.0);
-            let mesh = crate::ui::common::glow_mesh_clipped_to_rounded_rect(
+            let mesh = crate::ui::utils::glow_mesh_clipped_to_rounded_rect(
                 spot_center,
                 200.0,
                 self.colors.accent,
@@ -279,8 +279,8 @@ impl App {
         if let Some(idx) = glow_idx {
             let glow_center = egui::pos2(card_rect.right() - 60.0, card_rect.top() + 60.0);
             let mut mesh =
-                crate::ui::common::smooth_glow_mesh(glow_center, 100.0, self.colors.accent, 20);
-            crate::ui::common::clamp_mesh_to_rounded_rect(&mut mesh, card_rect, 20.0);
+                crate::ui::utils::smooth_glow_mesh(glow_center, 100.0, self.colors.accent, 20);
+            crate::ui::utils::clamp_mesh_to_rounded_rect(&mut mesh, card_rect, 20.0);
             painter.set(idx, egui::Shape::mesh(mesh));
         }
 

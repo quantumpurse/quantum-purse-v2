@@ -3,29 +3,13 @@
 use ckb_types::prelude::Unpack;
 use eframe::egui;
 
-use super::common::{compute_apc, extract_ar, paint_corner_accent, CardHover};
+use super::utils::{extract_ar, format_duration_ms, paint_corner_accent, CardHover};
 use crate::types::{
     format_ckb, format_ckb_balance, format_ckb_with_decimals, DaoView, TransactionStatus,
 };
 use crate::App;
 
 impl App {
-    /// Compute the current APC from the tip and baseline headers.
-    pub(crate) fn compute_dao_apc(&self) -> String {
-        let tip = match &self.node_status.tip_header {
-            Some(h) => h,
-            None => return "--".to_string(),
-        };
-        let prev = match &self.node_status.apc_baseline_header {
-            Some(h) => h,
-            None => return "--".to_string(),
-        };
-        match compute_apc(prev, tip) {
-            Some(apc) => format!("{:.2}%", apc * 100.0),
-            None => "--".to_string(),
-        }
-    }
-
     pub(crate) fn show_dao_tab(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.add_space(30.0);
@@ -907,22 +891,5 @@ impl App {
         if let Some((out_point, lock_args)) = withdraw_action {
             self.dao_withdraw_async(out_point, lock_args);
         }
-    }
-}
-
-fn format_duration_ms(ms: u64, verbose: bool) -> String {
-    let secs = ms / 1000;
-    let mins = secs / 60;
-    let hours = mins / 60;
-    let days = hours / 24;
-
-    if verbose {
-        format!("{}d {}h {}m {}s", days, hours % 24, mins % 60, secs % 60)
-    } else if days > 0 {
-        format!("{}d {}h", days, hours % 24)
-    } else if hours > 0 {
-        format!("{}h {}m", hours, mins % 60)
-    } else {
-        format!("{}m", mins)
     }
 }

@@ -4,7 +4,7 @@ use eframe::egui;
 use qpv2_core::types::AuthMethod;
 use qpv2_core::KeyVault;
 
-use super::common::{paint_corner_accent, CardHover};
+use super::utils::{paint_corner_accent, CardHover};
 use crate::types::Status;
 use crate::App;
 

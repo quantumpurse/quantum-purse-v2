@@ -40,7 +40,39 @@ pub(crate) fn compute_apc(
     Some(apc)
 }
 
+pub(crate) fn format_duration_ms(ms: u64, verbose: bool) -> String {
+    let secs = ms / 1000;
+    let mins = secs / 60;
+    let hours = mins / 60;
+    let days = hours / 24;
+
+    if verbose {
+        format!("{}d {}h {}m {}s", days, hours % 24, mins % 60, secs % 60)
+    } else if days > 0 {
+        format!("{}d {}h", days, hours % 24)
+    } else if hours > 0 {
+        format!("{}h {}m", hours, mins % 60)
+    } else {
+        format!("{}m", mins)
+    }
+}
+
 impl App {
+    pub(crate) fn compute_dao_apc(&self) -> String {
+        let tip = match &self.node_status.tip_header {
+            Some(h) => h,
+            None => return "--".to_string(),
+        };
+        let prev = match &self.node_status.apc_baseline_header {
+            Some(h) => h,
+            None => return "--".to_string(),
+        };
+        match compute_apc(prev, tip) {
+            Some(apc) => format!("{:.2}%", apc * 100.0),
+            None => "--".to_string(),
+        }
+    }
+
     /// Mockup-faithful background for the Unlocked screen: solid
     /// `colors.bg` plus three soft radial tints (accent / accent2 /
     /// accent3) — matches `body::before` in `mockup-ui.html`. Stripped

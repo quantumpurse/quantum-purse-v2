@@ -1,7 +1,7 @@
 //! UI rendering modules — each file draws a specific screen or component.
 
 mod accounts;
-mod common;
+mod utils;
 mod dao;
 mod dashboard;
 mod main_stages;
