@@ -38,10 +38,10 @@ pub struct PreparedCell {
     pub capacity: u64,
     /// Maximum withdrawable capacity (principal + interest) in shannons.
     pub maximum_withdraw: u64,
-    /// Block number in which the deposit transaction was committed.
-    pub deposit_block_number: u64,
-    /// Block number in which the prepare transaction was committed.
-    pub prepare_block_number: u64,
+    /// Header of the block in which the deposit transaction was committed.
+    pub deposit_header: HeaderView,
+    /// Header of the block in which the prepare transaction was committed.
+    pub prepare_header: HeaderView,
 }
 
 /// Helper for deserializing `get_transaction` batch results.
@@ -260,8 +260,8 @@ pub fn categorize_dao_cells(
             out_point: cell.out_point,
             capacity: cell.output.capacity().unpack(),
             maximum_withdraw: max_withdraw,
-            deposit_block_number: deposit_header.number(),
-            prepare_block_number: prepare_header.number(),
+            deposit_header: deposit_header.clone(),
+            prepare_header: prepare_header.clone(),
         });
     }
 

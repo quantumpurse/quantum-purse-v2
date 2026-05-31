@@ -652,7 +652,7 @@ impl App {
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 egui::Grid::new("dao_positions")
-                    .num_columns(5)
+                    .num_columns(6)
                     .spacing(egui::vec2(12.0, 8.0))
                     .striped(true)
                     .show(ui, |ui| {
@@ -669,6 +669,7 @@ impl App {
                         header(ui, "Cell");
                         header(ui, "Deposited");
                         header(ui, "Earned");
+                        header(ui, "Locked");
                         header(ui, "Action");
                         ui.end_row();
 
@@ -730,6 +731,22 @@ impl App {
                                 }
                             }
 
+                            // Lock duration from deposit header timestamp to tip.
+                            let duration_str = self
+                                .deposit_headers
+                                .get(&cell.block_number)
+                                .zip(self.node_status.tip_header.as_ref())
+                                .map(|(dep_h, tip_h)| {
+                                    let ms = tip_h.timestamp().saturating_sub(dep_h.timestamp());
+                                    format_duration_ms(ms)
+                                })
+                                .unwrap_or_else(|| "--".to_string());
+                            ui.label(
+                                egui::RichText::new(duration_str)
+                                    .size(10.5)
+                                    .color(self.colors.text_muted),
+                            );
+
                             if ui
                                 .add_enabled(
                                     !is_busy,
@@ -782,6 +799,17 @@ impl App {
                                     .color(self.colors.warn),
                             );
 
+                            // Lock duration from deposit to prepare.
+                            let ms = cell
+                                .prepare_header
+                                .timestamp()
+                                .saturating_sub(cell.deposit_header.timestamp());
+                            ui.label(
+                                egui::RichText::new(format_duration_ms(ms))
+                                    .size(10.5)
+                                    .color(self.colors.text_muted),
+                            );
+
                             if ui
                                 .add_enabled(
                                     !is_busy,
@@ -809,5 +837,20 @@ impl App {
         if let Some((out_point, lock_args)) = withdraw_action {
             self.dao_withdraw_async(out_point, lock_args);
         }
+    }
+}
+
+fn format_duration_ms(ms: u64) -> String {
+    let secs = ms / 1000;
+    let mins = secs / 60;
+    let hours = mins / 60;
+    let days = hours / 24;
+
+    if days > 0 {
+        format!("{}d {}h", days, hours % 24)
+    } else if hours > 0 {
+        format!("{}h {}m", hours, mins % 60)
+    } else {
+        format!("{}m", mins)
     }
 }

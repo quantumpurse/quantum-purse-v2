@@ -184,8 +184,9 @@ impl App {
                             .then_with(|| a.out_point.as_slice().cmp(b.out_point.as_slice()))
                     });
                     self.dao_prepared_staging.sort_by(|(_, a), (_, b)| {
-                        b.prepare_block_number
-                            .cmp(&a.prepare_block_number)
+                        b.prepare_header
+                            .number()
+                            .cmp(&a.prepare_header.number())
                             .then_with(|| a.out_point.as_slice().cmp(b.out_point.as_slice()))
                     });
 
