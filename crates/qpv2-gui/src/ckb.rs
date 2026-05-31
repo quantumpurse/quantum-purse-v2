@@ -197,6 +197,8 @@ impl App {
 
     /// Fetch deposit block headers that aren't cached yet.
     /// Skips if a fetch is already in flight or all headers are cached.
+    // TODO: we are using remote RPC for convenient because get_header_by_number 
+    // is not supported by light client - thus the surface IF of ckb-node doesn't work.
     pub(crate) fn fetch_deposit_headers(&mut self) {
         if self.deposit_headers_rx.is_some() {
             return;
@@ -215,38 +217,33 @@ impl App {
             return;
         }
 
-        let qp_client = self.qp_client.clone();
+        let network = self.qp_client.network();
         let (tx, rx) = std::sync::mpsc::channel();
         self.deposit_headers_rx = Some(rx);
 
         std::thread::spawn(move || {
-            let calls: Vec<(&str, serde_json::Value)> = missing
-                .iter()
-                .map(|n| {
-                    (
-                        "get_header_by_number",
-                        serde_json::json!([format!("{:#x}", n)]),
-                    )
-                })
-                .collect();
+            let public_rpc_url = ckb_node::NodeConfig::default_rpc_url_for(
+                ckb_node::NodeType::PublicRpc,
+                network,
+            );
+            let rpc = ckb_sdk::CkbRpcClient::new(public_rpc_url);
 
             let mut result = HashMap::new();
-            match qp_client.batch_rpc(&calls) {
-                Ok(responses) => {
-                    for (block_number, value) in missing.into_iter().zip(responses) {
-                        match serde_json::from_value::<ckb_jsonrpc_types::HeaderView>(value) {
-                            Ok(header) => {
-                                let core_header: ckb_types::core::HeaderView = header.into();
-                                result.insert(block_number, core_header);
-                            }
-                            Err(e) => {
-                                tracing::warn!("Failed to parse header for block {}: {}", block_number, e);
-                            }
-                        }
+            for block_number in missing {
+                match rpc.get_header_by_number(block_number.into()) {
+                    Ok(Some(h)) => {
+                        let core_header: ckb_types::core::HeaderView = h.into();
+                        result.insert(block_number, core_header);
                     }
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to fetch deposit headers: {}", e);
+                    Ok(None) => {
+                        tracing::warn!("Deposit header not found (block #{})", block_number);
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to fetch deposit header (block #{}): {}",
+                            block_number, e
+                        );
+                    }
                 }
             }
             let _ = tx.send(result);
