@@ -767,7 +767,7 @@ impl App {
                             );
 
                             ui.label(
-                                egui::RichText::new("Accumulating")
+                                egui::RichText::new("Earning")
                                     .size(10.5)
                                     .color(self.colors.accent),
                             );
@@ -859,7 +859,7 @@ impl App {
                             );
 
                             ui.label(
-                                egui::RichText::new("Claimable")
+                                egui::RichText::new("Redeemable")
                                     .size(10.5)
                                     .color(self.colors.warn),
                             );
