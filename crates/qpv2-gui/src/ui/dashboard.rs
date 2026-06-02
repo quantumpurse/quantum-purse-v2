@@ -3,9 +3,8 @@
 use eframe::egui;
 
 use super::utils::CardHover;
-use crate::types::{
-    format_ckb, format_ckb_balance, format_relative_time, format_with_commas, Tab, TxKind, TxRecord,
-};
+use crate::types::{Tab, TxKind, TxRecord};
+use crate::utils::{format_ckb, format_ckb_balance, format_relative_time, format_with_commas};
 use crate::App;
 
 impl App {

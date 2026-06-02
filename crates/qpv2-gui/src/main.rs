@@ -1,11 +1,12 @@
 //! GUI for SPHINCS+ key vault with Passkey PRF / Touch ID support.
 
-mod ckb;
+mod fetcher;
 mod poller;
 mod transactor;
 mod tx_history;
 mod types;
 mod ui;
+mod utils;
 mod wallet;
 
 use ckb_node::{LocalNodeProcess, NodeConfig, NodeType, QpClient};

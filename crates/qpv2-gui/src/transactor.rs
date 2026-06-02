@@ -1,8 +1,7 @@
 //! Transaction building, signing, and sending.
 
-use crate::types::{
-    spx_witness_lock_size, Status, TransactionKind, TransactionStatus, CKB_DECIMAL_PLACES,
-};
+use crate::types::{Status, TransactionKind, TransactionStatus, CKB_DECIMAL_PLACES};
+use crate::utils::spx_witness_lock_size;
 use crate::App;
 use ckb_node::{NodeType, QpClient};
 use qpv2_core::{types::AuthKey, KeyVault};
@@ -45,7 +44,7 @@ impl App {
         let lock_args = self.accounts[from_idx].clone();
 
         let is_mainnet = self.qp_client.is_mainnet();
-        let from_addr_str = match crate::ckb::lock_args_to_address(&lock_args, is_mainnet) {
+        let from_addr_str = match crate::utils::lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
             Err(e) => {
                 let msg = format!("Invalid sender address: {}", e);
@@ -182,7 +181,7 @@ impl App {
         let lock_args = self.accounts[from_idx].clone();
 
         let is_mainnet = self.qp_client.is_mainnet();
-        let from_addr_str = match crate::ckb::lock_args_to_address(&lock_args, is_mainnet) {
+        let from_addr_str = match crate::utils::lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
             Err(e) => {
                 let msg = format!("Invalid sender address: {}", e);
@@ -284,7 +283,7 @@ impl App {
         lock_args: String,
     ) {
         let is_mainnet = self.qp_client.is_mainnet();
-        let from_addr_str = match crate::ckb::lock_args_to_address(&lock_args, is_mainnet) {
+        let from_addr_str = match crate::utils::lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
             Err(e) => {
                 let msg = format!("Invalid sender address: {}", e);
@@ -353,7 +352,7 @@ impl App {
         lock_args: String,
     ) {
         let is_mainnet = self.qp_client.is_mainnet();
-        let from_addr_str = match crate::ckb::lock_args_to_address(&lock_args, is_mainnet) {
+        let from_addr_str = match crate::utils::lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
             Err(e) => {
                 let msg = format!("Invalid sender address: {}", e);

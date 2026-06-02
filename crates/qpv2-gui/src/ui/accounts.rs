@@ -5,7 +5,8 @@ use qpv2_core::types::AuthMethod;
 use qpv2_core::KeyVault;
 
 use super::utils::{paint_corner_accent, CardHover};
-use crate::types::{format_ckb_balance, Status};
+use crate::types::Status;
+use crate::utils::format_ckb_balance;
 use crate::App;
 
 impl App {
@@ -201,7 +202,7 @@ impl App {
                     ];
 
                     for (i, lock_args) in self.accounts.clone().iter().enumerate() {
-                        let address_text = match crate::ckb::lock_args_to_address(
+                        let address_text = match crate::utils::lock_args_to_address(
                             lock_args,
                             self.qp_client.is_mainnet(),
                         ) {

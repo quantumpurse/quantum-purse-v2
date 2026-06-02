@@ -1,19 +1,7 @@
 //! Shared types, constants, and utility functions for the GUI.
 
 use eframe::egui;
-use qpv2_core::types::SpxVariant;
 use serde::{Deserialize, Serialize};
-
-/// Computes the SPHINCS+ witness lock size for a given variant.
-///
-/// The lock field format is: `[4-byte config] + [1-byte flag] + [pubkey] + [signature]`.
-pub(crate) fn spx_witness_lock_size(variant: SpxVariant) -> usize {
-    let param_id: ckb_fips205_utils::ParamId = (variant as u8)
-        .try_into()
-        .expect("SpxVariant and ParamId use the same discriminants");
-    let (pk_len, sig_len) = ckb_fips205_utils::verifying::lengths(param_id);
-    5 + pk_len + sig_len
-}
 
 /// Result of a single account balance fetch from a background thread.
 /// Tuple fields: (lock_args, total_balance, spendable_capacity).
@@ -254,71 +242,5 @@ impl Default for AppColors {
             text: egui::Color32::from_rgb(232, 244, 240),                        // #e8f4f0
             text_muted: egui::Color32::from_rgb(90, 122, 112),                   // #5a7a70
         }
-    }
-}
-
-/// Format shannons as a numeric CKB string without the unit suffix.
-/// Shows up to `decimals` decimal places, trailing zeros trimmed.
-pub(crate) fn format_ckb_with_decimals(shannons: u64, decimals: usize) -> String {
-    let whole = shannons / CKB_DECIMAL_PLACES;
-    let frac = shannons % CKB_DECIMAL_PLACES;
-    if frac == 0 {
-        format!("{}", whole)
-    } else {
-        let frac_str = format!("{:08}", frac);
-        let end = decimals.min(8);
-        let trimmed = frac_str[..end].trim_end_matches('0');
-        format!("{}.{}", whole, trimmed)
-    }
-}
-
-/// Format shannons as a numeric CKB string, up to 2 decimal places.
-pub(crate) fn format_ckb(shannons: u64) -> String {
-    format_ckb_with_decimals(shannons, 2)
-}
-
-/// Format a number with thousands separators (e.g. `9999` -> `"9,999"`).
-pub(crate) fn format_with_commas(n: u64) -> String {
-    let s = n.to_string();
-    let mut result = String::with_capacity(s.len() + s.len() / 3);
-    for (i, ch) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i).is_multiple_of(3) {
-            result.push(',');
-        }
-        result.push(ch);
-    }
-    result
-}
-
-/// Format a balance in shannons to a human-readable CKB string.
-/// 1 CKB = 100,000,000 shannons.
-pub(crate) fn format_ckb_balance(shannons: u64) -> String {
-    let whole = shannons / CKB_DECIMAL_PLACES;
-    let frac = shannons % CKB_DECIMAL_PLACES;
-    if frac == 0 {
-        format!("{} CKB", format_with_commas(whole))
-    } else {
-        // Show first 2 decimal places.
-        let frac_str = format!("{:08}", frac);
-        format!("{}.{} CKB", format_with_commas(whole), &frac_str[..2])
-    }
-}
-
-/// Format a Unix timestamp as relative time ("3h ago", "1d ago").
-pub(crate) fn format_relative_time(timestamp_secs: u64) -> String {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let diff = now.saturating_sub(timestamp_secs);
-
-    if diff < 60 {
-        "just now".to_string()
-    } else if diff < 3600 {
-        format!("{}m ago", diff / 60)
-    } else if diff < 86400 {
-        format!("{}h ago", diff / 3600)
-    } else {
-        format!("{}d ago", diff / 86400)
     }
 }

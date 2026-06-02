@@ -4,9 +4,8 @@ use ckb_types::prelude::Unpack;
 use eframe::egui;
 
 use super::utils::{extract_ar, format_duration_ms, paint_corner_accent, CardHover};
-use crate::types::{
-    format_ckb, format_ckb_balance, format_ckb_with_decimals, DaoView, TransactionStatus,
-};
+use crate::types::{DaoView, TransactionStatus};
+use crate::utils::{format_ckb, format_ckb_balance, format_ckb_with_decimals};
 use crate::App;
 
 impl App {

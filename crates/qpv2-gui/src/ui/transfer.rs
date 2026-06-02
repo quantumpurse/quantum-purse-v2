@@ -4,7 +4,8 @@ use std::collections::HashSet;
 
 use eframe::egui;
 
-use crate::types::{format_ckb, format_ckb_balance, TransactionStatus, TxKind};
+use crate::types::{TransactionStatus, TxKind};
+use crate::utils::{format_ckb, format_ckb_balance};
 use crate::App;
 
 impl App {

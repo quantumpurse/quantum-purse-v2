@@ -492,8 +492,8 @@ impl UnifiedClient for LightClient {
             .client
             .local_node_info()
             .map_err(|e| NodeManagerError::RpcError(e.to_string()))?;
-        let json = serde_json::to_value(&info)
-            .map_err(|e| NodeManagerError::RpcError(e.to_string()))?;
+        let json =
+            serde_json::to_value(&info).map_err(|e| NodeManagerError::RpcError(e.to_string()))?;
         serde_json::from_value(json).map_err(|e| NodeManagerError::RpcError(e.to_string()))
     }
 }

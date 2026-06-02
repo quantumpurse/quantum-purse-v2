@@ -346,9 +346,7 @@ impl QpClient {
         self.unified_client.as_any()
     }
 
-    pub fn get_peers(
-        &self,
-    ) -> Result<Vec<ckb_jsonrpc_types::RemoteNode>, NodeManagerError> {
+    pub fn get_peers(&self) -> Result<Vec<ckb_jsonrpc_types::RemoteNode>, NodeManagerError> {
         self.unified_client.get_peers()
     }
 
@@ -393,9 +391,7 @@ impl QpClient {
         full.get_blockchain_info().map(Some)
     }
 
-    pub fn tx_pool_info(
-        &self,
-    ) -> Result<Option<ckb_jsonrpc_types::TxPoolInfo>, NodeManagerError> {
+    pub fn tx_pool_info(&self) -> Result<Option<ckb_jsonrpc_types::TxPoolInfo>, NodeManagerError> {
         let Some(full) = self
             .unified_client
             .as_any()
@@ -406,9 +402,7 @@ impl QpClient {
         full.tx_pool_info().map(Some)
     }
 
-    pub fn local_node_info(
-        &self,
-    ) -> Result<ckb_jsonrpc_types::LocalNode, NodeManagerError> {
+    pub fn local_node_info(&self) -> Result<ckb_jsonrpc_types::LocalNode, NodeManagerError> {
         self.unified_client.local_node_info()
     }
 }

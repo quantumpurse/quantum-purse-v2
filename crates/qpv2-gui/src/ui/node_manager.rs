@@ -30,12 +30,9 @@ impl App {
                                 .color(self.colors.text_muted),
                         );
                     });
-                    ui.with_layout(
-                        egui::Layout::right_to_left(egui::Align::Center),
-                        |ui| {
-                            self.draw_network_toggle(ui);
-                        },
-                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        self.draw_network_toggle(ui);
+                    });
                 });
 
                 ui.add_space(14.0);
@@ -59,48 +56,48 @@ impl App {
                                 self.colors.text_muted,
                             );
                         } else {
-                            ui.add(
-                                egui::Spinner::new().size(90.0).color(accent),
+                            draw_loading_gauge(
+                                ui,
+                                accent,
+                                self.colors.surface2,
+                                self.colors.text_muted,
                             );
                         }
                         ui.add_space(20.0);
                         let is_lc = backend == NodeType::LightClient;
-                        ui.with_layout(
-                            egui::Layout::left_to_right(egui::Align::Center),
-                            |ui| {
-                                if is_lc && self.set_block_editing {
-                                    self.draw_sync_edit_row(ui, accent);
-                                } else {
-                                    let big = self.hero_big_value(backend);
-                                    ui.label(
-                                        egui::RichText::new(&big)
-                                            .size(32.0)
-                                            .family(egui::FontFamily::Monospace)
-                                            .strong()
-                                            .color(accent),
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            if is_lc && self.set_block_editing {
+                                self.draw_sync_edit_row(ui, accent);
+                            } else {
+                                let big = self.hero_big_value(backend);
+                                ui.label(
+                                    egui::RichText::new(&big)
+                                        .size(32.0)
+                                        .family(egui::FontFamily::Monospace)
+                                        .strong()
+                                        .color(accent),
+                                );
+                                if is_lc {
+                                    let pen = ui.add(
+                                        egui::Button::new(
+                                            egui::RichText::new("\u{270f}")
+                                                .size(14.0)
+                                                .color(self.colors.text_muted),
+                                        )
+                                        .fill(egui::Color32::TRANSPARENT)
+                                        .frame(false),
                                     );
-                                    if is_lc {
-                                        let pen = ui.add(
-                                            egui::Button::new(
-                                                egui::RichText::new("\u{270f}")
-                                                    .size(14.0)
-                                                    .color(self.colors.text_muted),
-                                            )
-                                            .fill(egui::Color32::TRANSPARENT)
-                                            .frame(false),
-                                        );
-                                        if pen.clicked() {
-                                            self.set_block_editing = true;
-                                            self.set_block_input = self
-                                                .node_status
-                                                .synced_block
-                                                .map(|b| b.to_string())
-                                                .unwrap_or_default();
-                                        }
+                                    if pen.clicked() {
+                                        self.set_block_editing = true;
+                                        self.set_block_input = self
+                                            .node_status
+                                            .synced_block
+                                            .map(|b| b.to_string())
+                                            .unwrap_or_default();
                                     }
                                 }
-                            },
-                        );
+                            }
+                        });
                     });
                     ui.add_space(20.0);
                 }
@@ -141,19 +138,15 @@ impl App {
         });
     }
 
-    fn backend_accent(&self, backend: NodeType) -> egui::Color32 {
-        match backend {
-            NodeType::FullNode => self.colors.accent,
-            NodeType::LightClient => self.colors.accent2,
-            NodeType::PublicRpc => self.colors.accent3,
-        }
+    fn backend_accent(&self, _backend: NodeType) -> egui::Color32 {
+        egui::Color32::from_rgb(0, 229, 255)
     }
 
     fn backend_label(backend: NodeType) -> (&'static str, &'static str) {
         match backend {
-            NodeType::PublicRpc => ("\u{1F310}", "Public RPC"),
             NodeType::LightClient => ("\u{1F4A1}", "Light Client"),
             NodeType::FullNode => ("\u{1F5A5}", "Full Node"),
+            NodeType::PublicRpc => ("\u{1F310}", "Public RPC"),
         }
     }
 
@@ -189,19 +182,13 @@ impl App {
             );
 
             let is_active = selected == net;
-            let resp =
-                ui.interact(seg_rect, ui.id().with(("net-seg", i)), egui::Sense::click());
+            let resp = ui.interact(seg_rect, ui.id().with(("net-seg", i)), egui::Sense::click());
 
             if is_active {
                 painter.rect_filled(
                     seg_rect,
                     5.0,
-                    egui::Color32::from_rgba_unmultiplied(
-                        accent.r(),
-                        accent.g(),
-                        accent.b(),
-                        25,
-                    ),
+                    egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 25),
                 );
             } else if resp.hovered() {
                 painter.rect_filled(
@@ -289,7 +276,11 @@ impl App {
     // ── Tab bar ──────────────────────────────────────────────
 
     fn draw_tab_bar(&mut self, ui: &mut egui::Ui) -> Option<NodeType> {
-        let backends = [NodeType::PublicRpc, NodeType::LightClient, NodeType::FullNode];
+        let backends = [
+            NodeType::LightClient,
+            NodeType::FullNode,
+            NodeType::PublicRpc,
+        ];
         let current = self.qp_client.config().node_type;
         let mut switch_to = None;
 
@@ -298,8 +289,8 @@ impl App {
         let seg_h = 36.0;
         let total_w = ui.available_width();
         let bar_h = seg_h + pad * 2.0;
-        let seg_w = (total_w - pad * 2.0 - gap * (backends.len() as f32 - 1.0))
-            / backends.len() as f32;
+        let seg_w =
+            (total_w - pad * 2.0 - gap * (backends.len() as f32 - 1.0)) / backends.len() as f32;
 
         let (outer_rect, _) =
             ui.allocate_exact_size(egui::vec2(total_w, bar_h), egui::Sense::hover());
@@ -324,22 +315,13 @@ impl App {
                 egui::vec2(seg_w, seg_h),
             );
 
-            let resp = ui.interact(
-                seg_rect,
-                ui.id().with(("tab", i)),
-                egui::Sense::click(),
-            );
+            let resp = ui.interact(seg_rect, ui.id().with(("tab", i)), egui::Sense::click());
 
             if active {
                 painter.rect_filled(
                     seg_rect,
                     7.0,
-                    egui::Color32::from_rgba_unmultiplied(
-                        accent.r(),
-                        accent.g(),
-                        accent.b(),
-                        30,
-                    ),
+                    egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 30),
                 );
             } else if resp.hovered() {
                 painter.rect_filled(
@@ -349,7 +331,11 @@ impl App {
                 );
             }
 
-            let text_color = if active { accent } else { self.colors.text_muted };
+            let text_color = if active {
+                accent
+            } else {
+                self.colors.text_muted
+            };
 
             let (pill_text, pill_bg, pill_fg) = self.status_pill_data(backend, active, accent);
             let pill_galley = painter.layout_no_wrap(
@@ -358,11 +344,8 @@ impl App {
                 pill_fg,
             );
             let label_text = format!("{} {}", icon, name);
-            let label_galley = painter.layout_no_wrap(
-                label_text,
-                egui::FontId::proportional(12.0),
-                text_color,
-            );
+            let label_galley =
+                painter.layout_no_wrap(label_text, egui::FontId::proportional(12.0), text_color);
 
             let pill_hpad = 5.0;
             let pill_w = pill_galley.rect.width() + pill_hpad * 2.0;
@@ -491,9 +474,9 @@ impl App {
                     ("Port", port_text(self.node_status.rpc_port)),
                 ]
             }
-            NodeType::LightClient | NodeType::FullNode => vec![
-                ("RPC Port", port_text(self.node_status.rpc_port)),
-            ],
+            NodeType::LightClient | NodeType::FullNode => {
+                vec![("RPC Port", port_text(self.node_status.rpc_port))]
+            }
         };
         m.push(("Version", version));
         m.push(("Node ID", node_id));
@@ -522,12 +505,8 @@ impl App {
             };
             let ok_btn = ui.add_enabled(
                 valid,
-                egui::Button::new(
-                    egui::RichText::new("\u{2713}")
-                        .size(16.0)
-                        .color(ok_color),
-                )
-                .fill(egui::Color32::TRANSPARENT),
+                egui::Button::new(egui::RichText::new("\u{2713}").size(16.0).color(ok_color))
+                    .fill(egui::Color32::TRANSPARENT),
             );
 
             let cancel_btn = ui.add(
@@ -599,7 +578,7 @@ impl App {
             .node_status
             .tip_header
             .as_ref()
-            .map(|h| crate::types::format_with_commas(h.epoch().number()))
+            .map(|h| crate::utils::format_with_commas(h.epoch().number()))
             .unwrap_or_else(|| DASH.into());
         draw_metric_row(ui, "Epoch", &epoch, muted, text);
 
@@ -612,7 +591,13 @@ impl App {
         draw_metric_row(ui, "Difficulty", &difficulty, muted, text);
 
         let ibd = info
-            .map(|i| if i.is_initial_block_download { "Yes" } else { "No" })
+            .map(|i| {
+                if i.is_initial_block_download {
+                    "Yes"
+                } else {
+                    "No"
+                }
+            })
             .unwrap_or(DASH);
         draw_metric_row(ui, "IBD", ibd, muted, text);
 
@@ -630,32 +615,42 @@ impl App {
         let text = self.colors.text;
 
         let pending = pool
-            .map(|p| crate::types::format_with_commas(p.pending.value()))
+            .map(|p| crate::utils::format_with_commas(p.pending.value()))
             .unwrap_or_else(|| DASH.into());
         draw_metric_row(ui, "Pending", &pending, muted, text);
 
         let proposed = pool
-            .map(|p| crate::types::format_with_commas(p.proposed.value()))
+            .map(|p| crate::utils::format_with_commas(p.proposed.value()))
             .unwrap_or_else(|| DASH.into());
         draw_metric_row(ui, "Proposed", &proposed, muted, text);
 
         let orphan = pool
-            .map(|p| crate::types::format_with_commas(p.orphan.value()))
+            .map(|p| crate::utils::format_with_commas(p.orphan.value()))
             .unwrap_or_else(|| DASH.into());
         draw_metric_row(ui, "Orphan", &orphan, muted, text);
 
         let fee = pool
-            .map(|p| format!("{} sh/KB", crate::types::format_with_commas(p.min_fee_rate.value())))
+            .map(|p| {
+                format!(
+                    "{} sh/KB",
+                    crate::utils::format_with_commas(p.min_fee_rate.value())
+                )
+            })
             .unwrap_or_else(|| DASH.into());
         draw_metric_row(ui, "Min Fee", &fee, muted, text);
 
         let cycles = pool
-            .map(|p| crate::types::format_with_commas(p.total_tx_cycles.value()))
+            .map(|p| crate::utils::format_with_commas(p.total_tx_cycles.value()))
             .unwrap_or_else(|| DASH.into());
         draw_metric_row(ui, "Cycles", &cycles, muted, text);
 
         let size = pool
-            .map(|p| format!("{} B", crate::types::format_with_commas(p.total_tx_size.value())))
+            .map(|p| {
+                format!(
+                    "{} B",
+                    crate::utils::format_with_commas(p.total_tx_size.value())
+                )
+            })
             .unwrap_or_else(|| DASH.into());
         draw_metric_row(ui, "Tx Size", &size, muted, text);
     }
@@ -693,7 +688,11 @@ impl App {
                             .family(egui::FontFamily::Monospace)
                             .color(muted),
                     );
-                    let dir = if peer.is_outbound { "Outbound" } else { "Inbound" };
+                    let dir = if peer.is_outbound {
+                        "Outbound"
+                    } else {
+                        "Inbound"
+                    };
                     ui.label(
                         egui::RichText::new(dir)
                             .size(10.0)
@@ -755,31 +754,52 @@ fn draw_donut_gauge(
 ) {
     const SIZE: f32 = 110.0;
     const RADIUS: f32 = 42.0;
-    const STROKE_W: f32 = 7.0;
+    const TRACK_W: f32 = 10.0;
+    const ARC_W: f32 = 6.0;
 
     let (rect, _) = ui.allocate_exact_size(egui::vec2(SIZE, SIZE), egui::Sense::hover());
     let center = rect.center();
     let painter = ui.painter();
 
-    painter.circle_stroke(center, RADIUS, egui::Stroke::new(STROKE_W, track_color));
+    painter.circle_stroke(center, RADIUS, egui::Stroke::new(TRACK_W, track_color));
 
     if pct > 0.001 {
         let start = -std::f32::consts::FRAC_PI_2;
         let sweep = std::f32::consts::TAU * pct.min(1.0);
         let n = (64.0 * pct).max(4.0) as usize;
-        let points: Vec<egui::Pos2> = (0..=n)
-            .map(|i| {
-                let angle = start + sweep * (i as f32 / n as f32);
-                egui::pos2(
-                    center.x + RADIUS * angle.cos(),
-                    center.y + RADIUS * angle.sin(),
-                )
-            })
-            .collect();
+
+        let arc_points = |r: f32| -> Vec<egui::Pos2> {
+            (0..=n)
+                .map(|i| {
+                    let angle = start + sweep * (i as f32 / n as f32);
+                    egui::pos2(center.x + r * angle.cos(), center.y + r * angle.sin())
+                })
+                .collect()
+        };
+
+        let glow_color =
+            egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 40);
         painter.add(egui::Shape::line(
-            points,
-            egui::Stroke::new(STROKE_W, accent),
+            arc_points(RADIUS),
+            egui::Stroke::new(ARC_W + 8.0, glow_color),
         ));
+
+        painter.add(egui::Shape::line(
+            arc_points(RADIUS),
+            egui::Stroke::new(ARC_W, accent),
+        ));
+
+        let start_pt = egui::pos2(
+            center.x + RADIUS * start.cos(),
+            center.y + RADIUS * start.sin(),
+        );
+        let end_angle = start + sweep;
+        let end_pt = egui::pos2(
+            center.x + RADIUS * end_angle.cos(),
+            center.y + RADIUS * end_angle.sin(),
+        );
+        painter.circle_filled(start_pt, ARC_W / 2.0, accent);
+        painter.circle_filled(end_pt, ARC_W / 2.0, accent);
     }
 
     let (text, color) = if pct > 0.001 {
@@ -788,18 +808,94 @@ fn draw_donut_gauge(
         ("\u{2014}".to_string(), muted_color)
     };
     painter.text(
-        center,
+        egui::pos2(center.x, center.y - 4.0),
         egui::Align2::CENTER_CENTER,
         &text,
-        egui::FontId::new(18.0, egui::FontFamily::Monospace),
+        egui::FontId::new(22.0, egui::FontFamily::Monospace),
         color,
     );
 
     painter.text(
-        egui::pos2(center.x, center.y + 16.0),
+        egui::pos2(center.x, center.y + 14.0),
         egui::Align2::CENTER_CENTER,
         "SYNC",
-        egui::FontId::new(9.0, egui::FontFamily::Monospace),
+        egui::FontId::new(8.0, egui::FontFamily::Monospace),
+        muted_color,
+    );
+}
+
+fn draw_loading_gauge(
+    ui: &mut egui::Ui,
+    accent: egui::Color32,
+    track_color: egui::Color32,
+    muted_color: egui::Color32,
+) {
+    const SIZE: f32 = 110.0;
+    const RADIUS: f32 = 42.0;
+    const TRACK_W: f32 = 10.0;
+    const ARC_W: f32 = 6.0;
+    const ARC_LEN: f32 = 0.25;
+
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(SIZE, SIZE), egui::Sense::hover());
+    let center = rect.center();
+    let painter = ui.painter();
+
+    ui.ctx().request_repaint();
+
+    painter.circle_stroke(center, RADIUS, egui::Stroke::new(TRACK_W, track_color));
+
+    let t = ui.input(|i| i.time) as f32;
+    let rotation = t * 2.0;
+    let start = rotation - std::f32::consts::FRAC_PI_2;
+    let sweep = std::f32::consts::TAU * ARC_LEN;
+    let n = 24;
+
+    let arc_points: Vec<egui::Pos2> = (0..=n)
+        .map(|i| {
+            let angle = start + sweep * (i as f32 / n as f32);
+            egui::pos2(
+                center.x + RADIUS * angle.cos(),
+                center.y + RADIUS * angle.sin(),
+            )
+        })
+        .collect();
+
+    let glow_color = egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 40);
+    painter.add(egui::Shape::line(
+        arc_points.clone(),
+        egui::Stroke::new(ARC_W + 8.0, glow_color),
+    ));
+
+    painter.add(egui::Shape::line(
+        arc_points,
+        egui::Stroke::new(ARC_W, accent),
+    ));
+
+    let end_angle = start + sweep;
+    let start_pt = egui::pos2(
+        center.x + RADIUS * start.cos(),
+        center.y + RADIUS * start.sin(),
+    );
+    let end_pt = egui::pos2(
+        center.x + RADIUS * end_angle.cos(),
+        center.y + RADIUS * end_angle.sin(),
+    );
+    painter.circle_filled(start_pt, ARC_W / 2.0, accent);
+    painter.circle_filled(end_pt, ARC_W / 2.0, accent);
+
+    painter.text(
+        egui::pos2(center.x, center.y - 4.0),
+        egui::Align2::CENTER_CENTER,
+        "\u{2014}",
+        egui::FontId::new(22.0, egui::FontFamily::Monospace),
+        muted_color,
+    );
+
+    painter.text(
+        egui::pos2(center.x, center.y + 14.0),
+        egui::Align2::CENTER_CENTER,
+        "SYNC",
+        egui::FontId::new(8.0, egui::FontFamily::Monospace),
         muted_color,
     );
 }
@@ -822,11 +918,14 @@ fn full_node_sync_view(sync_state: Option<&ckb_jsonrpc_types::SyncState>) -> (f3
 fn synced_value(backend: NodeType, status: &crate::types::NodeStatus) -> String {
     match backend {
         NodeType::FullNode => match status.sync_state.as_ref() {
-            Some(s) => format!("#{}", crate::types::format_with_commas(s.tip_number.value())),
+            Some(s) => format!(
+                "#{}",
+                crate::utils::format_with_commas(s.tip_number.value())
+            ),
             None => "\u{2014}".into(),
         },
         NodeType::LightClient => match status.synced_block {
-            Some(s) => format!("#{}", crate::types::format_with_commas(s)),
+            Some(s) => format!("#{}", crate::utils::format_with_commas(s)),
             None => "\u{2014}".into(),
         },
         NodeType::PublicRpc => "\u{2014}".into(),
@@ -836,11 +935,14 @@ fn synced_value(backend: NodeType, status: &crate::types::NodeStatus) -> String 
 fn target_tip_value(backend: NodeType, status: &crate::types::NodeStatus) -> String {
     match backend {
         NodeType::FullNode => match status.sync_state.as_ref() {
-            Some(s) => format!("#{}", crate::types::format_with_commas(s.best_known_block_number.value())),
+            Some(s) => format!(
+                "#{}",
+                crate::utils::format_with_commas(s.best_known_block_number.value())
+            ),
             None => "\u{2014}".into(),
         },
         NodeType::LightClient => match status.tip_block() {
-            Some(t) => format!("#{}", crate::types::format_with_commas(t)),
+            Some(t) => format!("#{}", crate::utils::format_with_commas(t)),
             None => "\u{2014}".into(),
         },
         NodeType::PublicRpc => "\u{2014}".into(),
@@ -848,7 +950,7 @@ fn target_tip_value(backend: NodeType, status: &crate::types::NodeStatus) -> Str
 }
 
 fn block_height_text(tip: Option<u64>) -> String {
-    tip.map(|n| format!("#{}", crate::types::format_with_commas(n)))
+    tip.map(|n| format!("#{}", crate::utils::format_with_commas(n)))
         .unwrap_or_else(|| "\u{2014}".to_string())
 }
 
