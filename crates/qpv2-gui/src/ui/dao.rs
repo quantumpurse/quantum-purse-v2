@@ -642,8 +642,14 @@ impl App {
             .floor()
             .max(0.0) as usize;
 
+        let table_fill = egui::Color32::from_rgba_unmultiplied(
+            self.colors.accent.r(),
+            self.colors.accent.g(),
+            self.colors.accent.b(),
+            10,
+        );
         egui::Frame::new()
-            .fill(self.colors.surface)
+            .fill(table_fill)
             .corner_radius(12.0)
             .stroke(egui::Stroke::new(1.0, self.colors.border))
             .inner_margin(egui::Margin::symmetric(12, 8))
@@ -891,7 +897,7 @@ impl App {
                             );
 
                             ui.label(
-                                egui::RichText::new("Redeemable")
+                                egui::RichText::new("Redeemed")
                                     .size(10.5)
                                     .color(self.colors.warn),
                             );

@@ -210,6 +210,8 @@ impl App {
                         format!("{} total", wallet_count),
                         self.colors.accent,
                     );
+                    ui.add_space(10.0);
+                    self.show_status(ui);
                 });
 
                 ui.add_space(12.0);
@@ -546,8 +548,6 @@ impl App {
                     }
                 }
 
-                ui.add_space(16.0);
-                self.show_status(ui);
             });
         });
     }

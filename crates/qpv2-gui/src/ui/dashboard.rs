@@ -301,11 +301,17 @@ impl App {
                         ("\u{25EB}", "Wallets", Tab::Wallets),
                     ];
 
+                    let base_tint = egui::Color32::from_rgba_unmultiplied(
+                        self.colors.accent.r(),
+                        self.colors.accent.g(),
+                        self.colors.accent.b(),
+                        10,
+                    );
                     for (i, (icon, label, target_tab)) in actions.iter().enumerate() {
                         let hover = CardHover::new(&cols[i], ("dash-action", i), &self.colors);
 
                         let response = egui::Frame::new()
-                            .fill(hover.fill)
+                            .fill(base_tint)
                             .corner_radius(16.0)
                             .inner_margin(egui::Margin::symmetric(10, 16))
                             .stroke(hover.stroke)

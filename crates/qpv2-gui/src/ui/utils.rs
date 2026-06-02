@@ -348,7 +348,7 @@ impl App {
             Status::None => {}
             Status::Info(msg) => {
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("\u{2139}\u{fe0f}").color(self.colors.accent2));
+                    ui.label(egui::RichText::new("\u{25cf}").color(self.colors.accent2));
                     ui.label(egui::RichText::new(msg).color(self.colors.accent2));
                 });
             }

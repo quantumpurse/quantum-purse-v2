@@ -36,18 +36,18 @@ impl App {
                         | TransactionStatus::Error(_)
                 );
 
-                let mut gradient_idx = None;
-                let mut spotlight_idx = None;
-                let mut glow_idx = None;
-                let frame_response = egui::Frame::new()
-                    .fill(self.colors.surface)
+                let accent_tint = egui::Color32::from_rgba_unmultiplied(
+                    self.colors.accent.r(),
+                    self.colors.accent.g(),
+                    self.colors.accent.b(),
+                    10,
+                );
+                egui::Frame::new()
+                    .fill(accent_tint)
                     .corner_radius(18.0)
                     .inner_margin(egui::Margin::symmetric(28, 26))
                     .stroke(egui::Stroke::new(1.0, self.colors.border))
                     .show(ui, |ui| {
-                        gradient_idx = Some(ui.painter().add(egui::Shape::Noop));
-                        spotlight_idx = Some(ui.painter().add(egui::Shape::Noop));
-                        glow_idx = Some(ui.painter().add(egui::Shape::Noop));
 
                         // ── From Account ──
                         ui.label(
@@ -291,61 +291,6 @@ impl App {
 
                     });
 
-                // Frame finalized — paint the aurora layers under
-                // the form widgets via the reserved shape indices.
-                // The Transfer Frame has no `outer_margin`, so
-                // `response.rect` is already the visible card outline.
-                let card_rect = frame_response.response.rect;
-                let painter = ui.painter_at(card_rect);
-
-                if let Some(idx) = gradient_idx {
-                    // Same 3-stop diagonal gradient as the dashboard
-                    // hero — accent → accent2 → accent3 — but built
-                    // on a rounded-rect mesh tracing this card's
-                    // 18 px corner outline.
-                    let tl =
-                        egui::Color32::from_rgba_unmultiplied(0, 255, 180, 18);
-                    let tr =
-                        egui::Color32::from_rgba_unmultiplied(0, 200, 255, 10);
-                    let brc =
-                        egui::Color32::from_rgba_unmultiplied(123, 94, 167, 13);
-                    let bl =
-                        egui::Color32::from_rgba_unmultiplied(0, 200, 255, 10);
-                    let mesh = crate::ui::utils::rounded_rect_gradient_mesh(
-                        card_rect, 18.0, tl, tr, brc, bl,
-                    );
-                    painter.set(idx, egui::Shape::mesh(mesh));
-                }
-
-                if let Some(idx) = spotlight_idx {
-                    let spot_center = egui::pos2(card_rect.left() + 15.0, card_rect.top() + 10.0);
-                    let mesh = crate::ui::utils::glow_mesh_clipped_to_rounded_rect(
-                        spot_center,
-                        200.0,
-                        self.colors.accent,
-                        26,
-                        card_rect,
-                        18.0,
-                    );
-                    painter.set(idx, egui::Shape::mesh(mesh));
-                }
-
-                if let Some(idx) = glow_idx {
-                    // Top-right corner bloom — matches
-                    // `.balance-hero::after` in the mockup.
-                    let glow_center = egui::pos2(
-                        card_rect.right() - 60.0,
-                        card_rect.top() + 60.0,
-                    );
-                    let mut mesh = crate::ui::utils::smooth_glow_mesh(
-                        glow_center,
-                        100.0,
-                        self.colors.accent,
-                        20,
-                    );
-                    crate::ui::utils::clamp_mesh_to_rounded_rect(&mut mesh, card_rect, 18.0);
-                    painter.set(idx, egui::Shape::mesh(mesh));
-                }
 
                 // ── Address Book ──
                 let mut seen: HashSet<String> = HashSet::new();
