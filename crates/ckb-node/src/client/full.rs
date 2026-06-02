@@ -142,6 +142,18 @@ impl FullNodeClient {
             .sync_state()
             .map_err(|e| NodeManagerError::RpcError(e.to_string()))
     }
+
+    pub fn get_blockchain_info(&self) -> Result<ckb_jsonrpc_types::ChainInfo, NodeManagerError> {
+        self.client
+            .get_blockchain_info()
+            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
+    }
+
+    pub fn tx_pool_info(&self) -> Result<ckb_jsonrpc_types::TxPoolInfo, NodeManagerError> {
+        self.client
+            .tx_pool_info()
+            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
+    }
 }
 
 impl UnifiedClient for FullNodeClient {
@@ -155,10 +167,9 @@ impl UnifiedClient for FullNodeClient {
             .map_err(|e| NodeManagerError::RpcError(e.to_string()))
     }
 
-    fn get_peer_count(&self) -> Result<usize, NodeManagerError> {
+    fn get_peers(&self) -> Result<Vec<ckb_jsonrpc_types::RemoteNode>, NodeManagerError> {
         self.client
             .get_peers()
-            .map(|peers| peers.len())
             .map_err(|e| NodeManagerError::RpcError(e.to_string()))
     }
 
@@ -241,5 +252,11 @@ impl UnifiedClient for FullNodeClient {
 
     fn tx_dep_provider(&self) -> Box<dyn TransactionDependencyProvider> {
         Box::new(DefaultTransactionDependencyProvider::new(&self.rpc_url, 10))
+    }
+
+    fn local_node_info(&self) -> Result<ckb_jsonrpc_types::LocalNode, NodeManagerError> {
+        self.client
+            .local_node_info()
+            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
     }
 }

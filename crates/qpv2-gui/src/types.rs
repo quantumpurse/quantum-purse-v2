@@ -125,8 +125,8 @@ pub(crate) struct NodeStatus {
     pub tip_header: Option<ckb_types::core::HeaderView>,
     /// Header from ~7 days ago, used with `tip_header` to compute APC.
     pub apc_baseline_header: Option<ckb_types::core::HeaderView>,
-    /// Peer count; `None` for PublicRpc backends.
-    pub peer_count: Option<usize>,
+    /// Full peer list from `get_peers`.
+    pub peers: Vec<ckb_jsonrpc_types::RemoteNode>,
     /// RPC port parsed from `config.rpc_url`.
     pub rpc_port: Option<u16>,
     /// Min synced block across all registered scripts (light client only).
@@ -136,6 +136,15 @@ pub(crate) struct NodeStatus {
     /// verifying / synced) and the network's best-known tip. `None`
     /// outside `FullNode`.
     pub sync_state: Option<ckb_jsonrpc_types::SyncState>,
+    /// Chain-level metadata (chain name, difficulty, IBD flag, median time).
+    /// `None` for light client (RPC not available).
+    /// Wrapped in `Arc` because `ChainInfo` does not implement `Clone`.
+    pub blockchain_info: Option<std::sync::Arc<ckb_jsonrpc_types::ChainInfo>>,
+    /// Transaction pool snapshot. `None` for light client.
+    pub tx_pool_info: Option<ckb_jsonrpc_types::TxPoolInfo>,
+    /// Local node identity (version, node ID, connections, protocols).
+    /// `None` for public RPC (no local process).
+    pub local_node_info: Option<ckb_jsonrpc_types::LocalNode>,
     /// True when the most recent poll reached the node successfully.
     pub online: bool,
 }

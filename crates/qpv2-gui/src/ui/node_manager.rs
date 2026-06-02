@@ -6,8 +6,8 @@ use eframe::egui;
 use crate::types::Status;
 use crate::App;
 
-const METRIC_LABEL_PAD: usize = 13;
-const ROW_INDENT: f32 = 24.0;
+const LABEL_PAD: usize = 14;
+const DASH: &str = "\u{2014}";
 
 impl App {
     pub(crate) fn show_node_manager_tab(&mut self, ui: &mut egui::Ui) {
@@ -17,34 +17,126 @@ impl App {
                 ui.set_width(ui.available_width() - 30.0);
 
                 ui.horizontal(|ui| {
-                    ui.heading(
-                        egui::RichText::new("Node Manager")
-                            .size(26.0)
-                            .strong()
-                            .color(self.colors.text),
-                    );
-                    if !self.node_status.online {
-                        ui.add_space(8.0);
-                        ui.label(
-                            egui::RichText::new("\u{26a0} No connection")
-                                .size(12.0)
-                                .color(self.colors.warn),
+                    ui.vertical(|ui| {
+                        ui.heading(
+                            egui::RichText::new("Node Manager")
+                                .size(26.0)
+                                .strong()
+                                .color(self.colors.text),
                         );
-                    }
+                        ui.label(
+                            egui::RichText::new("Configure and monitor your CKB node.")
+                                .size(13.0)
+                                .color(self.colors.text_muted),
+                        );
+                    });
+                    ui.with_layout(
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| {
+                            self.draw_network_toggle(ui);
+                        },
+                    );
                 });
-                ui.label(
-                    egui::RichText::new("Configure and monitor your CKB node")
-                        .size(13.0)
-                        .color(self.colors.text_muted),
-                );
+
+                ui.add_space(14.0);
+                let switch_to = self.draw_tab_bar(ui);
+                ui.add_space(20.0);
+
+                let backend = self.qp_client.config().node_type;
+                let accent = self.backend_accent(backend);
+                let has_sync = backend != NodeType::PublicRpc;
+
+                // Sync gauge first (for LC/FN)
+                if has_sync {
+                    let pct = self.sync_pct(backend);
+                    ui.horizontal(|ui| {
+                        if pct > 0.001 {
+                            draw_donut_gauge(
+                                ui,
+                                pct,
+                                accent,
+                                self.colors.surface2,
+                                self.colors.text_muted,
+                            );
+                        } else {
+                            ui.add(
+                                egui::Spinner::new().size(90.0).color(accent),
+                            );
+                        }
+                        ui.add_space(20.0);
+                        let is_lc = backend == NodeType::LightClient;
+                        ui.with_layout(
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                if is_lc && self.set_block_editing {
+                                    self.draw_sync_edit_row(ui, accent);
+                                } else {
+                                    let big = self.hero_big_value(backend);
+                                    ui.label(
+                                        egui::RichText::new(&big)
+                                            .size(32.0)
+                                            .family(egui::FontFamily::Monospace)
+                                            .strong()
+                                            .color(accent),
+                                    );
+                                    if is_lc {
+                                        let pen = ui.add(
+                                            egui::Button::new(
+                                                egui::RichText::new("\u{270f}")
+                                                    .size(14.0)
+                                                    .color(self.colors.text_muted),
+                                            )
+                                            .fill(egui::Color32::TRANSPARENT)
+                                            .frame(false),
+                                        );
+                                        if pen.clicked() {
+                                            self.set_block_editing = true;
+                                            self.set_block_input = self
+                                                .node_status
+                                                .synced_block
+                                                .map(|b| b.to_string())
+                                                .unwrap_or_default();
+                                        }
+                                    }
+                                }
+                            },
+                        );
+                    });
+                    ui.add_space(20.0);
+                }
+
+                // ── Blockchain ───────────────────────────
+                self.draw_section_heading(ui, "Blockchain");
+                self.draw_blockchain_metrics(ui);
 
                 ui.add_space(16.0);
-                self.draw_network_toggle(ui);
-                ui.add_space(14.0);
 
-                self.draw_backend_section(ui, NodeType::PublicRpc);
-                self.draw_backend_section(ui, NodeType::LightClient);
-                self.draw_backend_section(ui, NodeType::FullNode);
+                // ── Tx Pool ─────────────────────────────
+                self.draw_section_heading(ui, "Tx Pool");
+                self.draw_tx_pool_metrics(ui);
+
+                ui.add_space(16.0);
+
+                // ── Node ─────────────────────────────────
+                self.draw_section_heading(ui, "Node");
+                let metrics = self.node_metrics(backend);
+                for (label, value) in &metrics {
+                    draw_metric_row(ui, label, value, self.colors.text_muted, self.colors.text);
+                }
+
+                // ── Peers ───────────────────────────────
+                ui.add_space(16.0);
+                self.draw_section_heading(
+                    ui,
+                    &format!("Connected Peers ({})", self.node_status.peers.len()),
+                );
+                if !self.node_status.peers.is_empty() {
+                    self.draw_peer_table(ui);
+                }
+
+                if let Some(backend) = switch_to {
+                    self.switch_to_backend(backend);
+                }
             });
         });
     }
@@ -57,82 +149,88 @@ impl App {
         }
     }
 
+    fn backend_label(backend: NodeType) -> (&'static str, &'static str) {
+        match backend {
+            NodeType::PublicRpc => ("\u{1F310}", "Public RPC"),
+            NodeType::LightClient => ("\u{1F4A1}", "Light Client"),
+            NodeType::FullNode => ("\u{1F5A5}", "Full Node"),
+        }
+    }
+
     fn draw_network_toggle(&mut self, ui: &mut egui::Ui) {
         let current_network = self.qp_client.config().network;
         let mut selected = current_network;
 
-        ui.horizontal(|ui| {
-            let seg_w = 80.0;
-            let seg_h = 28.0;
-            let total_w = seg_w * 2.0 + 2.0;
-            let (outer_rect, _) =
-                ui.allocate_exact_size(egui::vec2(total_w, seg_h), egui::Sense::hover());
-            let painter = ui.painter();
+        let seg_w = 80.0;
+        let seg_h = 28.0;
+        let total_w = seg_w * 2.0 + 2.0;
+        let (outer_rect, _) =
+            ui.allocate_exact_size(egui::vec2(total_w, seg_h), egui::Sense::hover());
+        let painter = ui.painter();
 
-            painter.rect_filled(outer_rect, 6.0, self.colors.surface2);
-            painter.rect_stroke(
-                outer_rect,
-                6.0,
-                egui::Stroke::new(1.0, self.colors.border),
-                egui::StrokeKind::Inside,
+        painter.rect_filled(outer_rect, 6.0, self.colors.surface2);
+        painter.rect_stroke(
+            outer_rect,
+            6.0,
+            egui::Stroke::new(1.0, self.colors.border),
+            egui::StrokeKind::Inside,
+        );
+
+        let segments = [
+            (NetworkType::Mainnet, "Mainnet", self.colors.accent),
+            (NetworkType::Testnet, "Testnet", self.colors.accent2),
+        ];
+
+        for (i, &(net, label, accent)) in segments.iter().enumerate() {
+            let x = outer_rect.left() + 1.0 + i as f32 * seg_w;
+            let seg_rect = egui::Rect::from_min_size(
+                egui::pos2(x, outer_rect.top() + 1.0),
+                egui::vec2(seg_w, seg_h - 2.0),
             );
 
-            let segments = [
-                (NetworkType::Mainnet, "Mainnet", self.colors.accent),
-                (NetworkType::Testnet, "Testnet", self.colors.accent2),
-            ];
+            let is_active = selected == net;
+            let resp =
+                ui.interact(seg_rect, ui.id().with(("net-seg", i)), egui::Sense::click());
 
-            for (i, &(net, label, accent)) in segments.iter().enumerate() {
-                let x = outer_rect.left() + 1.0 + i as f32 * seg_w;
-                let seg_rect = egui::Rect::from_min_size(
-                    egui::pos2(x, outer_rect.top() + 1.0),
-                    egui::vec2(seg_w, seg_h - 2.0),
+            if is_active {
+                painter.rect_filled(
+                    seg_rect,
+                    5.0,
+                    egui::Color32::from_rgba_unmultiplied(
+                        accent.r(),
+                        accent.g(),
+                        accent.b(),
+                        25,
+                    ),
                 );
-
-                let is_active = selected == net;
-                let resp =
-                    ui.interact(seg_rect, ui.id().with(("net-seg", i)), egui::Sense::click());
-
-                if is_active {
-                    painter.rect_filled(
-                        seg_rect,
-                        5.0,
-                        egui::Color32::from_rgba_unmultiplied(
-                            accent.r(),
-                            accent.g(),
-                            accent.b(),
-                            25,
-                        ),
-                    );
-                } else if resp.hovered() {
-                    painter.rect_filled(
-                        seg_rect,
-                        5.0,
-                        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 6),
-                    );
-                }
-
-                let text_color = if is_active {
-                    accent
-                } else {
-                    self.colors.text_muted
-                };
-                painter.text(
-                    seg_rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    label,
-                    egui::FontId::proportional(12.0),
-                    text_color,
+            } else if resp.hovered() {
+                painter.rect_filled(
+                    seg_rect,
+                    5.0,
+                    egui::Color32::from_rgba_unmultiplied(255, 255, 255, 6),
                 );
-
-                if resp.clicked() {
-                    selected = net;
-                }
-                if resp.hovered() {
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                }
             }
-        });
+
+            let text_color = if is_active {
+                accent
+            } else {
+                self.colors.text_muted
+            };
+            painter.text(
+                seg_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                label,
+                egui::FontId::proportional(12.0),
+                text_color,
+            );
+
+            if resp.clicked() {
+                selected = net;
+            }
+            if resp.hovered() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+        }
 
         if selected != current_network {
             self.temp_network = selected;
@@ -188,157 +286,143 @@ impl App {
         }
     }
 
-    fn draw_backend_section(&mut self, ui: &mut egui::Ui, backend: NodeType) {
-        let active = self.qp_client.config().node_type == backend;
-        let accent = self.backend_accent(backend);
+    // ── Tab bar ──────────────────────────────────────────────
 
-        let (icon, title, subtitle) = match backend {
-            NodeType::LightClient => (
-                "\u{1F4A1}",
-                "Light Node",
-                "FlyClient protocol \u{00B7} Fast & lightweight",
-            ),
-            NodeType::PublicRpc => (
-                "\u{1F310}",
-                "Remote RPC Node",
-                "Remote endpoint \u{00B7} No local storage",
-            ),
-            NodeType::FullNode => (
-                "\u{1F5A5}",
-                "Full Node",
-                "Full chain verification \u{00B7} Local sovereignty",
-            ),
-        };
+    fn draw_tab_bar(&mut self, ui: &mut egui::Ui) -> Option<NodeType> {
+        let backends = [NodeType::PublicRpc, NodeType::LightClient, NodeType::FullNode];
+        let current = self.qp_client.config().node_type;
+        let mut switch_to = None;
 
-        self.paint_entanglement_divider(ui);
-        ui.add_space(14.0);
+        let pad = 4.0;
+        let gap = 4.0;
+        let seg_h = 36.0;
+        let total_w = ui.available_width();
+        let bar_h = seg_h + pad * 2.0;
+        let seg_w = (total_w - pad * 2.0 - gap * (backends.len() as f32 - 1.0))
+            / backends.len() as f32;
 
-        let header = ui.horizontal(|ui| {
-            ui.add_space(13.0);
-            ui.label(egui::RichText::new(icon).size(20.0));
-            ui.add_space(8.0);
-            ui.vertical(|ui| {
-                let title_color = if active { accent } else { self.colors.text };
-                ui.label(
-                    egui::RichText::new(title)
-                        .size(16.0)
-                        .strong()
-                        .color(title_color),
-                );
-                ui.label(
-                    egui::RichText::new(subtitle)
-                        .size(11.0)
-                        .color(self.colors.text_muted),
-                );
-            });
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                self.draw_status_pill(ui, backend, active, accent);
-            });
-        });
+        let (outer_rect, _) =
+            ui.allocate_exact_size(egui::vec2(total_w, bar_h), egui::Sense::hover());
+        let painter = ui.painter();
 
-        let header_rect = header.response.rect;
+        painter.rect_filled(outer_rect, 10.0, self.colors.surface);
+        painter.rect_stroke(
+            outer_rect,
+            10.0,
+            egui::Stroke::new(1.0, self.colors.border),
+            egui::StrokeKind::Inside,
+        );
 
-        if active {
-            let bar = egui::Rect::from_min_max(
-                egui::pos2(header_rect.left(), header_rect.top() + 2.0),
-                egui::pos2(header_rect.left() + 3.0, header_rect.bottom() - 2.0),
+        for (i, &backend) in backends.iter().enumerate() {
+            let active = current == backend;
+            let accent = self.backend_accent(backend);
+            let (icon, name) = Self::backend_label(backend);
+
+            let x = outer_rect.left() + pad + i as f32 * (seg_w + gap);
+            let seg_rect = egui::Rect::from_min_size(
+                egui::pos2(x, outer_rect.top() + pad),
+                egui::vec2(seg_w, seg_h),
             );
-            ui.painter().rect_filled(bar, 1.5, accent);
-        }
 
-        let mut switch_requested = false;
-        if !active {
-            let click = ui
-                .interact(
-                    header_rect,
-                    ui.id().with(backend as u8),
-                    egui::Sense::click(),
-                )
-                .on_hover_cursor(egui::CursorIcon::PointingHand);
-            if click.hovered() {
-                ui.painter().rect_filled(
-                    header_rect,
-                    0.0,
-                    egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 10),
+            let resp = ui.interact(
+                seg_rect,
+                ui.id().with(("tab", i)),
+                egui::Sense::click(),
+            );
+
+            if active {
+                painter.rect_filled(
+                    seg_rect,
+                    7.0,
+                    egui::Color32::from_rgba_unmultiplied(
+                        accent.r(),
+                        accent.g(),
+                        accent.b(),
+                        30,
+                    ),
+                );
+            } else if resp.hovered() {
+                painter.rect_filled(
+                    seg_rect,
+                    7.0,
+                    egui::Color32::from_rgba_unmultiplied(255, 255, 255, 8),
                 );
             }
-            switch_requested = click.clicked();
-        }
 
-        ui.add_space(14.0);
+            let text_color = if active { accent } else { self.colors.text_muted };
 
-        let has_sync = active && backend != NodeType::PublicRpc;
-        let pct = if has_sync {
-            self.sync_pct(backend)
-        } else {
-            0.0
-        };
-        let is_lc = active && backend == NodeType::LightClient;
-        let is_editing = self.set_block_editing;
+            let (pill_text, pill_bg, pill_fg) = self.status_pill_data(backend, active, accent);
+            let pill_galley = painter.layout_no_wrap(
+                pill_text.to_string(),
+                egui::FontId::new(8.0, egui::FontFamily::Monospace),
+                pill_fg,
+            );
+            let label_text = format!("{} {}", icon, name);
+            let label_galley = painter.layout_no_wrap(
+                label_text,
+                egui::FontId::proportional(12.0),
+                text_color,
+            );
 
-        let surface2 = self.colors.surface2;
-        let text_muted = self.colors.text_muted;
+            let pill_hpad = 5.0;
+            let pill_w = pill_galley.rect.width() + pill_hpad * 2.0;
+            let pill_h = pill_galley.rect.height() + 4.0;
+            let inner_gap = 6.0;
+            let total_inner = label_galley.rect.width() + inner_gap + pill_w;
+            let start_x = seg_rect.center().x - total_inner / 2.0;
+            let cy = seg_rect.center().y;
 
-        ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
-            ui.vertical(|ui| {
-                if has_sync {
-                    ui.set_width(ui.available_width() - 110.0);
-                }
+            painter.galley(
+                egui::pos2(start_x, cy - label_galley.rect.height() / 2.0),
+                label_galley.clone(),
+                text_color,
+            );
 
-                let metrics = self.metric_cells(backend, active);
-                for (i, (label, value)) in metrics.iter().enumerate() {
-                    if is_lc && i == 0 {
-                        if is_editing {
-                            self.draw_sync_edit_row(ui);
-                        } else {
-                            self.draw_sync_metric_row(ui, value);
-                        }
-                    } else {
-                        self.draw_metric_row(ui, label, value);
-                    }
-                    if i < metrics.len() - 1 {
-                        ui.add_space(4.0);
-                    }
-                }
-            });
+            let pill_x = start_x + label_galley.rect.width() + inner_gap;
+            let pill_rect = egui::Rect::from_min_size(
+                egui::pos2(pill_x, cy - pill_h / 2.0),
+                egui::vec2(pill_w, pill_h),
+            );
+            painter.rect_filled(pill_rect, 4.0, pill_bg);
+            painter.galley(
+                egui::pos2(
+                    pill_rect.center().x - pill_galley.rect.width() / 2.0,
+                    pill_rect.center().y - pill_galley.rect.height() / 2.0,
+                ),
+                pill_galley,
+                pill_fg,
+            );
 
-            if has_sync {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    draw_donut_gauge(ui, pct, accent, surface2, text_muted);
-                });
-            }
-        });
-
-        if backend == NodeType::FullNode && active {
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                ui.add_space(ROW_INDENT);
-                ui.label(
-                    egui::RichText::new(
-                        "\u{26A0} Full node will sync ~100 GB and may take \
-						 several days. Disk and bandwidth heavy.",
-                    )
-                    .size(10.0)
-                    .color(self.colors.warn),
+            if pill_text.contains("STARTING") {
+                let spinner_size = pill_h - 4.0;
+                let spinner_rect = egui::Rect::from_center_size(
+                    egui::pos2(pill_rect.left() + 8.0, pill_rect.center().y),
+                    egui::vec2(spinner_size, spinner_size),
                 );
-            });
+                egui::Spinner::new()
+                    .size(spinner_size)
+                    .color(pill_fg)
+                    .paint_at(ui, spinner_rect);
+            }
+
+            if resp.hovered() && !active {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+            if resp.clicked() && !active {
+                switch_to = Some(backend);
+            }
         }
 
-        if switch_requested {
-            self.switch_to_backend(backend);
-        }
-
-        ui.add_space(14.0);
+        switch_to
     }
 
-    fn draw_status_pill(
+    fn status_pill_data(
         &self,
-        ui: &mut egui::Ui,
         backend: NodeType,
         active: bool,
         accent: egui::Color32,
-    ) {
-        let (text, bg, fg) = if !active {
+    ) -> (&'static str, egui::Color32, egui::Color32) {
+        if !active {
             (
                 "\u{25CB} STANDBY",
                 self.colors.surface2,
@@ -346,183 +430,110 @@ impl App {
             )
         } else if self.node_status.online {
             let tint =
-                egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 30);
+                egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 38);
             ("\u{25CF} ONLINE", tint, accent)
         } else if backend != NodeType::PublicRpc && self.local_node.has_local_process() {
-            ("\u{25CC} STARTING", self.colors.warn_tint, self.colors.warn)
+            ("   STARTING", self.colors.warn_tint, self.colors.warn)
         } else {
             (
                 "\u{25CB} OFFLINE",
                 egui::Color32::from_rgba_unmultiplied(255, 77, 109, 30),
                 self.colors.danger,
             )
-        };
-
-        egui::Frame::new()
-            .fill(bg)
-            .corner_radius(6.0)
-            .inner_margin(egui::Margin::symmetric(10, 4))
-            .show(ui, |ui| {
-                ui.label(
-                    egui::RichText::new(text)
-                        .size(10.0)
-                        .family(egui::FontFamily::Monospace)
-                        .strong()
-                        .color(fg),
-                );
-            });
-    }
-
-    fn metric_cells(&self, backend: NodeType, active: bool) -> Vec<(&'static str, String)> {
-        const DASH: &str = "\u{2014}";
-        match backend {
-            NodeType::PublicRpc => {
-                let (active_url, fallback_url);
-                let url: &str = if active {
-                    active_url = self.qp_client.config().rpc_url.clone();
-                    &active_url
-                } else {
-                    fallback_url =
-                        NodeConfig::default_rpc_url_for(backend, self.qp_client.network());
-                    fallback_url
-                };
-                let block_height = if active {
-                    block_height_text(self.node_status.tip_block())
-                } else {
-                    DASH.into()
-                };
-                let port = if active {
-                    port_text(self.node_status.rpc_port)
-                } else {
-                    port_text(crate::ckb::parse_rpc_port(url))
-                };
-                let peers = if active {
-                    peers_text(self.node_status.peer_count)
-                } else {
-                    DASH.into()
-                };
-                vec![
-                    ("Block Height", block_height),
-                    ("Endpoint", hostname_of(url)),
-                    ("Peers", peers),
-                    ("Port", port),
-                ]
-            }
-            NodeType::LightClient | NodeType::FullNode => {
-                let tip_label = if backend == NodeType::FullNode {
-                    "Local Tip"
-                } else {
-                    "Tip"
-                };
-                if active {
-                    vec![
-                        ("Sync", synced_value(backend, &self.node_status)),
-                        (tip_label, target_tip_value(backend, &self.node_status)),
-                        ("Peers", peers_text(self.node_status.peer_count)),
-                        ("RPC Port", port_text(self.node_status.rpc_port)),
-                    ]
-                } else {
-                    let url = NodeConfig::default_rpc_url_for(backend, self.qp_client.network());
-                    vec![
-                        ("Sync", DASH.into()),
-                        (tip_label, DASH.into()),
-                        ("Peers", DASH.into()),
-                        ("RPC Port", port_text(crate::ckb::parse_rpc_port(url))),
-                    ]
-                }
-            }
         }
     }
 
-    fn draw_metric_row(&self, ui: &mut egui::Ui, label: &str, value: &str) {
-        ui.horizontal(|ui| {
-            ui.add_space(ROW_INDENT);
-            ui.label(
-                egui::RichText::new(format!("{:<width$}", label, width = METRIC_LABEL_PAD))
-                    .size(12.0)
-                    .family(egui::FontFamily::Monospace)
-                    .color(self.colors.text_muted),
-            );
-            ui.label(
-                egui::RichText::new(value)
-                    .size(12.0)
-                    .family(egui::FontFamily::Monospace)
-                    .strong()
-                    .color(self.colors.text),
-            );
-        });
+    // ── Section heading ──────────────────────────────────────
+
+    fn draw_section_heading(&self, ui: &mut egui::Ui, title: &str) {
+        ui.label(
+            egui::RichText::new(title)
+                .size(16.0)
+                .strong()
+                .color(self.colors.text),
+        );
+        ui.add_space(6.0);
     }
 
-    fn draw_sync_metric_row(&mut self, ui: &mut egui::Ui, value: &str) {
-        let synced = self.node_status.synced_block;
-        ui.horizontal(|ui| {
-            ui.add_space(ROW_INDENT);
-            ui.label(
-                egui::RichText::new(format!("{:<width$}", "Sync", width = METRIC_LABEL_PAD))
-                    .size(12.0)
-                    .family(egui::FontFamily::Monospace)
-                    .color(self.colors.text_muted),
-            );
-            ui.label(
-                egui::RichText::new(value)
-                    .size(12.0)
-                    .family(egui::FontFamily::Monospace)
-                    .strong()
-                    .color(self.colors.text),
-            );
-            ui.add_space(4.0);
-            let pen = ui.add(
-                egui::Button::new(
-                    egui::RichText::new("\u{270f}")
-                        .size(11.0)
-                        .color(self.colors.text_muted),
-                )
-                .fill(egui::Color32::TRANSPARENT)
-                .frame(false),
-            );
-            if pen.clicked() {
-                self.set_block_editing = true;
-                self.set_block_input = synced.map(|b| b.to_string()).unwrap_or_default();
+    // ── Node metrics ─────────────────────────────────────────
+
+    fn hero_big_value(&self, backend: NodeType) -> String {
+        match backend {
+            NodeType::PublicRpc => block_height_text(self.node_status.tip_block()),
+            NodeType::LightClient => synced_value(backend, &self.node_status),
+            NodeType::FullNode => synced_value(backend, &self.node_status),
+        }
+    }
+
+    fn node_metrics(&self, backend: NodeType) -> Vec<(&'static str, String)> {
+        let node = self.node_status.local_node_info.as_ref();
+        let version = node
+            .map(|n| n.version.clone())
+            .unwrap_or_else(|| DASH.into());
+        let protocols = node
+            .map(|n| {
+                n.protocols
+                    .iter()
+                    .map(|p| p.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            })
+            .unwrap_or_else(|| DASH.into());
+        let node_id = node
+            .map(|n| n.node_id.clone())
+            .unwrap_or_else(|| DASH.into());
+
+        let mut m = match backend {
+            NodeType::PublicRpc => {
+                let url = self.qp_client.config().rpc_url.clone();
+                vec![
+                    ("Endpoint", hostname_of(&url)),
+                    ("Port", port_text(self.node_status.rpc_port)),
+                ]
             }
-        });
+            NodeType::LightClient | NodeType::FullNode => vec![
+                ("RPC Port", port_text(self.node_status.rpc_port)),
+            ],
+        };
+        m.push(("Version", version));
+        m.push(("Node ID", node_id));
+        m.push(("Protocols", protocols));
+        m
     }
 
-    fn draw_sync_edit_row(&mut self, ui: &mut egui::Ui) {
+    fn draw_sync_edit_row(&mut self, ui: &mut egui::Ui, accent: egui::Color32) {
         let tip = self.node_status.tip_block();
 
         ui.horizontal(|ui| {
-            ui.add_space(ROW_INDENT);
-            ui.label(
-                egui::RichText::new(format!("{:<width$}", "Sync", width = METRIC_LABEL_PAD))
-                    .size(12.0)
-                    .family(egui::FontFamily::Monospace)
-                    .color(self.colors.text_muted),
-            );
-
             let response = ui.add(
                 egui::TextEdit::singleline(&mut self.set_block_input)
-                    .desired_width(120.0)
-                    .font(egui::FontId::monospace(12.0))
-                    .text_color(self.colors.text_muted),
+                    .desired_width(200.0)
+                    .font(egui::FontId::monospace(24.0))
+                    .text_color(accent),
             );
 
             let parsed = self.set_block_input.trim().replace(',', "").parse::<u64>();
             let valid = matches!(&parsed, Ok(b) if tip.is_none_or(|t| *b <= t));
 
+            let ok_color = if valid {
+                self.colors.accent
+            } else {
+                self.colors.text_muted
+            };
             let ok_btn = ui.add_enabled(
                 valid,
-                egui::Button::new(egui::RichText::new("\u{2713}").size(13.0).color(if valid {
-                    self.colors.accent
-                } else {
-                    self.colors.text_muted
-                }))
+                egui::Button::new(
+                    egui::RichText::new("\u{2713}")
+                        .size(16.0)
+                        .color(ok_color),
+                )
                 .fill(egui::Color32::TRANSPARENT),
             );
 
             let cancel_btn = ui.add(
                 egui::Button::new(
                     egui::RichText::new("\u{2715}")
-                        .size(13.0)
+                        .size(16.0)
                         .color(self.colors.text_muted),
                 )
                 .fill(egui::Color32::TRANSPARENT),
@@ -537,7 +548,7 @@ impl App {
             };
             let auto_btn = ui.add_enabled(
                 auto_enabled,
-                egui::Button::new(egui::RichText::new(auto_label).size(13.0).color(
+                egui::Button::new(egui::RichText::new(auto_label).size(16.0).color(
                     if auto_enabled {
                         self.colors.accent2
                     } else {
@@ -564,6 +575,175 @@ impl App {
             }
         });
     }
+
+    // ── Blockchain metrics ───────────────────────────────────
+
+    fn draw_blockchain_metrics(&self, ui: &mut egui::Ui) {
+        let backend = self.qp_client.config().node_type;
+        let info = self.node_status.blockchain_info.as_deref();
+        let muted = self.colors.text_muted;
+        let text = self.colors.text;
+
+        let tip_label = match backend {
+            NodeType::PublicRpc => "Block Height",
+            NodeType::FullNode => "Local Tip",
+            NodeType::LightClient => "Tip",
+        };
+        let tip_value = match backend {
+            NodeType::PublicRpc => block_height_text(self.node_status.tip_block()),
+            _ => target_tip_value(backend, &self.node_status),
+        };
+        draw_metric_row(ui, tip_label, &tip_value, muted, text);
+
+        let epoch = self
+            .node_status
+            .tip_header
+            .as_ref()
+            .map(|h| crate::types::format_with_commas(h.epoch().number()))
+            .unwrap_or_else(|| DASH.into());
+        draw_metric_row(ui, "Epoch", &epoch, muted, text);
+
+        let chain = info.map(|i| i.chain.as_str()).unwrap_or(DASH);
+        draw_metric_row(ui, "Chain", chain, muted, text);
+
+        let difficulty = info
+            .map(|i| format!("{:#x}", i.difficulty))
+            .unwrap_or_else(|| DASH.into());
+        draw_metric_row(ui, "Difficulty", &difficulty, muted, text);
+
+        let ibd = info
+            .map(|i| if i.is_initial_block_download { "Yes" } else { "No" })
+            .unwrap_or(DASH);
+        draw_metric_row(ui, "IBD", ibd, muted, text);
+
+        let median = info
+            .map(|i| format_timestamp_ms(i.median_time.value()))
+            .unwrap_or_else(|| DASH.into());
+        draw_metric_row(ui, "Network Time", &median, muted, text);
+    }
+
+    // ── Tx Pool metrics ──────────────────────────────────────
+
+    fn draw_tx_pool_metrics(&self, ui: &mut egui::Ui) {
+        let pool = self.node_status.tx_pool_info.as_ref();
+        let muted = self.colors.text_muted;
+        let text = self.colors.text;
+
+        let pending = pool
+            .map(|p| crate::types::format_with_commas(p.pending.value()))
+            .unwrap_or_else(|| DASH.into());
+        draw_metric_row(ui, "Pending", &pending, muted, text);
+
+        let proposed = pool
+            .map(|p| crate::types::format_with_commas(p.proposed.value()))
+            .unwrap_or_else(|| DASH.into());
+        draw_metric_row(ui, "Proposed", &proposed, muted, text);
+
+        let orphan = pool
+            .map(|p| crate::types::format_with_commas(p.orphan.value()))
+            .unwrap_or_else(|| DASH.into());
+        draw_metric_row(ui, "Orphan", &orphan, muted, text);
+
+        let fee = pool
+            .map(|p| format!("{} sh/KB", crate::types::format_with_commas(p.min_fee_rate.value())))
+            .unwrap_or_else(|| DASH.into());
+        draw_metric_row(ui, "Min Fee", &fee, muted, text);
+
+        let cycles = pool
+            .map(|p| crate::types::format_with_commas(p.total_tx_cycles.value()))
+            .unwrap_or_else(|| DASH.into());
+        draw_metric_row(ui, "Cycles", &cycles, muted, text);
+
+        let size = pool
+            .map(|p| format!("{} B", crate::types::format_with_commas(p.total_tx_size.value())))
+            .unwrap_or_else(|| DASH.into());
+        draw_metric_row(ui, "Tx Size", &size, muted, text);
+    }
+
+    // ── Peer table ───────────────────────────────────────────
+
+    fn draw_peer_table(&self, ui: &mut egui::Ui) {
+        let muted = self.colors.text_muted;
+        let text = self.colors.text;
+
+        egui::Grid::new("peer-grid")
+            .num_columns(4)
+            .spacing([16.0, 4.0])
+            .show(ui, |ui| {
+                for label in ["Node ID", "Version", "Direction", "Ping"] {
+                    ui.label(
+                        egui::RichText::new(label)
+                            .size(10.0)
+                            .family(egui::FontFamily::Monospace)
+                            .color(muted),
+                    );
+                }
+                ui.end_row();
+
+                for peer in &self.node_status.peers {
+                    ui.label(
+                        egui::RichText::new(&peer.node_id)
+                            .size(10.0)
+                            .family(egui::FontFamily::Monospace)
+                            .color(text),
+                    );
+                    ui.label(
+                        egui::RichText::new(&peer.version)
+                            .size(10.0)
+                            .family(egui::FontFamily::Monospace)
+                            .color(muted),
+                    );
+                    let dir = if peer.is_outbound { "Outbound" } else { "Inbound" };
+                    ui.label(
+                        egui::RichText::new(dir)
+                            .size(10.0)
+                            .family(egui::FontFamily::Monospace)
+                            .color(muted),
+                    );
+                    let ping = peer
+                        .last_ping_duration
+                        .as_ref()
+                        .map(|d| format!("{}ms", d.value()))
+                        .unwrap_or_else(|| DASH.into());
+                    ui.label(
+                        egui::RichText::new(ping)
+                            .size(10.0)
+                            .family(egui::FontFamily::Monospace)
+                            .color(muted),
+                    );
+                    ui.end_row();
+                }
+            });
+    }
+}
+
+// ── Free functions ───────────────────────────────────────────
+
+fn draw_metric_row(
+    ui: &mut egui::Ui,
+    label: &str,
+    value: &str,
+    muted: egui::Color32,
+    text: egui::Color32,
+) {
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new(format!("{:<width$}", label, width = LABEL_PAD))
+                .size(12.0)
+                .family(egui::FontFamily::Monospace)
+                .color(muted),
+        );
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(value)
+                    .size(12.0)
+                    .family(egui::FontFamily::Monospace)
+                    .strong()
+                    .color(text),
+            )
+            .wrap(),
+        );
+    });
 }
 
 fn draw_donut_gauge(
@@ -573,9 +753,9 @@ fn draw_donut_gauge(
     track_color: egui::Color32,
     muted_color: egui::Color32,
 ) {
-    const SIZE: f32 = 90.0;
-    const RADIUS: f32 = 32.0;
-    const STROKE_W: f32 = 6.0;
+    const SIZE: f32 = 110.0;
+    const RADIUS: f32 = 42.0;
+    const STROKE_W: f32 = 7.0;
 
     let (rect, _) = ui.allocate_exact_size(egui::vec2(SIZE, SIZE), egui::Sense::hover());
     let center = rect.center();
@@ -611,8 +791,16 @@ fn draw_donut_gauge(
         center,
         egui::Align2::CENTER_CENTER,
         &text,
-        egui::FontId::new(13.0, egui::FontFamily::Monospace),
+        egui::FontId::new(18.0, egui::FontFamily::Monospace),
         color,
+    );
+
+    painter.text(
+        egui::pos2(center.x, center.y + 16.0),
+        egui::Align2::CENTER_CENTER,
+        "SYNC",
+        egui::FontId::new(9.0, egui::FontFamily::Monospace),
+        muted_color,
     );
 }
 
@@ -634,11 +822,11 @@ fn full_node_sync_view(sync_state: Option<&ckb_jsonrpc_types::SyncState>) -> (f3
 fn synced_value(backend: NodeType, status: &crate::types::NodeStatus) -> String {
     match backend {
         NodeType::FullNode => match status.sync_state.as_ref() {
-            Some(s) => format!("#{}", format_int(s.tip_number.value())),
+            Some(s) => format!("#{}", crate::types::format_with_commas(s.tip_number.value())),
             None => "\u{2014}".into(),
         },
         NodeType::LightClient => match status.synced_block {
-            Some(s) => format!("#{}", format_int(s)),
+            Some(s) => format!("#{}", crate::types::format_with_commas(s)),
             None => "\u{2014}".into(),
         },
         NodeType::PublicRpc => "\u{2014}".into(),
@@ -648,11 +836,11 @@ fn synced_value(backend: NodeType, status: &crate::types::NodeStatus) -> String 
 fn target_tip_value(backend: NodeType, status: &crate::types::NodeStatus) -> String {
     match backend {
         NodeType::FullNode => match status.sync_state.as_ref() {
-            Some(s) => format!("#{}", format_int(s.best_known_block_number.value())),
+            Some(s) => format!("#{}", crate::types::format_with_commas(s.best_known_block_number.value())),
             None => "\u{2014}".into(),
         },
         NodeType::LightClient => match status.tip_block() {
-            Some(t) => format!("#{}", format_int(t)),
+            Some(t) => format!("#{}", crate::types::format_with_commas(t)),
             None => "\u{2014}".into(),
         },
         NodeType::PublicRpc => "\u{2014}".into(),
@@ -660,13 +848,7 @@ fn target_tip_value(backend: NodeType, status: &crate::types::NodeStatus) -> Str
 }
 
 fn block_height_text(tip: Option<u64>) -> String {
-    tip.map(|n| format!("#{}", format_int(n)))
-        .unwrap_or_else(|| "\u{2014}".to_string())
-}
-
-fn peers_text(count: Option<usize>) -> String {
-    count
-        .map(|n| format!("{} connected", n))
+    tip.map(|n| format!("#{}", crate::types::format_with_commas(n)))
         .unwrap_or_else(|| "\u{2014}".to_string())
 }
 
@@ -690,15 +872,8 @@ fn hostname_of(url: &str) -> String {
         .to_string()
 }
 
-fn format_int(n: u64) -> String {
-    let raw = n.to_string();
-    let mut out = String::with_capacity(raw.len() + raw.len() / 3);
-    let chars: Vec<char> = raw.chars().collect();
-    for (i, ch) in chars.iter().enumerate() {
-        if i > 0 && (chars.len() - i).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(*ch);
-    }
-    out
+fn format_timestamp_ms(ms: u64) -> String {
+    chrono::DateTime::from_timestamp((ms / 1000) as i64, 0)
+        .map(|dt| dt.format("%b %d %Y %H:%M").to_string())
+        .unwrap_or_else(|| DASH.into())
 }

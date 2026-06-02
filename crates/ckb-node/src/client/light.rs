@@ -242,11 +242,38 @@ impl UnifiedClient for LightClient {
             .map_err(|e| NodeManagerError::RpcError(e.to_string()))
     }
 
-    fn get_peer_count(&self) -> Result<usize, NodeManagerError> {
-        self.client
+    fn get_peers(&self) -> Result<Vec<ckb_jsonrpc_types::RemoteNode>, NodeManagerError> {
+        let peers = self
+            .client
             .get_peers()
-            .map(|peers| peers.len())
-            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
+            .map_err(|e| NodeManagerError::RpcError(e.to_string()))?;
+        Ok(peers
+            .into_iter()
+            .map(|p| ckb_jsonrpc_types::RemoteNode {
+                version: p.version,
+                node_id: p.node_id,
+                addresses: p
+                    .addresses
+                    .into_iter()
+                    .map(|a| ckb_jsonrpc_types::NodeAddress {
+                        address: a.address,
+                        score: a.score,
+                    })
+                    .collect(),
+                is_outbound: false,
+                connected_duration: p.connected_duration,
+                last_ping_duration: None,
+                sync_state: None,
+                protocols: p
+                    .protocols
+                    .into_iter()
+                    .map(|pr| ckb_jsonrpc_types::RemoteNodeProtocol {
+                        id: pr.id,
+                        version: pr.version,
+                    })
+                    .collect(),
+            })
+            .collect())
     }
 
     fn get_genesis_block(&self) -> Result<ckb_jsonrpc_types::BlockView, NodeManagerError> {
@@ -456,5 +483,17 @@ impl UnifiedClient for LightClient {
 
     fn tx_dep_provider(&self) -> Box<dyn TransactionDependencyProvider> {
         Box::new(LightClientTransactionDependencyProvider::new(&self.rpc_url))
+    }
+
+    fn local_node_info(&self) -> Result<ckb_jsonrpc_types::LocalNode, NodeManagerError> {
+        // ckb_sdk's light client defines its own LocalNode struct (not
+        // ckb_jsonrpc_types::LocalNode), so a serde round-trip is needed.
+        let info = self
+            .client
+            .local_node_info()
+            .map_err(|e| NodeManagerError::RpcError(e.to_string()))?;
+        let json = serde_json::to_value(&info)
+            .map_err(|e| NodeManagerError::RpcError(e.to_string()))?;
+        serde_json::from_value(json).map_err(|e| NodeManagerError::RpcError(e.to_string()))
     }
 }

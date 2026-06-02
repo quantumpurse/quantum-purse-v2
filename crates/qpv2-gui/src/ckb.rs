@@ -682,10 +682,9 @@ impl App {
                 Err(_) => cached.tip_header.clone(),
             };
 
-            // Peer count — `Ok(None)` only for PublicRpc (policy).
-            let peer_count = match qp_client.peer_count() {
-                Ok(v) => v,
-                Err(_) => cached.peer_count,
+            let peers = match qp_client.get_peers() {
+                Ok(p) => p,
+                Err(_) => cached.peers,
             };
 
             // Synced block — `Ok(None)` when LC has no scripts
@@ -699,6 +698,22 @@ impl App {
             let sync_state = match qp_client.sync_state() {
                 Ok(v) => v,
                 Err(_) => cached.sync_state,
+            };
+
+            let blockchain_info = match qp_client.blockchain_info() {
+                Ok(Some(v)) => Some(std::sync::Arc::new(v)),
+                Ok(None) => None,
+                Err(_) => cached.blockchain_info,
+            };
+
+            let tx_pool_info = match qp_client.tx_pool_info() {
+                Ok(v) => v,
+                Err(_) => cached.tx_pool_info,
+            };
+
+            let local_node_info = match qp_client.local_node_info() {
+                Ok(v) => Some(v),
+                Err(_) => cached.local_node_info,
             };
 
             // Fetch a header ~7 days ago for APC calculation (same window as NervDAO).
@@ -739,10 +754,13 @@ impl App {
             let status = NodeStatus {
                 apc_baseline_header,
                 tip_header,
-                peer_count,
+                peers,
                 rpc_port,
                 synced_block,
                 sync_state,
+                blockchain_info,
+                tx_pool_info,
+                local_node_info,
                 online,
             };
             let _ = tx.send(Ok(status) as NodeStatusUpdate);

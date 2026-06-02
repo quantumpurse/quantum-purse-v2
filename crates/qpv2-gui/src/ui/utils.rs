@@ -360,39 +360,6 @@ impl App {
             }
         }
     }
-
-    pub(crate) fn paint_entanglement_divider(&self, ui: &mut egui::Ui) {
-        let w = ui.available_width();
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(w, 1.0), egui::Sense::hover());
-        let painter = ui.painter();
-        let mid = rect.center().x;
-        let y = rect.center().y;
-
-        let steps = 64;
-        for i in 0..steps {
-            let t0 = i as f32 / steps as f32;
-            let t1 = (i + 1) as f32 / steps as f32;
-            let x0 = rect.left() + t0 * w;
-            let x1 = rect.left() + t1 * w;
-
-            let fade = |t: f32| -> f32 {
-                let d = ((rect.left() + t * w) - mid).abs() / (w * 0.5);
-                (1.0 - d).clamp(0.0, 1.0).powi(2)
-            };
-            let a = ((fade(t0) + fade(t1)) * 0.5 * 0.5 * 255.0) as u8;
-
-            let c = egui::Color32::from_rgba_unmultiplied(
-                self.colors.accent.r(),
-                self.colors.accent.g(),
-                self.colors.accent.b(),
-                a,
-            );
-            painter.line_segment(
-                [egui::pos2(x0, y), egui::pos2(x1, y)],
-                egui::Stroke::new(1.0, c),
-            );
-        }
-    }
 }
 
 pub(crate) struct CardHover {

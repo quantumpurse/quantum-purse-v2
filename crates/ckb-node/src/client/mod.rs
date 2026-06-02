@@ -17,9 +17,8 @@
 //!   from, so background threads carry one cheap clone instead of
 //!   capturing the rpc and a fistful of config scalars separately.
 //!
-//! Plus two free helpers — [`peer_count`] and [`synced_block`] — that
-//! consult a `&dyn UnifiedClient` without caring which concrete impl is
-//! behind it.
+//! Plus free helpers — [`synced_block`], etc. — that consult a
+//! `&dyn UnifiedClient` without caring which concrete impl is behind it.
 
 use std::any::Any;
 use std::sync::Arc;
@@ -61,11 +60,7 @@ trait UnifiedClient: Send + Sync + Any {
     /// Returns the tip (latest) block header.
     fn get_tip_header(&self) -> Result<ckb_jsonrpc_types::HeaderView, NodeManagerError>;
 
-    /// Number of peers this backend is currently connected to. Both
-    /// upstream clients expose `get_peers()` returning a list; impls
-    /// just count it. Backend-policy (e.g. "PublicRpc count isn't
-    /// meaningful") lives in the `peer_count` free helper, not here.
-    fn get_peer_count(&self) -> Result<usize, NodeManagerError>;
+    fn get_peers(&self) -> Result<Vec<ckb_jsonrpc_types::RemoteNode>, NodeManagerError>;
 
     /// Returns the genesis block. Full nodes serve this via
     /// `get_block_by_number(0)`; the light client has a dedicated
@@ -122,6 +117,8 @@ trait UnifiedClient: Send + Sync + Any {
     /// this backend. Used by tx builders that consume
     /// `&dyn TransactionDependencyProvider`.
     fn tx_dep_provider(&self) -> Box<dyn TransactionDependencyProvider>;
+
+    fn local_node_info(&self) -> Result<ckb_jsonrpc_types::LocalNode, NodeManagerError>;
 }
 
 /// Simplified transaction status returned by `UnifiedClient::get_transaction`.
@@ -349,11 +346,10 @@ impl QpClient {
         self.unified_client.as_any()
     }
 
-    /// Number of peers for local-node backends. `Ok(None)` for `PublicRpc`
-    /// (peer count of a remote endpoint isn't meaningful wallet-side).
-    /// `Err` when the local node is unreachable.
-    pub fn peer_count(&self) -> Result<Option<usize>, NodeManagerError> {
-        self.unified_client.get_peer_count().map(Some)
+    pub fn get_peers(
+        &self,
+    ) -> Result<Vec<ckb_jsonrpc_types::RemoteNode>, NodeManagerError> {
+        self.unified_client.get_peers()
     }
 
     /// Min synced block across all scripts the LC is tracking. `Ok(None)`
@@ -382,6 +378,38 @@ impl QpClient {
             return Ok(None);
         };
         full.sync_state().map(Some)
+    }
+
+    pub fn blockchain_info(
+        &self,
+    ) -> Result<Option<ckb_jsonrpc_types::ChainInfo>, NodeManagerError> {
+        let Some(full) = self
+            .unified_client
+            .as_any()
+            .downcast_ref::<FullNodeClient>()
+        else {
+            return Ok(None);
+        };
+        full.get_blockchain_info().map(Some)
+    }
+
+    pub fn tx_pool_info(
+        &self,
+    ) -> Result<Option<ckb_jsonrpc_types::TxPoolInfo>, NodeManagerError> {
+        let Some(full) = self
+            .unified_client
+            .as_any()
+            .downcast_ref::<FullNodeClient>()
+        else {
+            return Ok(None);
+        };
+        full.tx_pool_info().map(Some)
+    }
+
+    pub fn local_node_info(
+        &self,
+    ) -> Result<ckb_jsonrpc_types::LocalNode, NodeManagerError> {
+        self.unified_client.local_node_info()
     }
 }
 
