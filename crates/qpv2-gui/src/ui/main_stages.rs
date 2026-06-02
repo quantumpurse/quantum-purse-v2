@@ -495,6 +495,7 @@ impl App {
                     ui.label(
                         egui::RichText::new("WALLET")
                             .size(8.0)
+                            .strong()
                             .color(self.colors.text),
                     );
                 });
@@ -507,7 +508,12 @@ impl App {
                 // Section: NervosDAO
                 ui.horizontal(|ui| {
                     ui.add_space(20.0);
-                    ui.label(egui::RichText::new("DAO").size(8.0).color(self.colors.text));
+                    ui.label(
+                        egui::RichText::new("DAO")
+                            .size(8.0)
+                            .strong()
+                            .color(self.colors.text)
+                    );
                 });
                 ui.add_space(4.0);
                 self.draw_nav_item(ui, Tab::DaoOperations, "\u{2b21}", "Nervos DAO");
@@ -520,6 +526,7 @@ impl App {
                     ui.label(
                         egui::RichText::new("SETTING")
                             .size(8.0)
+                            .strong()
                             .color(self.colors.text),
                     );
                 });

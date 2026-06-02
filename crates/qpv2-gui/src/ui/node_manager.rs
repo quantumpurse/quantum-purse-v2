@@ -811,7 +811,7 @@ fn draw_donut_gauge(
         egui::pos2(center.x, center.y - 4.0),
         egui::Align2::CENTER_CENTER,
         &text,
-        egui::FontId::new(22.0, egui::FontFamily::Monospace),
+        egui::FontId::new(20.0, egui::FontFamily::Monospace),
         color,
     );
 

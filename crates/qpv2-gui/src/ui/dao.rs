@@ -630,6 +630,17 @@ impl App {
         };
 
         let wide = ui.available_width() > 1100.0;
+        let table_avail = ui.available_width();
+        let frame_overhead = 26.0;
+        let inner_avail = table_avail - frame_overhead;
+        let data_width = ui
+            .ctx()
+            .data(|d| d.get_temp::<f32>(egui::Id::new("dao_data_cols_width")))
+            .unwrap_or(if wide { 950.0 } else { 750.0 });
+        let filler_step = 72.0;
+        let num_fillers = ((inner_avail - data_width) / filler_step)
+            .floor()
+            .max(0.0) as usize;
 
         egui::Frame::new()
             .fill(self.colors.surface)
@@ -637,8 +648,9 @@ impl App {
             .stroke(egui::Stroke::new(1.0, self.colors.border))
             .inner_margin(egui::Margin::symmetric(12, 8))
             .show(ui, |ui| {
-                let num_cols = if wide { 8 } else { 7 };
-                egui::Grid::new("dao_positions")
+                ui.set_min_width(ui.available_width());
+                let num_cols = (if wide { 8 } else { 7 }) + num_fillers;
+                let grid_resp = egui::Grid::new("dao_positions")
                     .num_columns(num_cols)
                     .spacing(egui::vec2(12.0, 8.0))
                     .striped(true)
@@ -664,6 +676,17 @@ impl App {
                         header(ui, if wide { "Lock Duration" } else { "Duration" });
                         header(ui, "Status");
                         header(ui, "Action");
+                        for _ in 0..num_fillers {
+                            ui.add_sized(
+                                [60.0, 14.0],
+                                egui::Label::new(
+                                    egui::RichText::new("--")
+                                        .size(10.5)
+                                        .strong()
+                                        .color(self.colors.text_muted),
+                                ),
+                            );
+                        }
                         ui.end_row();
 
                         // Deposited cells
@@ -786,6 +809,16 @@ impl App {
                                 prepare_action = Some((cell.out_point.clone(), lock_args.clone()));
                             }
 
+                            for _ in 0..num_fillers {
+                                ui.add_sized(
+                                    [60.0, 14.0],
+                                    egui::Label::new(
+                                        egui::RichText::new("--")
+                                            .size(10.5)
+                                            .color(self.colors.text_muted),
+                                    ),
+                                );
+                            }
                             ui.end_row();
                         }
 
@@ -878,9 +911,26 @@ impl App {
                                 withdraw_action = Some((cell.out_point.clone(), lock_args.clone()));
                             }
 
+                            for _ in 0..num_fillers {
+                                ui.add_sized(
+                                    [60.0, 14.0],
+                                    egui::Label::new(
+                                        egui::RichText::new("--")
+                                            .size(10.5)
+                                            .color(self.colors.text_muted),
+                                    ),
+                                );
+                            }
                             ui.end_row();
                         }
                     });
+                let grid_w = grid_resp.response.rect.width();
+                let data_w = grid_w - num_fillers as f32 * filler_step;
+                if data_w > 100.0 {
+                    ui.ctx().data_mut(|d| {
+                        d.insert_temp(egui::Id::new("dao_data_cols_width"), data_w);
+                    });
+                }
             });
 
         // Handle deferred actions
