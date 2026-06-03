@@ -274,7 +274,7 @@ impl App {
                                         };
                                         ui.label(
                                             egui::RichText::new(short_addr)
-                                                .size(9.0)
+                                                .size(10.0)
                                                 .color(self.colors.text_muted)
                                                 .family(egui::FontFamily::Monospace),
                                         );
