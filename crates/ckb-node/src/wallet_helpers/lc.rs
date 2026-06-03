@@ -71,13 +71,37 @@ pub fn register_lock_scripts(
     light.register_lock_scripts(&scripts, qp_client.network())
 }
 
-/// Removes all tracked scripts from the light client. No-op when the
-/// backend isn't LightClient.
-pub fn clear_all_scripts(qp_client: &QpClient) -> Result<(), NodeManagerError> {
+/// Removes only the given wallet's scripts from the light client,
+/// preserving scripts from other wallets. Fetches the current script
+/// list, filters out entries whose `args` match `lock_args_list`, and
+/// replaces the full list with the remainder. No-op when the backend
+/// isn't LightClient or `lock_args_list` is empty.
+pub fn clear_wallet_scripts(
+    qp_client: &QpClient,
+    lock_args_list: &[String],
+) -> Result<(), NodeManagerError> {
     let Some(light) = qp_client.as_any().downcast_ref::<LightClient>() else {
         return Ok(());
     };
-    light.clear_all_scripts()
+    if lock_args_list.is_empty() {
+        return Ok(());
+    }
+
+    let to_remove: std::collections::HashSet<Vec<u8>> = lock_args_list
+        .iter()
+        .filter_map(|hex| {
+            let clean = hex.strip_prefix("0x").unwrap_or(hex);
+            hex::decode(clean).ok()
+        })
+        .collect();
+
+    let remaining: Vec<_> = light
+        .get_scripts()?
+        .into_iter()
+        .filter(|ss| !to_remove.contains(ss.script.args.as_bytes()))
+        .collect();
+
+    light.replace_scripts(remaining)
 }
 
 /// Forces every given lock script to `start_block` on the LC,

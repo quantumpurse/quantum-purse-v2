@@ -146,9 +146,10 @@ impl LightClient {
         self.set_scripts(statuses, Some(SetScriptsCommand::Partial))
     }
 
-    /// Removes all tracked scripts from the light client.
-    pub fn clear_all_scripts(&self) -> Result<(), NodeManagerError> {
-        self.set_scripts(vec![], Some(SetScriptsCommand::All))
+    /// Replaces the entire tracked script list with the given set.
+    /// An empty list clears all scripts.
+    pub fn replace_scripts(&self, scripts: Vec<ScriptStatus>) -> Result<(), NodeManagerError> {
+        self.set_scripts(scripts, Some(SetScriptsCommand::All))
     }
 
     /// Force-applies a `set_scripts(Partial)` call for every entry,

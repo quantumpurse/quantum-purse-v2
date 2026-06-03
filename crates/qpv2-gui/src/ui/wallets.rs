@@ -490,7 +490,12 @@ impl App {
                     // Handle delete outside the iteration to avoid borrow issues.
                     if let Some(id) = delete_target {
                         let _ = keychain::delete_key(id);
-                        let _ = ckb_node::wallet_helpers::lc::clear_all_scripts(&self.qp_client);
+                        let lock_args =
+                            KeyVault::get_all_sphincs_lock_args(id).unwrap_or_default();
+                        let _ = ckb_node::wallet_helpers::lc::clear_wallet_scripts(
+                            &self.qp_client,
+                            &lock_args,
+                        );
 
                         match KeyVault::remove_wallet(id) {
                             Ok(()) => {
