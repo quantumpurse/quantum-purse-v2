@@ -82,6 +82,8 @@ impl App {
                 if let Some(backend) = switch_to {
                     self.switch_to_backend(backend);
                 }
+
+                ui.add_space(20.0);
             });
         });
     }

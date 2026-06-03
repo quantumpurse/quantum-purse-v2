@@ -20,7 +20,7 @@ use std::time::Duration;
 use wallet::{load_last_wallet_id, save_last_wallet_id};
 
 /// Interval between periodic data refreshes (balances, tx history, DAO cells).
-const POLL_INTERVAL: Duration = Duration::from_secs(10);
+const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 /// How long a non-None status banner stays visible before auto-clearing.
 const STATUS_DURATION: Duration = Duration::from_secs(5);
@@ -388,9 +388,7 @@ impl App {
         }
     }
 
-    /// Auto-clear the status banner after STATUS_DURATION. Detects writes by
-    /// diffing against a snapshot rather than wrapping all 47 `self.status = ...`
-    /// call sites in a setter.
+    /// Auto-clear the status banner after STATUS_DURATION.
     fn tick_status(&mut self, ctx: &egui::Context) {
         if self.status != self.status_seen {
             self.status_seen = self.status.clone();

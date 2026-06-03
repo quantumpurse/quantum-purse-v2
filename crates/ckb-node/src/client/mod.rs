@@ -158,10 +158,14 @@ pub struct QpClient {
 
 impl QpClient {
     /// Builds a fresh handle bound to `config`. Constructs the
-    /// concrete `UnifiedClient` impl appropriate for `config.node_type` via
-    /// [`build`].
+    /// concrete `UnifiedClient` impl appropriate for `config.node_type`.
     pub fn new(config: NodeConfig) -> Self {
-        let unified_client = build(&config);
+        let unified_client: Arc<dyn UnifiedClient> = match config.node_type {
+            NodeType::PublicRpc | NodeType::FullNode => {
+                Arc::new(FullNodeClient::new(&config.rpc_url))
+            }
+            NodeType::LightClient => Arc::new(LightClient::new(&config.rpc_url)),
+        };
         Self {
             unified_client,
             config,
@@ -421,15 +425,5 @@ impl QpClient {
 
     pub fn local_node_info(&self) -> Result<ckb_jsonrpc_types::LocalNode, NodeManagerError> {
         self.unified_client.local_node_info()
-    }
-}
-
-/// Builds the right `Arc<dyn UnifiedClient>` for the given config. The active
-/// backend determines the concrete RPC client; the App owns the single
-/// shared instance and replaces it on every config change.
-fn build(config: &NodeConfig) -> Arc<dyn UnifiedClient> {
-    match config.node_type {
-        NodeType::PublicRpc | NodeType::FullNode => Arc::new(FullNodeClient::new(&config.rpc_url)),
-        NodeType::LightClient => Arc::new(LightClient::new(&config.rpc_url)),
     }
 }

@@ -553,6 +553,7 @@ impl App {
                     }
                 }
 
+                ui.add_space(20.0);
             });
         });
     }

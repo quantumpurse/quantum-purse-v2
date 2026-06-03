@@ -414,6 +414,8 @@ impl App {
                         ui.add_space(6.0);
                     }
                 }
+
+                ui.add_space(20.0);
             }); // vertical
         }); // horizontal
     }

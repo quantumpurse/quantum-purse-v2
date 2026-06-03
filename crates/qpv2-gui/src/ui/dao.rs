@@ -226,6 +226,8 @@ impl App {
 
                 // ── Active Deposits Table ──
                 self.show_dao_positions_table(ui);
+
+                ui.add_space(20.0);
             }); // vertical
         }); // horizontal
     }

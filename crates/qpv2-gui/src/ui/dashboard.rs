@@ -356,7 +356,7 @@ impl App {
                     );
                     ui.add_space(10.0);
 
-                    let badge_text = if self.tx_history_rx.is_some() {
+                    let badge_text = if self.tx_history.is_empty() && self.tx_history_rx.is_some() {
                         "loading...".to_string()
                     } else {
                         format!("{} total", self.tx_history.len())
@@ -399,6 +399,8 @@ impl App {
 
                 // ── Status messages ──
                 self.show_status(ui);
+
+                ui.add_space(20.0);
             });
         });
     }
