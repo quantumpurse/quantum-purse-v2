@@ -631,6 +631,11 @@ impl App {
                 Err(_) => cached.synced_block,
             };
 
+            let tracked_scripts = match qp_client.tracked_scripts() {
+                Ok(v) => v,
+                Err(_) => cached.tracked_scripts,
+            };
+
             // Sync state — `Ok(None)` outside FullNode (legit).
             let sync_state = match qp_client.sync_state() {
                 Ok(v) => v,
@@ -694,6 +699,7 @@ impl App {
                 peers,
                 rpc_port,
                 synced_block,
+                tracked_scripts,
                 sync_state,
                 blockchain_info,
                 tx_pool_info,

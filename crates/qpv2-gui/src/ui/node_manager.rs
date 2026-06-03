@@ -131,6 +131,14 @@ impl App {
                     self.draw_peer_table(ui);
                 }
 
+                // ── Tracked Scripts (LC only) ──────────
+                if backend == NodeType::LightClient
+                    && !self.node_status.tracked_scripts.is_empty()
+                {
+                    ui.add_space(16.0);
+                    self.draw_tracked_scripts_section(ui);
+                }
+
                 if let Some(backend) = switch_to {
                     self.switch_to_backend(backend);
                 }
@@ -436,6 +444,94 @@ impl App {
                 .color(self.colors.text),
         );
         ui.add_space(6.0);
+    }
+
+    fn draw_tracked_scripts_section(&self, ui: &mut egui::Ui) {
+        let scripts = &self.node_status.tracked_scripts;
+        self.draw_section_heading(
+            ui,
+            &format!("Tracked Scripts ({})", scripts.len()),
+        );
+
+        // Build a map: wallet_id -> (wallet_name, Vec<lock_args>)
+        let mut wallet_accounts: Vec<(String, Vec<String>)> = Vec::new();
+        for cw in &self.wallet_cache {
+            let accounts =
+                qpv2_core::KeyVault::get_all_sphincs_lock_args(cw.id).unwrap_or_default();
+            wallet_accounts.push((cw.name.clone(), accounts));
+        }
+
+        // Classify each script into a wallet or "Orphaned"
+        struct ScriptEntry {
+            args_short: String,
+            block_number: u64,
+            account_idx: Option<usize>,
+        }
+
+        let mut grouped: std::collections::BTreeMap<String, Vec<ScriptEntry>> =
+            std::collections::BTreeMap::new();
+
+        for (args_hex, block) in scripts {
+            let mut found = false;
+            for (wallet_name, accounts) in &wallet_accounts {
+                if let Some(idx) = accounts.iter().position(|a| a == args_hex) {
+                    grouped
+                        .entry(wallet_name.clone())
+                        .or_default()
+                        .push(ScriptEntry {
+                            args_short: args_hex.clone(),
+                            block_number: *block,
+                            account_idx: Some(idx),
+                        });
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                grouped
+                    .entry("Orphaned".to_string())
+                    .or_default()
+                    .push(ScriptEntry {
+                        args_short: format!(
+                            "{}..{}",
+                            &args_hex[..8],
+                            &args_hex[args_hex.len() - 6..]
+                        ),
+                        block_number: *block,
+                        account_idx: None,
+                    });
+            }
+        }
+
+        let muted = self.colors.text_muted;
+        let text = self.colors.text;
+
+        for (wallet_name, entries) in &mut grouped {
+            entries.sort_by_key(|e| e.account_idx.unwrap_or(usize::MAX));
+            let color = if wallet_name == "Orphaned" {
+                self.colors.danger
+            } else {
+                self.colors.accent2
+            };
+            ui.label(
+                egui::RichText::new(wallet_name)
+                    .size(11.0)
+                    .strong()
+                    .color(color),
+            );
+            for entry in entries {
+                let label = match entry.account_idx {
+                    Some(idx) => format!("  #{:<4}", idx),
+                    None => "  ?   ".to_string(),
+                };
+                let value = format!(
+                    "{} block #{}",
+                    entry.args_short,
+                    crate::utils::format_with_commas(entry.block_number),
+                );
+                draw_metric_row(ui, &label, &value, muted, text);
+            }
+        }
     }
 
     // ── Node metrics ─────────────────────────────────────────

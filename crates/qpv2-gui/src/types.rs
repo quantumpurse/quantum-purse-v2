@@ -135,6 +135,9 @@ pub(crate) struct NodeStatus {
     pub local_node_info: Option<ckb_jsonrpc_types::LocalNode>,
     /// True when the most recent poll reached the node successfully.
     pub online: bool,
+    /// Per-script sync status from the LC's `get_scripts`. Each entry is
+    /// `(lock_args_hex, block_number)`. Empty for non-LC backends.
+    pub tracked_scripts: Vec<(String, u64)>,
 }
 
 impl NodeStatus {

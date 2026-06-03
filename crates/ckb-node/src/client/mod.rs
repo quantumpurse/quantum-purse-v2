@@ -360,6 +360,23 @@ impl QpClient {
         Ok(scripts.iter().map(|s| s.block_number.value()).min())
     }
 
+    /// Per-script sync status from the LC. Returns `(lock_args_hex, block_number)`
+    /// for each tracked script. Empty for non-LC backends.
+    pub fn tracked_scripts(&self) -> Result<Vec<(String, u64)>, NodeManagerError> {
+        let Some(light) = self.unified_client.as_any().downcast_ref::<LightClient>() else {
+            return Ok(Vec::new());
+        };
+        let scripts = light.get_scripts()?;
+        Ok(scripts
+            .into_iter()
+            .map(|s| {
+                let args_hex = hex::encode(s.script.args.as_bytes());
+                let block = s.block_number.value();
+                (args_hex, block)
+            })
+            .collect())
+    }
+
     /// Full node IBD progress and phase (header sync / block download /
     /// verifying / synced). `Ok(None)` for `LightClient` (no analogue)
     /// and `PublicRpc` (remote endpoint's sync isn't *our* sync, same
