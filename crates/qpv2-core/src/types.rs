@@ -54,6 +54,27 @@ impl MultisigConfig {
         }
     }
 
+    /// Validate against on-chain contract constraints.
+    pub fn validate(&self) -> Result<(), String> {
+        let n = self.signers.len();
+        if n == 0 || n > 255 {
+            return Err(format!("Signer count must be 1..=255, got {}.", n));
+        }
+        if self.threshold == 0 || self.threshold as usize > n {
+            return Err(format!(
+                "Threshold must be 1..={}, got {}.",
+                n, self.threshold
+            ));
+        }
+        if self.required_first_n > self.threshold {
+            return Err(format!(
+                "required_first_n ({}) must not exceed threshold ({}).",
+                self.required_first_n, self.threshold
+            ));
+        }
+        Ok(())
+    }
+
     /// The 4-byte config header: [S, R, M, N].
     pub fn header_bytes(&self) -> [u8; 4] {
         [

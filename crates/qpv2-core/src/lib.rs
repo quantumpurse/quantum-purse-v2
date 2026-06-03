@@ -267,7 +267,7 @@ impl KeyVault {
         })?;
 
         let config = MultisigConfig::single_sig(self.variant, pub_key.as_ref().to_vec());
-        let lock_script_args = Self::get_lock_script_arg(&config);
+        let lock_script_args = Self::get_lock_script_arg(&config)?;
 
         let account = SphincsPlusAccount {
             index: 0,
@@ -667,7 +667,7 @@ impl KeyVault {
             })?;
 
             let config = MultisigConfig::single_sig(self.variant, pub_key.as_ref().to_vec());
-            let lock_script_args = Self::get_lock_script_arg(&config);
+            let lock_script_args = Self::get_lock_script_arg(&config)?;
             lock_args_array.push(encode(lock_script_args));
         }
         Ok(lock_args_array)
@@ -706,7 +706,7 @@ impl KeyVault {
             })?;
 
             let config = MultisigConfig::single_sig(self.variant, pub_key.as_ref().to_vec());
-            let lock_script_args = Self::get_lock_script_arg(&config);
+            let lock_script_args = Self::get_lock_script_arg(&config)?;
 
             let account = SphincsPlusAccount {
                 index: 0,
@@ -765,7 +765,8 @@ impl KeyVault {
     ///
     /// Hashes: `[S R M N] + [param_flag₁ pk₁] + [param_flag₂ pk₂] + ...`
     /// where each param_flag has its lowest bit cleared (no-signature variant).
-    fn get_lock_script_arg(config: &MultisigConfig) -> [u8; 32] {
+    fn get_lock_script_arg(config: &MultisigConfig) -> Result<[u8; 32], String> {
+        config.validate()?;
         let mut hasher = Hasher::script_args_hasher();
         hasher.update(&config.header_bytes());
         for signer in &config.signers {
@@ -773,7 +774,7 @@ impl KeyVault {
             hasher.update(&[param_flag]);
             hasher.update(&signer.pubkey);
         }
-        hasher.hash()
+        Ok(hasher.hash())
     }
 
     pub fn list_wallets() -> Result<Vec<types::WalletEntry>, String> {
