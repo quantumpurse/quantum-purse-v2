@@ -1,3 +1,4 @@
+use crate::constants::MULTISIG_RESERVED_FIELD_VALUE;
 use crate::containers::{SecureString, SecureVec};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -24,15 +25,55 @@ pub struct CipherPayload {
     pub cipher_text: String,
 }
 
-/// Represents a SPHINCS+ account with the lock script argument (processed public key).
-///
-/// **Fields**:
-/// - `index: u32` - db addition order
-/// - `lock_args: String` - The lock script's argument calculated from the SPHINCS+ public key.
+/// A signer in a multisig group: their SPHINCS+ variant and public key.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Signer {
+    pub variant: SpxVariant,
+    pub pubkey: Vec<u8>,
+}
+
+/// Configuration for the CKB quantum-resistant lock script's all-in-one multisig header.
+/// Every account uses this — a "single-sig" account is threshold=1 with one signer.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct MultisigConfig {
+    /// How many of the first N signers must always provide a signature.
+    pub required_first_n: u8,
+    /// Minimum number of valid signatures required to unlock (M in M-of-N).
+    pub threshold: u8,
+    /// All signers in deterministic order, each with their own SPHINCS+ variant.
+    pub signers: Vec<Signer>,
+}
+
+impl MultisigConfig {
+    /// Convenience constructor for single-signer accounts.
+    pub fn single_sig(variant: SpxVariant, pubkey: Vec<u8>) -> Self {
+        MultisigConfig {
+            required_first_n: 0,
+            threshold: 1,
+            signers: vec![Signer { variant, pubkey }],
+        }
+    }
+
+    /// The 4-byte config header: [S, R, M, N].
+    pub fn header_bytes(&self) -> [u8; 4] {
+        [
+            MULTISIG_RESERVED_FIELD_VALUE,
+            self.required_first_n,
+            self.threshold,
+            self.signers.len() as u8,
+        ]
+    }
+}
+
+/// Represents a SPHINCS+ account within the quantum-resistant lock script.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SphincsPlusAccount {
+    /// Derivation index — used to derive this wallet's SPHINCS+ key pair from the master seed.
     pub index: u32,
+    /// Hex-encoded lock script arguments (32-byte blake2b hash of multisig config).
     pub lock_args: String,
+    /// Lock script multisig configuration.
+    pub config: MultisigConfig,
 }
 
 /// Authentication method used to protect the vault.

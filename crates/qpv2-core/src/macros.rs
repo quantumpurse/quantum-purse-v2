@@ -55,7 +55,7 @@ macro_rules! spx_keygen {
 
 #[macro_export]
 macro_rules! ckb_spx_sign {
-    ($module:ident, $pri_key:expr, $message_vec:expr, $variant:expr) => {{
+    ($module:ident, $pri_key:expr, $message_vec:expr, $variant:expr, $config:expr) => {{
         let pri_key_ref: &[u8; $module::SK_LEN] = $pri_key
             .as_ref()
             .try_into()
@@ -67,19 +67,13 @@ macro_rules! ckb_spx_sign {
             .try_sign($message_vec, &[], true)
             .map_err(|e| format!("Signing error: {:?}", e))?;
 
-        let all_in_one_config: [u8; 4] = [
-            MULTISIG_RESERVED_FIELD_VALUE,
-            REQUIRED_FIRST_N,
-            THRESHOLD,
-            PUBKEY_NUM,
-        ];
         let param_id_and_sign_flag: u8 = ($variant << 1) | 1;
 
         // The sphincs+ public key is the second half of the private key
         // [sk_seed][sk_prf] [pk_seed][pk_root]
         let pub_key_slice: &[u8] = &pri_key_ref[$module::PK_LEN..$module::SK_LEN];
         let ckb_qr_full_signature = [
-            &all_in_one_config[..],
+            &$config.header_bytes()[..],
             &[param_id_and_sign_flag],
             &pub_key_slice[..],
             signature.as_slice(),

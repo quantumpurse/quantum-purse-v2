@@ -22,9 +22,7 @@ pub mod pinentry;
 pub mod types;
 pub mod utilities;
 
-use crate::constants::{
-    KDF_PATH_PREFIX, MULTISIG_RESERVED_FIELD_VALUE, PUBKEY_NUM, REQUIRED_FIRST_N, THRESHOLD,
-};
+use crate::constants::KDF_PATH_PREFIX;
 pub use containers::{SecureString, SecureVec};
 use types::*;
 
@@ -268,13 +266,13 @@ impl KeyVault {
             msg
         })?;
 
-        // Calculate lock script args and encrypt corresponding private key
-        let lock_script_args = self.get_lock_script_arg(&pub_key);
+        let config = MultisigConfig::single_sig(self.variant, pub_key.as_ref().to_vec());
+        let lock_script_args = Self::get_lock_script_arg(&config);
 
-        // Store to DB
         let account = SphincsPlusAccount {
-            index: 0, // Init to 0; Will be set correctly in add_account
+            index: 0,
             lock_args: encode(lock_script_args),
+            config,
         };
 
         db::add_account(self.wallet_id, account).map_err(|e| e.to_string())?;
@@ -459,43 +457,44 @@ impl KeyVault {
         let seed = utilities::decrypt(&auth, payload)?;
 
         let (_, pri_key) = self.derive_spx_keys(&seed, account.index)?;
+        let config = &account.config;
 
         match self.variant {
             SpxVariant::Sha2128S => {
-                ckb_spx_sign!(slh_dsa_sha2_128s, pri_key, &message, self.variant)
+                ckb_spx_sign!(slh_dsa_sha2_128s, pri_key, &message, self.variant, config)
             }
             SpxVariant::Sha2128F => {
-                ckb_spx_sign!(slh_dsa_sha2_128f, pri_key, &message, self.variant)
+                ckb_spx_sign!(slh_dsa_sha2_128f, pri_key, &message, self.variant, config)
             }
             SpxVariant::Shake128S => {
-                ckb_spx_sign!(slh_dsa_shake_128s, pri_key, &message, self.variant)
+                ckb_spx_sign!(slh_dsa_shake_128s, pri_key, &message, self.variant, config)
             }
             SpxVariant::Shake128F => {
-                ckb_spx_sign!(slh_dsa_shake_128f, pri_key, &message, self.variant)
+                ckb_spx_sign!(slh_dsa_shake_128f, pri_key, &message, self.variant, config)
             }
             SpxVariant::Sha2192S => {
-                ckb_spx_sign!(slh_dsa_sha2_192s, pri_key, &message, self.variant)
+                ckb_spx_sign!(slh_dsa_sha2_192s, pri_key, &message, self.variant, config)
             }
             SpxVariant::Sha2192F => {
-                ckb_spx_sign!(slh_dsa_sha2_192f, pri_key, &message, self.variant)
+                ckb_spx_sign!(slh_dsa_sha2_192f, pri_key, &message, self.variant, config)
             }
             SpxVariant::Shake192S => {
-                ckb_spx_sign!(slh_dsa_shake_192s, pri_key, &message, self.variant)
+                ckb_spx_sign!(slh_dsa_shake_192s, pri_key, &message, self.variant, config)
             }
             SpxVariant::Shake192F => {
-                ckb_spx_sign!(slh_dsa_shake_192f, pri_key, &message, self.variant)
+                ckb_spx_sign!(slh_dsa_shake_192f, pri_key, &message, self.variant, config)
             }
             SpxVariant::Sha2256S => {
-                ckb_spx_sign!(slh_dsa_sha2_256s, pri_key, &message, self.variant)
+                ckb_spx_sign!(slh_dsa_sha2_256s, pri_key, &message, self.variant, config)
             }
             SpxVariant::Sha2256F => {
-                ckb_spx_sign!(slh_dsa_sha2_256f, pri_key, &message, self.variant)
+                ckb_spx_sign!(slh_dsa_sha2_256f, pri_key, &message, self.variant, config)
             }
             SpxVariant::Shake256S => {
-                ckb_spx_sign!(slh_dsa_shake_256s, pri_key, &message, self.variant)
+                ckb_spx_sign!(slh_dsa_shake_256s, pri_key, &message, self.variant, config)
             }
             SpxVariant::Shake256F => {
-                ckb_spx_sign!(slh_dsa_shake_256f, pri_key, &message, self.variant)
+                ckb_spx_sign!(slh_dsa_shake_256f, pri_key, &message, self.variant, config)
             }
         }
     }
@@ -667,8 +666,8 @@ impl KeyVault {
                 msg
             })?;
 
-            // Calculate lock script args
-            let lock_script_args = self.get_lock_script_arg(&pub_key);
+            let config = MultisigConfig::single_sig(self.variant, pub_key.as_ref().to_vec());
+            let lock_script_args = Self::get_lock_script_arg(&config);
             lock_args_array.push(encode(lock_script_args));
         }
         Ok(lock_args_array)
@@ -706,12 +705,13 @@ impl KeyVault {
                 msg
             })?;
 
-            // Calculate lock script args and encrypt corresponding private key
-            let lock_script_args = self.get_lock_script_arg(&pub_key);
-            // Store to DB
+            let config = MultisigConfig::single_sig(self.variant, pub_key.as_ref().to_vec());
+            let lock_script_args = Self::get_lock_script_arg(&config);
+
             let account = SphincsPlusAccount {
-                index: 0, // Init to 0; Will be set correctly in add_account
+                index: 0,
                 lock_args: encode(lock_script_args),
+                config,
             };
             lock_args_array.push(encode(lock_script_args));
 
@@ -761,26 +761,19 @@ impl KeyVault {
         }
     }
 
-    /// Building CKB SPHINCS+ all-in-one lockscript arguments
+    /// Compute 32-byte lock script args from a multisig configuration.
     ///
-    /// **Parameters**:
-    /// - `public_key: &SecureVec` - The SPHINCS+ public key to be used in the lock script.
-    ///
-    /// **Returns**:
-    /// - `[u8; 32]` - The lock script arguments as a byte array.
-    fn get_lock_script_arg(&self, public_key: &SecureVec) -> [u8; 32] {
-        let all_in_one_config: [u8; 4] = [
-            MULTISIG_RESERVED_FIELD_VALUE,
-            REQUIRED_FIRST_N,
-            THRESHOLD,
-            PUBKEY_NUM,
-        ];
-        let sign_flag: u8 = self.variant << 1;
-        let mut script_args_hasher = Hasher::script_args_hasher();
-        script_args_hasher.update(&all_in_one_config);
-        script_args_hasher.update(&[sign_flag]);
-        script_args_hasher.update(public_key);
-        script_args_hasher.hash()
+    /// Hashes: `[S R M N] + [param_flag₁ pk₁] + [param_flag₂ pk₂] + ...`
+    /// where each param_flag has its lowest bit cleared (no-signature variant).
+    fn get_lock_script_arg(config: &MultisigConfig) -> [u8; 32] {
+        let mut hasher = Hasher::script_args_hasher();
+        hasher.update(&config.header_bytes());
+        for signer in &config.signers {
+            let param_flag: u8 = (signer.variant as u8) << 1;
+            hasher.update(&[param_flag]);
+            hasher.update(&signer.pubkey);
+        }
+        hasher.hash()
     }
 
     pub fn list_wallets() -> Result<Vec<types::WalletEntry>, String> {

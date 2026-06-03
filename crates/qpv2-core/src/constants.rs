@@ -58,8 +58,6 @@ pub const CKB_TESTNET_CELL_DEP_TX_HASH: &str =
     "0x631d9a6049fb1fc3790e89d9daf35abe535b5e754cd8c3404319319710f0b106";
 pub const CKB_TESTNET_CELL_DEP_INDEX: u32 = 0;
 
-/// All-in-one quantum resistant lock script configuration
+/// Reserved field value for the quantum-resistant lock script's all-in-one multisig header.
+/// Always 0x80, chosen to differ from the secp256k1 multisig lock in CKB's genesis block.
 pub const MULTISIG_RESERVED_FIELD_VALUE: u8 = 0x80;
-pub const REQUIRED_FIRST_N: u8 = 0x00;
-pub const THRESHOLD: u8 = 0x01;
-pub const PUBKEY_NUM: u8 = 0x01;
