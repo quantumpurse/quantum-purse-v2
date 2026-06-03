@@ -280,6 +280,75 @@ impl KeyVault {
         Ok(encode(lock_script_args))
     }
 
+    /// Creates a multisig account by combining this wallet's next derived key
+    /// with external co-signers. All signers are sorted by pubkey bytes to
+    /// produce a deterministic address.
+    ///
+    /// **Parameters**:
+    /// - `auth` - Authentication key to decrypt the master seed.
+    /// - `co_signers` - External signers (variant + pubkey) to include.
+    /// - `threshold` - Minimum signatures required to unlock (M).
+    /// - `required_first_n` - How many of the first N sorted signers must always sign (R).
+    ///
+    /// **Returns**:
+    /// - The hex-encoded lock script arguments of the new multisig account.
+    pub fn gen_new_multisig_account(
+        &self,
+        auth: AuthKey,
+        co_signers: Vec<types::Signer>,
+        threshold: u8,
+        required_first_n: u8,
+    ) -> Result<String, String> {
+        Self::validate_auth(&auth)?;
+
+        let payload = db::get_encrypted_seed(self.wallet_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| {
+                tracing::error!("Master seed not found");
+                "Master seed not found".to_string()
+            })?;
+        let seed = utilities::decrypt(&auth, payload)?;
+
+        let index = Self::get_all_sphincs_lock_args(self.wallet_id)?.len() as u32;
+        tracing::info!(
+            "Deriving multisig account (wallet_id={}, index={}, co_signers={})",
+            self.wallet_id,
+            index,
+            co_signers.len()
+        );
+        let (pub_key, _) = self.derive_spx_keys(&seed, index).map_err(|e| {
+            let msg = format!("Key derivation error: {}", e);
+            tracing::error!("{}", msg);
+            msg
+        })?;
+
+        let local_signer = types::Signer {
+            variant: self.variant,
+            pubkey: pub_key.as_ref().to_vec(),
+        };
+
+        let mut signers = co_signers;
+        signers.push(local_signer);
+        signers.sort_by(|a, b| a.pubkey.cmp(&b.pubkey));
+
+        let config = MultisigConfig {
+            required_first_n,
+            threshold,
+            signers,
+        };
+        let lock_script_args = Self::get_lock_script_arg(&config)?;
+
+        let account = SphincsPlusAccount {
+            index: 0,
+            lock_args: encode(lock_script_args),
+            config,
+        };
+
+        db::add_account(self.wallet_id, account).map_err(|e| e.to_string())?;
+
+        Ok(encode(lock_script_args))
+    }
+
     /// Imports master seed from a mnemonic phrase, encrypts it, and stores it.
     /// Overwrites the existing master seed.
     ///
