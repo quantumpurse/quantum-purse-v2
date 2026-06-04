@@ -46,6 +46,35 @@ pub struct MultisigConfig {
 }
 
 impl MultisigConfig {
+    /// Validated constructor. Returns an error if the config violates on-chain constraints.
+    pub fn new(
+        required_first_n: u8,
+        threshold: u8,
+        signers: Vec<Signer>,
+    ) -> Result<Self, String> {
+        let n = signers.len();
+        if n == 0 || n > 255 {
+            return Err(format!("Signer count must be 1..=255, got {}.", n));
+        }
+        if threshold == 0 || threshold as usize > n {
+            return Err(format!(
+                "Threshold must be 1..={}, got {}.",
+                n, threshold
+            ));
+        }
+        if required_first_n > threshold {
+            return Err(format!(
+                "required_first_n ({}) must not exceed threshold ({}).",
+                required_first_n, threshold
+            ));
+        }
+        Ok(MultisigConfig {
+            required_first_n,
+            threshold,
+            signers,
+        })
+    }
+
     /// Convenience constructor for single-signer accounts.
     pub fn single_sig(variant: SpxVariant, pubkey: Vec<u8>) -> Self {
         MultisigConfig {
@@ -53,27 +82,6 @@ impl MultisigConfig {
             threshold: 1,
             signers: vec![Signer { variant, pubkey }],
         }
-    }
-
-    /// Validate against on-chain contract constraints.
-    pub fn validate(&self) -> Result<(), String> {
-        let n = self.signers.len();
-        if n == 0 || n > 255 {
-            return Err(format!("Signer count must be 1..=255, got {}.", n));
-        }
-        if self.threshold == 0 || self.threshold as usize > n {
-            return Err(format!(
-                "Threshold must be 1..={}, got {}.",
-                n, self.threshold
-            ));
-        }
-        if self.required_first_n > self.threshold {
-            return Err(format!(
-                "required_first_n ({}) must not exceed threshold ({}).",
-                self.required_first_n, self.threshold
-            ));
-        }
-        Ok(())
     }
 
     /// The 4-byte config header: [S, R, M, N].
