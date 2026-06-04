@@ -108,6 +108,18 @@ enum MnemonicCommands {
 enum AccountCommands {
     /// Generate a new SPHINCS+ account
     New,
+    /// Create a multisig account with co-signers
+    NewMultisig {
+        /// Threshold: minimum signatures required (M in M-of-N)
+        #[arg(short = 'm', long)]
+        threshold: u8,
+        /// Required first N signers that must always sign (0 = no mandatory signers)
+        #[arg(short = 'r', long, default_value = "0")]
+        required_first_n: u8,
+        /// Co-signer entries as "variant:hex_pubkey" (e.g. "Sha2256S:abcd..."). Repeat for each co-signer
+        #[arg(short, long, num_args = 1..)]
+        signer: Vec<String>,
+    },
     /// List all SPHINCS+ accounts
     List,
     /// Recover accounts
@@ -459,16 +471,60 @@ fn main() -> Result<(), String> {
                     println!("Identifier(CKB quantum lock script args): {}", account.lock_args);
                 }
 
+                AccountCommands::NewMultisig {
+                    threshold,
+                    required_first_n,
+                    signer,
+                } => {
+                    let variant = KeyVault::get_spx_variant(wallet_id)?;
+                    let vault = KeyVault::new(variant, wallet_id);
+
+                    let co_signers: Vec<qpv2_core::types::Signer> = signer
+                        .iter()
+                        .map(|s| {
+                            let (var_str, hex) = s.split_once(':').ok_or_else(|| {
+                                format!("Invalid signer format '{}'. Expected 'Variant:hex_pubkey'.", s)
+                            })?;
+                            let v = parse_variant(var_str)?;
+                            let pubkey = hex::decode(hex)
+                                .map_err(|e| format!("Invalid pubkey hex '{}': {}", hex, e))?;
+                            Ok(qpv2_core::types::Signer { variant: v, pubkey })
+                        })
+                        .collect::<Result<Vec<_>, String>>()?;
+
+                    let auth = get_auth_key(wallet_id)?;
+                    let account = vault.gen_new_multisig_account(
+                        auth,
+                        co_signers,
+                        threshold,
+                        required_first_n,
+                    )?;
+                    println!("✓ Multisig account created ({}-of-{})",
+                        account.config.threshold,
+                        account.config.signers.len()
+                    );
+                    println!("Identifier(CKB quantum lock script args): {}", account.lock_args);
+                }
+
                 AccountCommands::List => {
-                    let accounts = KeyVault::get_all_sphincs_lock_args(wallet_id)?;
+                    let accounts = KeyVault::get_all_accounts(wallet_id)?;
                     if accounts.is_empty() {
                         println!("No accounts found. Run `qpv2-cli account new` to generate a new SPHINCS+ account");
                     } else {
                         println!("Accounts ({}):", accounts.len());
-                        println!("  Index  Account Identifier (CKB Quantum Lock Args)");
+                        println!("  Index  Type       Account Identifier (CKB Quantum Lock Args)");
                         println!("  ─────────────────────────────────────────────────────────────────────");
-                        for (idx, lock_args) in accounts.iter().enumerate() {
-                            println!("  [{}]    {}", idx, lock_args);
+                        for (idx, account) in accounts.iter().enumerate() {
+                            let type_label = if account.config.signers.len() > 1 {
+                                format!(
+                                    "{}-of-{}",
+                                    account.config.threshold,
+                                    account.config.signers.len()
+                                )
+                            } else {
+                                "single".to_string()
+                            };
+                            println!("  [{}]    {:<9}  {}", idx, type_label, account.lock_args);
                         }
                     }
                 }
