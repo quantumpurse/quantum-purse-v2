@@ -454,9 +454,9 @@ fn main() -> Result<(), String> {
                     let vault = KeyVault::new(variant, wallet_id);
 
                     let auth = get_auth_key(wallet_id)?;
-                    let lock_args = vault.gen_new_account(auth)?;
+                    let account = vault.gen_new_account(auth)?;
                     println!("✓ New account created");
-                    println!("Identifier(CKB quantum lock script args): {}", lock_args);
+                    println!("Identifier(CKB quantum lock script args): {}", account.lock_args);
                 }
 
                 AccountCommands::List => {

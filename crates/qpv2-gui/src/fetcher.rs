@@ -60,7 +60,7 @@ impl App {
 
         let is_mainnet = self.qp_client.is_mainnet();
         let qp_client = self.qp_client.clone();
-        let all_lock_args: Vec<String> = self.accounts.clone();
+        let all_lock_args: Vec<String> = self.accounts.iter().map(|a| a.lock_args.clone()).collect();
 
         let (tx, rx) = mpsc::channel();
         self.dao_cells_query_rx = Some(rx);
@@ -205,7 +205,7 @@ impl App {
         };
 
         let qp_client = self.qp_client.clone();
-        let all_lock_args: Vec<String> = self.accounts.clone();
+        let all_lock_args: Vec<String> = self.accounts.iter().map(|a| a.lock_args.clone()).collect();
 
         let (sender, rx) = mpsc::channel();
         self.tx_history_rx = Some(rx);
@@ -533,12 +533,12 @@ impl App {
             return;
         }
 
-        let accounts = self.accounts.clone();
-        if accounts.is_empty() {
+        let lock_args_list: Vec<String> = self.accounts.iter().map(|a| a.lock_args.clone()).collect();
+        if lock_args_list.is_empty() {
             return;
         }
 
-        for lock_args in &accounts {
+        for lock_args in &lock_args_list {
             self.balances.entry(lock_args.clone()).or_insert(None);
             self.spendable_balances
                 .entry(lock_args.clone())
@@ -551,7 +551,7 @@ impl App {
         self.balance_receiver = Some(rx);
 
         std::thread::spawn(move || {
-            for lock_args in accounts {
+            for lock_args in lock_args_list {
                 let total = ckb_node::wallet_helpers::queries::fetch_quantum_lock_balance(
                     &qp_client, &lock_args,
                 )

@@ -4,6 +4,7 @@ mod accounts;
 mod dao;
 mod dashboard;
 mod main_stages;
+mod multisig_modal;
 mod node_manager;
 mod node_selector;
 mod transfer;

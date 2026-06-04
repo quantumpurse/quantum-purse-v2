@@ -149,6 +149,11 @@ impl KeyVault {
         Ok(lock_args_array)
     }
 
+    /// Retrieves all accounts with full config data, ordered by insertion index.
+    pub fn get_all_accounts(wallet_id: u32) -> Result<Vec<SphincsPlusAccount>, String> {
+        db::get_all_accounts(wallet_id).map_err(|e| e.to_string())
+    }
+
     /// Check if there's a master seed stored.
     ///
     /// **Returns**:
@@ -242,7 +247,7 @@ impl KeyVault {
     ///
     /// **Returns**:
     /// - `Result<String, String>` - The hex-encoded SPHINCS+ lock argument (processed SPHINCS+ public key) of the account on success, or an error on failure.
-    pub fn gen_new_account(&self, auth: AuthKey) -> Result<String, String> {
+    pub fn gen_new_account(&self, auth: AuthKey) -> Result<SphincsPlusAccount, String> {
         Self::validate_auth(&auth)?;
 
         // Get and decrypt the master seed
@@ -275,9 +280,9 @@ impl KeyVault {
             config,
         };
 
-        db::add_account(self.wallet_id, account).map_err(|e| e.to_string())?;
+        db::add_account(self.wallet_id, account.clone()).map_err(|e| e.to_string())?;
 
-        Ok(encode(lock_script_args))
+        Ok(account)
     }
 
     /// Creates a multisig account by combining this wallet's next derived key
@@ -298,7 +303,7 @@ impl KeyVault {
         co_signers: Vec<types::Signer>,
         threshold: u8,
         required_first_n: u8,
-    ) -> Result<String, String> {
+    ) -> Result<SphincsPlusAccount, String> {
         Self::validate_auth(&auth)?;
 
         let payload = db::get_encrypted_seed(self.wallet_id)
@@ -344,9 +349,9 @@ impl KeyVault {
             config,
         };
 
-        db::add_account(self.wallet_id, account).map_err(|e| e.to_string())?;
+        db::add_account(self.wallet_id, account.clone()).map_err(|e| e.to_string())?;
 
-        Ok(encode(lock_script_args))
+        Ok(account)
     }
 
     /// Imports master seed from a mnemonic phrase, encrypts it, and stores it.

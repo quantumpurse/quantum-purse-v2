@@ -305,7 +305,7 @@ impl App {
                         } else {
                             let idx =
                                 self.dao_deposit_from_account.min(self.accounts.len() - 1);
-                            let lock_args = &self.accounts[idx];
+                            let lock_args = &self.accounts[idx].lock_args;
                             let bal = self
                                 .spendable_balances
                                 .get(lock_args)
@@ -323,10 +323,10 @@ impl App {
                             .selected_text(&from_text)
                             .width(ui.available_width())
                             .show_ui(ui, |ui| {
-                                for (i, lock_args) in self.accounts.iter().enumerate() {
+                                for (i, account) in self.accounts.iter().enumerate() {
                                     let bal = self
                                         .spendable_balances
-                                        .get(lock_args)
+                                        .get(&account.lock_args)
                                         .and_then(|b| b.as_ref())
                                         .copied();
                                     let label = match bal {
@@ -381,7 +381,7 @@ impl App {
                                             .min(self.accounts.len() - 1);
                                         if let Some(sh) = self
                                             .spendable_balances
-                                            .get(&self.accounts[idx])
+                                            .get(&self.accounts[idx].lock_args)
                                             .copied()
                                             .flatten()
                                         {
@@ -627,8 +627,8 @@ impl App {
         let mut withdraw_action: Option<(ckb_types::packed::OutPoint, String)> = None;
 
         // Helper: find the account index for a given lock_args.
-        let account_index = |lock_args: &str, accounts: &[String]| -> usize {
-            accounts.iter().position(|a| a == lock_args).unwrap_or(0)
+        let account_index = |lock_args: &str, accounts: &[qpv2_core::types::SphincsPlusAccount]| -> usize {
+            accounts.iter().position(|a| a.lock_args == lock_args).unwrap_or(0)
         };
 
         let wide = ui.available_width() > 1100.0;

@@ -41,7 +41,7 @@ impl App {
         }
 
         let from_idx = self.transfer_from_account.min(self.accounts.len() - 1);
-        let lock_args = self.accounts[from_idx].clone();
+        let lock_args = self.accounts[from_idx].lock_args.clone();
 
         let is_mainnet = self.qp_client.is_mainnet();
         let from_addr_str = match crate::utils::lock_args_to_address(&lock_args, is_mainnet) {
@@ -178,7 +178,7 @@ impl App {
         }
 
         let from_idx = self.dao_deposit_from_account.min(self.accounts.len() - 1);
-        let lock_args = self.accounts[from_idx].clone();
+        let lock_args = self.accounts[from_idx].lock_args.clone();
 
         let is_mainnet = self.qp_client.is_mainnet();
         let from_addr_str = match crate::utils::lock_args_to_address(&lock_args, is_mainnet) {

@@ -20,7 +20,7 @@ use std::time::Duration;
 use wallet::{load_last_wallet_id, save_last_wallet_id};
 
 /// Interval between periodic data refreshes (balances, tx history, DAO cells).
-const POLL_INTERVAL: Duration = Duration::from_millis(500);
+const POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 /// How long a non-None status banner stays visible before auto-clearing.
 const STATUS_DURATION: Duration = Duration::from_secs(5);
@@ -59,7 +59,7 @@ pub(crate) struct App {
 
     // Unlocked screen state.
     pub(crate) active_tab: Tab,
-    pub(crate) accounts: Vec<String>,
+    pub(crate) accounts: Vec<qpv2_core::types::SphincsPlusAccount>,
     pub(crate) rename_wallet_id: Option<u32>,
     pub(crate) rename_wallet_buf: String,
 
@@ -170,6 +170,12 @@ pub(crate) struct App {
     // on the first `update()` after consumption.
     pub(crate) needs_initial_fetch: bool,
 
+    // ── Multisig account creation modal ──
+    pub(crate) multisig_modal_open: bool,
+    pub(crate) multisig_threshold: u8,
+    pub(crate) multisig_required_first_n: u8,
+    pub(crate) multisig_co_signers: Vec<(String, qpv2_core::types::SpxVariant)>,
+
     // Periodic polling timer for balances, tx history, and DAO cells.
     pub(crate) last_poll_time: std::time::Instant,
 
@@ -266,7 +272,7 @@ impl App {
 
                 let am = KeyVault::read_wallet_info(wid).ok().map(|w| w.auth_method);
                 if matches!(am, Some(qpv2_core::types::AuthMethod::Password)) {
-                    let accs = KeyVault::get_all_sphincs_lock_args(wid).unwrap_or_default();
+                    let accs = KeyVault::get_all_accounts(wid).unwrap_or_default();
                     (Screen::Unlocked, wid, wname, am, accs, true)
                 } else {
                     (Screen::Locked, wid, wname, am, Vec::new(), false)
@@ -382,6 +388,10 @@ impl App {
             // doesn't need it; Locked screen reads it before rendering.
             auth_method,
             needs_initial_fetch,
+            multisig_modal_open: false,
+            multisig_threshold: 2,
+            multisig_required_first_n: 0,
+            multisig_co_signers: vec![],
             last_poll_time: std::time::Instant::now(),
             status_seen: Status::None,
             status_set_at: None,
@@ -455,6 +465,7 @@ impl eframe::App for App {
         self.show_node_selector_popup(ctx);
         self.show_wallet_selector_popup(ctx);
         self.show_wallet_modal(ctx);
+        self.show_multisig_modal(ctx);
         self.show_dao_deposit_modal(ctx);
 
         // Polling main stages of the wallet.

@@ -61,7 +61,7 @@ impl App {
                             "No accounts available".to_string()
                         } else {
                             let idx = self.transfer_from_account.min(self.accounts.len() - 1);
-                            let lock_args = &self.accounts[idx];
+                            let lock_args = &self.accounts[idx].lock_args;
                             let bal = self
                                 .spendable_balances
                                 .get(lock_args)
@@ -79,10 +79,10 @@ impl App {
                             .selected_text(&from_text)
                             .width(ui.available_width())
                             .show_ui(ui, |ui| {
-                                for (i, lock_args) in self.accounts.iter().enumerate() {
+                                for (i, account) in self.accounts.iter().enumerate() {
                                     let bal = self
                                         .spendable_balances
-                                        .get(lock_args)
+                                        .get(&account.lock_args)
                                         .and_then(|b| b.as_ref())
                                         .copied();
                                     let label = match bal {
@@ -186,7 +186,7 @@ impl App {
                                             .min(self.accounts.len() - 1);
                                         if let Some(sh) = self
                                             .spendable_balances
-                                            .get(&self.accounts[idx])
+                                            .get(&self.accounts[idx].lock_args)
                                             .copied()
                                             .flatten()
                                         {

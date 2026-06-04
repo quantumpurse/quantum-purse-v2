@@ -29,6 +29,7 @@ pub struct CipherPayload {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Signer {
     pub variant: SpxVariant,
+    #[serde(with = "hex::serde")]
     pub pubkey: Vec<u8>,
 }
 

@@ -88,11 +88,12 @@ impl App {
     ) {
         self.wallet_id = wallet_id;
         self.wallet_name = wallet_name;
-        match KeyVault::get_all_sphincs_lock_args(self.wallet_id) {
-            Ok(lock_args) => {
-                self.accounts = lock_args;
+        match KeyVault::get_all_accounts(self.wallet_id) {
+            Ok(accounts) => {
+                self.accounts = accounts;
                 self.auth_method = Some(auth_method);
-                self.register_lock_scripts_with_light_client(&self.accounts.clone());
+                let lock_args: Vec<String> = self.accounts.iter().map(|a| a.lock_args.clone()).collect();
+                self.register_lock_scripts_with_light_client(&lock_args);
                 self.screen = Screen::Unlocked;
                 self.status = Status::Info(success_msg.to_string());
                 self.last_poll_time = std::time::Instant::now();
@@ -134,7 +135,7 @@ impl App {
         let public_rpc_url =
             ckb_node::NodeConfig::default_rpc_url_for(ckb_node::NodeType::PublicRpc, network)
                 .to_string();
-        let accounts = self.accounts.clone();
+        let lock_args: Vec<String> = self.accounts.iter().map(|a| a.lock_args.clone()).collect();
 
         let (tx, rx) = std::sync::mpsc::channel();
         self.earliest_funding_block_rx = Some(rx);
@@ -142,7 +143,7 @@ impl App {
         std::thread::spawn(move || {
             let pub_rpc_client = ckb_node::client::FullNodeClient::new(&public_rpc_url);
             let result = pub_rpc_client
-                .find_earliest_funding_block(&accounts, network)
+                .find_earliest_funding_block(&lock_args, network)
                 .map_err(|e| e.to_string());
             let _ = tx.send(result);
         });
@@ -159,10 +160,10 @@ impl App {
         {
             return;
         }
-        let accounts = self.accounts.clone();
+        let lock_args: Vec<String> = self.accounts.iter().map(|a| a.lock_args.clone()).collect();
         if let Err(e) = ckb_node::wallet_helpers::lc::register_all_lock_scripts(
             &self.qp_client,
-            &accounts,
+            &lock_args,
             start_block,
         ) {
             let msg = format!("Failed to set scan block: {}", e);
@@ -272,7 +273,7 @@ impl App {
             .map(|w| w.auth_method);
 
         self.lc_scripts_registered = false;
-        self.accounts = KeyVault::get_all_sphincs_lock_args(wallet_id).unwrap_or_default();
+        self.accounts = KeyVault::get_all_accounts(wallet_id).unwrap_or_default();
         self.screen = Screen::Unlocked;
         self.needs_initial_fetch = true;
         self.wallet_selector_open = false;
@@ -482,16 +483,16 @@ impl App {
         };
         let vault = KeyVault::new(variant, self.wallet_id);
         match vault.gen_new_account(AuthKey::Password(pw)) {
-            Ok(lock_args) => {
+            Ok(account) => {
                 tracing::info!(
                     "Account created (wallet_id={}, lock_args={}...)",
                     self.wallet_id,
-                    &lock_args[..8.min(lock_args.len())]
+                    &account.lock_args[..8.min(account.lock_args.len())]
                 );
-                self.balances.insert(lock_args.clone(), Some(0));
-                self.spendable_balances.insert(lock_args.clone(), Some(0));
-                self.accounts.push(lock_args.clone());
-                self.register_lock_scripts_with_light_client(std::slice::from_ref(&lock_args));
+                self.balances.insert(account.lock_args.clone(), Some(0));
+                self.spendable_balances.insert(account.lock_args.clone(), Some(0));
+                self.register_lock_scripts_with_light_client(std::slice::from_ref(&account.lock_args));
+                self.accounts.push(account);
                 self.refresh_wallet_cache();
                 self.status = Status::Info("New account created!".to_string());
             }
@@ -679,9 +680,9 @@ impl App {
     /// Unlocked.
     pub(crate) fn unlock_with_keychain(&mut self) {
         match keychain::retrieve_key(self.wallet_id) {
-            Ok(_) => match KeyVault::get_all_sphincs_lock_args(self.wallet_id) {
-                Ok(lock_args) => {
-                    self.accounts = lock_args;
+            Ok(_) => match KeyVault::get_all_accounts(self.wallet_id) {
+                Ok(accounts) => {
+                    self.accounts = accounts;
                     self.screen = Screen::Unlocked;
                     self.status = Status::None;
                     self.last_poll_time = std::time::Instant::now();
@@ -730,21 +731,143 @@ impl App {
         };
         let vault = KeyVault::new(variant, self.wallet_id);
         match vault.gen_new_account(AuthKey::CryptoKey(key)) {
-            Ok(lock_args) => {
+            Ok(account) => {
                 tracing::info!(
                     "Account created (wallet_id={}, lock_args={}...)",
                     self.wallet_id,
-                    &lock_args[..8.min(lock_args.len())]
+                    &account.lock_args[..8.min(account.lock_args.len())]
                 );
-                self.balances.insert(lock_args.clone(), Some(0));
-                self.spendable_balances.insert(lock_args.clone(), Some(0));
-                self.accounts.push(lock_args.clone());
-                self.register_lock_scripts_with_light_client(std::slice::from_ref(&lock_args));
+                self.balances.insert(account.lock_args.clone(), Some(0));
+                self.spendable_balances.insert(account.lock_args.clone(), Some(0));
+                self.register_lock_scripts_with_light_client(std::slice::from_ref(&account.lock_args));
+                self.accounts.push(account);
                 self.refresh_wallet_cache();
                 self.status = Status::Info("New account created!".to_string());
             }
             Err(e) => {
                 let msg = format!("Failed to create account: {}", e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
+            }
+        }
+    }
+
+    /// Create a multisig account from the modal form state.
+    pub(crate) fn create_multisig_account(&mut self) {
+        let co_signers: Vec<qpv2_core::types::Signer> = match self
+            .multisig_co_signers
+            .iter()
+            .map(|(hex, variant)| {
+                let pubkey = hex::decode(hex.trim())
+                    .map_err(|e| format!("Invalid pubkey hex: {}", e))?;
+                Ok(qpv2_core::types::Signer {
+                    variant: *variant,
+                    pubkey,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()
+        {
+            Ok(v) => v,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+
+        let auth = match &self.auth_method {
+            Some(AuthMethod::Password) => {
+                match qpv2_core::pinentry::prompt_password(
+                    "Enter your wallet password to create a multisig account.",
+                    "Password:",
+                ) {
+                    Ok(pw) => AuthKey::Password(pw),
+                    Err(e) => {
+                        self.status = Status::Error(e);
+                        return;
+                    }
+                }
+            }
+            Some(AuthMethod::Keychain) => match keychain::retrieve_key(self.wallet_id) {
+                Ok(k) => AuthKey::CryptoKey(k),
+                Err(e) => {
+                    self.status = Status::Error(e);
+                    return;
+                }
+            },
+            Some(AuthMethod::Fido2 { credential_id }) => {
+                let cred_bytes = match hex::decode(credential_id) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        self.status =
+                            Status::Error(format!("Invalid credential ID: {}", e));
+                        return;
+                    }
+                };
+                let pin = match qpv2_core::pinentry::prompt_password(
+                    "Enter your FIDO2 security key PIN to create a multisig account.",
+                    "PIN:",
+                ) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        self.status = Status::Error(e);
+                        return;
+                    }
+                };
+                let hmac_output = match keychain::fido2::authenticate(&cred_bytes, &pin) {
+                    Ok(h) => h,
+                    Err(e) => {
+                        self.status = Status::Error(e);
+                        return;
+                    }
+                };
+                match qpv2_core::utilities::derive_vault_enc_key(&hmac_output) {
+                    Ok(k) => AuthKey::CryptoKey(k),
+                    Err(e) => {
+                        self.status =
+                            Status::Error(format!("Key derivation failed: {}", e));
+                        return;
+                    }
+                }
+            }
+            None => {
+                self.status = Status::Error("No authentication method set.".to_string());
+                return;
+            }
+        };
+
+        let variant = match KeyVault::get_spx_variant(self.wallet_id) {
+            Ok(v) => v,
+            Err(e) => {
+                self.status =
+                    Status::Error(format!("Failed to read wallet variant: {}", e));
+                return;
+            }
+        };
+
+        let vault = KeyVault::new(variant, self.wallet_id);
+        match vault.gen_new_multisig_account(
+            auth,
+            co_signers,
+            self.multisig_threshold,
+            self.multisig_required_first_n,
+        ) {
+            Ok(account) => {
+                tracing::info!(
+                    "Multisig account created (wallet_id={}, lock_args={}...)",
+                    self.wallet_id,
+                    &account.lock_args[..8.min(account.lock_args.len())]
+                );
+                self.balances.insert(account.lock_args.clone(), Some(0));
+                self.spendable_balances.insert(account.lock_args.clone(), Some(0));
+                self.register_lock_scripts_with_light_client(std::slice::from_ref(
+                    &account.lock_args,
+                ));
+                self.accounts.push(account);
+                self.refresh_wallet_cache();
+                self.status = Status::Info("Multisig account created!".to_string());
+            }
+            Err(e) => {
+                let msg = format!("Failed to create multisig account: {}", e);
                 tracing::error!("{}", msg);
                 self.status = Status::Error(msg);
             }
@@ -967,9 +1090,9 @@ impl App {
         };
 
         match keychain::fido2::authenticate(&cred_bytes, &pin) {
-            Ok(_) => match KeyVault::get_all_sphincs_lock_args(self.wallet_id) {
-                Ok(lock_args) => {
-                    self.accounts = lock_args;
+            Ok(_) => match KeyVault::get_all_accounts(self.wallet_id) {
+                Ok(accounts) => {
+                    self.accounts = accounts;
                     self.screen = Screen::Unlocked;
                     self.status = Status::None;
                     self.last_poll_time = std::time::Instant::now();
@@ -1047,16 +1170,16 @@ impl App {
         };
         let vault = KeyVault::new(variant, self.wallet_id);
         match vault.gen_new_account(AuthKey::CryptoKey(key)) {
-            Ok(lock_args) => {
+            Ok(account) => {
                 tracing::info!(
                     "Account created (wallet_id={}, lock_args={}...)",
                     self.wallet_id,
-                    &lock_args[..8.min(lock_args.len())]
+                    &account.lock_args[..8.min(account.lock_args.len())]
                 );
-                self.balances.insert(lock_args.clone(), Some(0));
-                self.spendable_balances.insert(lock_args.clone(), Some(0));
-                self.accounts.push(lock_args.clone());
-                self.register_lock_scripts_with_light_client(std::slice::from_ref(&lock_args));
+                self.balances.insert(account.lock_args.clone(), Some(0));
+                self.spendable_balances.insert(account.lock_args.clone(), Some(0));
+                self.register_lock_scripts_with_light_client(std::slice::from_ref(&account.lock_args));
+                self.accounts.push(account);
                 self.refresh_wallet_cache();
                 self.status = Status::Info("New account created!".to_string());
             }
