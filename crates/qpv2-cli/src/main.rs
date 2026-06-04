@@ -492,6 +492,12 @@ fn main() -> Result<(), String> {
                         })
                         .collect::<Result<Vec<_>, String>>()?;
 
+                    qpv2_core::types::MultisigConfig::pre_validate(
+                        co_signers.len() + 1,
+                        threshold,
+                        required_first_n,
+                    )?;
+
                     let auth = get_auth_key(wallet_id)?;
                     let account = vault.gen_new_multisig_account(
                         auth,

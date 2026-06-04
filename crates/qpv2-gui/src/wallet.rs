@@ -774,6 +774,15 @@ impl App {
             }
         };
 
+        if let Err(e) = qpv2_core::types::MultisigConfig::pre_validate(
+            co_signers.len() + 1,
+            self.multisig_threshold,
+            self.multisig_required_first_n,
+        ) {
+            self.status = Status::Error(e);
+            return;
+        }
+
         let auth = match &self.auth_method {
             Some(AuthMethod::Password) => {
                 match qpv2_core::pinentry::prompt_password(

@@ -46,20 +46,19 @@ pub struct MultisigConfig {
 }
 
 impl MultisigConfig {
-    /// Validated constructor. Returns an error if the config violates on-chain constraints.
-    pub fn new(
-        required_first_n: u8,
-        threshold: u8,
-        signers: Vec<Signer>,
-    ) -> Result<Self, String> {
-        let n = signers.len();
-        if n == 0 || n > 255 {
-            return Err(format!("Signer count must be 1..=255, got {}.", n));
+    /// Validate multisig parameters before authentication.
+    /// `total_signers` is the expected N (co_signers + 1 for the local key).
+    pub fn pre_validate(total_signers: usize, threshold: u8, required_first_n: u8) -> Result<(), String> {
+        if total_signers == 0 || total_signers > 255 {
+            return Err(format!("Signer count must be 1..=255, got {}.", total_signers));
         }
-        if threshold == 0 || threshold as usize > n {
+        if threshold == 0 {
+            return Err("Threshold must be at least 1.".to_string());
+        }
+        if threshold as usize > total_signers {
             return Err(format!(
-                "Threshold must be 1..={}, got {}.",
-                n, threshold
+                "Threshold ({}) exceeds total signers ({}: {} co-signer(s) + your wallet's key).",
+                threshold, total_signers, total_signers - 1
             ));
         }
         if required_first_n > threshold {
@@ -68,6 +67,16 @@ impl MultisigConfig {
                 required_first_n, threshold
             ));
         }
+        Ok(())
+    }
+
+    /// Validated constructor. Returns an error if the config violates on-chain constraints.
+    pub fn new(
+        required_first_n: u8,
+        threshold: u8,
+        signers: Vec<Signer>,
+    ) -> Result<Self, String> {
+        Self::pre_validate(signers.len(), threshold, required_first_n)?;
         Ok(MultisigConfig {
             required_first_n,
             threshold,

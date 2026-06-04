@@ -303,21 +303,6 @@ impl KeyVault {
         threshold: u8,
         required_first_n: u8,
     ) -> Result<SphincsPlusAccount, String> {
-        // Pre validation before auth — N = co_signers + 1 (local key).
-        let n = co_signers.len() + 1;
-        if n == 0 || n > 255 {
-            return Err(format!("Signer count must be 1..=255, got {}.", n));
-        }
-        if threshold == 0 || threshold as usize > n {
-            return Err(format!("Threshold must be 1..={}, got {}.", n, threshold));
-        }
-        if required_first_n > threshold {
-            return Err(format!(
-                "required_first_n ({}) must not exceed threshold ({}).",
-                required_first_n, threshold
-            ));
-        }
-
         Self::validate_auth(&auth)?;
 
         let payload = db::get_encrypted_seed(self.wallet_id)
