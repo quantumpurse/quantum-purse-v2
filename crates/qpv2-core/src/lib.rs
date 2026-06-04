@@ -6,7 +6,6 @@
 //! locally in files, with access authenticated via password (Scrypt) or pre-derived key (e.g. passkey PRF + HKDF).
 
 use bip39::{Language, Mnemonic};
-use ckb_fips205_utils::Hasher;
 use fips205::{
     traits::{KeyGen, SerDes, Signer, Verifier},
     *,
@@ -272,7 +271,7 @@ impl KeyVault {
         })?;
 
         let config = MultisigConfig::single_sig(self.variant, pub_key.as_ref().to_vec());
-        let lock_script_args = Self::get_lock_script_arg(&config);
+        let lock_script_args = config.lock_script_args();
 
         let account = SphincsPlusAccount {
             index: 0,
@@ -352,7 +351,7 @@ impl KeyVault {
         signers.sort_by(|a, b| a.pubkey.cmp(&b.pubkey));
 
         let config = MultisigConfig::new(required_first_n, threshold, signers)?;
-        let lock_script_args = Self::get_lock_script_arg(&config);
+        let lock_script_args = config.lock_script_args();
 
         let account = SphincsPlusAccount {
             index: 0,
@@ -752,7 +751,7 @@ impl KeyVault {
             })?;
 
             let config = MultisigConfig::single_sig(self.variant, pub_key.as_ref().to_vec());
-            let lock_script_args = Self::get_lock_script_arg(&config);
+            let lock_script_args = config.lock_script_args();
             lock_args_array.push(encode(lock_script_args));
         }
         Ok(lock_args_array)
@@ -791,7 +790,7 @@ impl KeyVault {
             })?;
 
             let config = MultisigConfig::single_sig(self.variant, pub_key.as_ref().to_vec());
-            let lock_script_args = Self::get_lock_script_arg(&config);
+            let lock_script_args = config.lock_script_args();
 
             let account = SphincsPlusAccount {
                 index: 0,
@@ -844,21 +843,6 @@ impl KeyVault {
                 Err(msg)
             }
         }
-    }
-
-    /// Compute 32-byte lock script args from a multisig configuration.
-    ///
-    /// Hashes: `[S R M N] + [param_flag₁ pk₁] + [param_flag₂ pk₂] + ...`
-    /// where each param_flag has its lowest bit cleared (no-signature variant).
-    fn get_lock_script_arg(config: &MultisigConfig) -> [u8; 32] {
-        let mut hasher = Hasher::script_args_hasher();
-        hasher.update(&config.header_bytes());
-        for signer in &config.signers {
-            let param_flag: u8 = (signer.variant as u8) << 1;
-            hasher.update(&[param_flag]);
-            hasher.update(&signer.pubkey);
-        }
-        hasher.hash()
     }
 
     pub fn list_wallets() -> Result<Vec<types::WalletEntry>, String> {

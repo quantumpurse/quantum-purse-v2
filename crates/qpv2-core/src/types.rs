@@ -93,6 +93,22 @@ impl MultisigConfig {
             self.signers.len() as u8,
         ]
     }
+
+    /// Compute 32-byte lock script args.
+    ///
+    /// Hashes: `[S R M N] + [param_flag₁ pk₁] + [param_flag₂ pk₂] + ...`
+    /// where each param_flag has its lowest bit cleared (no-signature variant).
+    pub fn lock_script_args(&self) -> [u8; 32] {
+        use ckb_fips205_utils::Hasher;
+        let mut hasher = Hasher::script_args_hasher();
+        hasher.update(&self.header_bytes());
+        for signer in &self.signers {
+            let param_flag: u8 = (signer.variant as u8) << 1;
+            hasher.update(&[param_flag]);
+            hasher.update(&signer.pubkey);
+        }
+        hasher.hash()
+    }
 }
 
 /// Represents a SPHINCS+ account within the quantum-resistant lock script.
