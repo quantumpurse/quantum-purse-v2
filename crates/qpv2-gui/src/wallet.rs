@@ -456,15 +456,40 @@ impl App {
         );
     }
 
-    /// Prompt for the wallet password and derive a new account.
-    /// Synchronous: blocks the egui update loop while the pinentry
-    /// dialog is up.
-    pub(crate) fn create_new_account_with_password(&mut self) {
-        let pw = match qpv2_core::pinentry::prompt_password(
-            "Enter your wallet password to create a new account.",
-            "Password:",
-        ) {
-            Ok(s) => s,
+    /// Resolve the authentication key based on the current auth method.
+    /// Synchronous: may block the egui update loop for pinentry dialogs
+    /// (password/FIDO2 paths).
+    fn resolve_auth_key(&self, purpose: &str) -> Result<AuthKey, String> {
+        match &self.auth_method {
+            Some(AuthMethod::Password) => {
+                qpv2_core::pinentry::prompt_password(
+                    &format!("Enter your wallet password to {}.", purpose),
+                    "Password:",
+                )
+                .map(AuthKey::Password)
+            }
+            Some(AuthMethod::Keychain) => {
+                keychain::retrieve_key(self.wallet_id).map(AuthKey::CryptoKey)
+            }
+            Some(AuthMethod::Fido2 { credential_id }) => {
+                let cred_bytes = hex::decode(credential_id)
+                    .map_err(|e| format!("Invalid credential ID: {}", e))?;
+                let pin = qpv2_core::pinentry::prompt_password(
+                    &format!("Enter your FIDO2 security key PIN to {}.", purpose),
+                    "PIN:",
+                )?;
+                let hmac_output = keychain::fido2::authenticate(&cred_bytes, &pin)?;
+                qpv2_core::utilities::derive_vault_enc_key(&hmac_output)
+                    .map(AuthKey::CryptoKey)
+                    .map_err(|e| format!("Key derivation failed: {}", e))
+            }
+            None => Err("No authentication method set.".to_string()),
+        }
+    }
+
+    pub(crate) fn create_singlesig_account(&mut self) {
+        let auth = match self.resolve_auth_key("create a new account") {
+            Ok(a) => a,
             Err(e) => {
                 tracing::error!("{}", e);
                 self.status = Status::Error(e);
@@ -482,7 +507,7 @@ impl App {
             }
         };
         let vault = KeyVault::new(variant, self.wallet_id);
-        match vault.gen_new_account(AuthKey::Password(pw)) {
+        match vault.gen_new_account(auth) {
             Ok(account) => {
                 tracing::info!(
                     "Account created (wallet_id={}, lock_args={}...)",
@@ -578,12 +603,9 @@ impl App {
         );
     }
 
-    pub(crate) fn export_seed_phrase_with_password(&mut self) {
-        let pw = match qpv2_core::pinentry::prompt_password(
-            "Enter your wallet password to export the seed phrase.",
-            "Password:",
-        ) {
-            Ok(s) => s,
+    pub(crate) fn export_seed_phrase(&mut self) {
+        let auth = match self.resolve_auth_key("export the seed phrase") {
+            Ok(a) => a,
             Err(e) => {
                 tracing::error!("{}", e);
                 self.status = Status::Error(e);
@@ -601,7 +623,7 @@ impl App {
             }
         };
         let vault = KeyVault::new(variant, self.wallet_id);
-        match vault.export_seed_phrase(AuthKey::Password(pw)) {
+        match vault.export_seed_phrase(auth) {
             Ok(phrase) => {
                 if let Err(e) = qpv2_core::pinentry::show_seed_phrase(&phrase) {
                     tracing::error!("{}", e);
@@ -709,49 +731,6 @@ impl App {
         }
     }
 
-    /// Derive a new account using the platform credential store.
-    pub(crate) fn create_new_account_with_keychain(&mut self) {
-        let key = match keychain::retrieve_key(self.wallet_id) {
-            Ok(k) => k,
-            Err(e) => {
-                tracing::error!("{}", e);
-                self.status = Status::Error(e);
-                return;
-            }
-        };
-
-        let variant = match KeyVault::get_spx_variant(self.wallet_id) {
-            Ok(v) => v,
-            Err(e) => {
-                let msg = format!("Failed to read wallet variant: {}", e);
-                tracing::error!("{}", msg);
-                self.status = Status::Error(msg);
-                return;
-            }
-        };
-        let vault = KeyVault::new(variant, self.wallet_id);
-        match vault.gen_new_account(AuthKey::CryptoKey(key)) {
-            Ok(account) => {
-                tracing::info!(
-                    "Account created (wallet_id={}, lock_args={}...)",
-                    self.wallet_id,
-                    &account.lock_args[..8.min(account.lock_args.len())]
-                );
-                self.balances.insert(account.lock_args.clone(), Some(0));
-                self.spendable_balances.insert(account.lock_args.clone(), Some(0));
-                self.register_lock_scripts_with_light_client(std::slice::from_ref(&account.lock_args));
-                self.accounts.push(account);
-                self.refresh_wallet_cache();
-                self.status = Status::Info("New account created!".to_string());
-            }
-            Err(e) => {
-                let msg = format!("Failed to create account: {}", e);
-                tracing::error!("{}", msg);
-                self.status = Status::Error(msg);
-            }
-        }
-    }
-
     /// Create a multisig account from the modal form state.
     pub(crate) fn create_multisig_account(&mut self) {
         let co_signers: Vec<qpv2_core::types::Signer> = match self
@@ -783,63 +762,10 @@ impl App {
             return;
         }
 
-        let auth = match &self.auth_method {
-            Some(AuthMethod::Password) => {
-                match qpv2_core::pinentry::prompt_password(
-                    "Enter your wallet password to create a multisig account.",
-                    "Password:",
-                ) {
-                    Ok(pw) => AuthKey::Password(pw),
-                    Err(e) => {
-                        self.status = Status::Error(e);
-                        return;
-                    }
-                }
-            }
-            Some(AuthMethod::Keychain) => match keychain::retrieve_key(self.wallet_id) {
-                Ok(k) => AuthKey::CryptoKey(k),
-                Err(e) => {
-                    self.status = Status::Error(e);
-                    return;
-                }
-            },
-            Some(AuthMethod::Fido2 { credential_id }) => {
-                let cred_bytes = match hex::decode(credential_id) {
-                    Ok(b) => b,
-                    Err(e) => {
-                        self.status =
-                            Status::Error(format!("Invalid credential ID: {}", e));
-                        return;
-                    }
-                };
-                let pin = match qpv2_core::pinentry::prompt_password(
-                    "Enter your FIDO2 security key PIN to create a multisig account.",
-                    "PIN:",
-                ) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        self.status = Status::Error(e);
-                        return;
-                    }
-                };
-                let hmac_output = match keychain::fido2::authenticate(&cred_bytes, &pin) {
-                    Ok(h) => h,
-                    Err(e) => {
-                        self.status = Status::Error(e);
-                        return;
-                    }
-                };
-                match qpv2_core::utilities::derive_vault_enc_key(&hmac_output) {
-                    Ok(k) => AuthKey::CryptoKey(k),
-                    Err(e) => {
-                        self.status =
-                            Status::Error(format!("Key derivation failed: {}", e));
-                        return;
-                    }
-                }
-            }
-            None => {
-                self.status = Status::Error("No authentication method set.".to_string());
+        let auth = match self.resolve_auth_key("create a multisig account") {
+            Ok(a) => a,
+            Err(e) => {
+                self.status = Status::Error(e);
                 return;
             }
         };
@@ -950,42 +876,6 @@ impl App {
         );
     }
 
-    pub(crate) fn export_seed_phrase_with_keychain(&mut self) {
-        let key = match keychain::retrieve_key(self.wallet_id) {
-            Ok(k) => k,
-            Err(e) => {
-                tracing::error!("{}", e);
-                self.status = Status::Error(e);
-                return;
-            }
-        };
-
-        let variant = match KeyVault::get_spx_variant(self.wallet_id) {
-            Ok(v) => v,
-            Err(e) => {
-                let msg = format!("Failed to read wallet variant: {}", e);
-                tracing::error!("{}", msg);
-                self.status = Status::Error(msg);
-                return;
-            }
-        };
-        let vault = KeyVault::new(variant, self.wallet_id);
-        match vault.export_seed_phrase(AuthKey::CryptoKey(key)) {
-            Ok(phrase) => {
-                if let Err(e) = qpv2_core::pinentry::show_seed_phrase(&phrase) {
-                    tracing::error!("{}", e);
-                    self.status = Status::Error(e);
-                } else {
-                    tracing::info!("Seed phrase exported (wallet_id={})", self.wallet_id);
-                }
-            }
-            Err(e) => {
-                let msg = format!("Failed to export seed phrase: {}", e);
-                tracing::error!("{}", msg);
-                self.status = Status::Error(msg);
-            }
-        }
-    }
 
     /// Create a FIDO2-authenticated wallet. Prompts for the device PIN
     /// via pinentry, registers a credential, then derives the encryption
@@ -1125,81 +1015,6 @@ impl App {
         }
     }
 
-    /// Derive a new account using FIDO2 hmac-secret.
-    pub(crate) fn create_new_account_with_fido2(&mut self, credential_id: &str) {
-        let cred_bytes = match hex::decode(credential_id) {
-            Ok(b) => b,
-            Err(e) => {
-                let msg = format!("Invalid credential ID: {}", e);
-                tracing::error!("{}", msg);
-                self.status = Status::Error(msg);
-                return;
-            }
-        };
-
-        let pin = match qpv2_core::pinentry::prompt_password(
-            "Enter your FIDO2 security key PIN to create a new account.",
-            "PIN:",
-        ) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::error!("{}", e);
-                self.status = Status::Error(e);
-                return;
-            }
-        };
-
-        let hmac_output = match keychain::fido2::authenticate(&cred_bytes, &pin) {
-            Ok(h) => h,
-            Err(e) => {
-                tracing::error!("{}", e);
-                self.status = Status::Error(e);
-                return;
-            }
-        };
-
-        let key = match qpv2_core::utilities::derive_vault_enc_key(&hmac_output) {
-            Ok(k) => k,
-            Err(e) => {
-                let msg = format!("Key derivation failed: {}", e);
-                tracing::error!("{}", msg);
-                self.status = Status::Error(msg);
-                return;
-            }
-        };
-
-        let variant = match KeyVault::get_spx_variant(self.wallet_id) {
-            Ok(v) => v,
-            Err(e) => {
-                let msg = format!("Failed to read wallet variant: {}", e);
-                tracing::error!("{}", msg);
-                self.status = Status::Error(msg);
-                return;
-            }
-        };
-        let vault = KeyVault::new(variant, self.wallet_id);
-        match vault.gen_new_account(AuthKey::CryptoKey(key)) {
-            Ok(account) => {
-                tracing::info!(
-                    "Account created (wallet_id={}, lock_args={}...)",
-                    self.wallet_id,
-                    &account.lock_args[..8.min(account.lock_args.len())]
-                );
-                self.balances.insert(account.lock_args.clone(), Some(0));
-                self.spendable_balances.insert(account.lock_args.clone(), Some(0));
-                self.register_lock_scripts_with_light_client(std::slice::from_ref(&account.lock_args));
-                self.accounts.push(account);
-                self.refresh_wallet_cache();
-                self.status = Status::Info("New account created!".to_string());
-            }
-            Err(e) => {
-                let msg = format!("Failed to create account: {}", e);
-                tracing::error!("{}", msg);
-                self.status = Status::Error(msg);
-            }
-        }
-    }
-
     pub(crate) fn import_seed_phrase_with_fido2(&mut self, variant: SpxVariant) {
         let (wallet_id, wallet_name) = match self.prepare_new_wallet() {
             Ok(v) => v,
@@ -1297,74 +1112,6 @@ impl App {
         );
     }
 
-    pub(crate) fn export_seed_phrase_with_fido2(&mut self, credential_id: &str) {
-        let pin = match qpv2_core::pinentry::prompt_password(
-            "Enter your FIDO2 security key PIN to export the seed phrase.",
-            "PIN:",
-        ) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::error!("{}", e);
-                self.status = Status::Error(e);
-                return;
-            }
-        };
-
-        let cred_bytes = match hex::decode(credential_id) {
-            Ok(b) => b,
-            Err(e) => {
-                let msg = format!("Invalid credential ID: {}", e);
-                tracing::error!("{}", msg);
-                self.status = Status::Error(msg);
-                return;
-            }
-        };
-
-        let hmac_output = match keychain::fido2::authenticate(&cred_bytes, &pin) {
-            Ok(h) => h,
-            Err(e) => {
-                tracing::error!("{}", e);
-                self.status = Status::Error(e);
-                return;
-            }
-        };
-
-        let key = match qpv2_core::utilities::derive_vault_enc_key(&hmac_output) {
-            Ok(k) => k,
-            Err(e) => {
-                let msg = format!("Key derivation failed: {}", e);
-                tracing::error!("{}", msg);
-                self.status = Status::Error(msg);
-                return;
-            }
-        };
-
-        let variant = match KeyVault::get_spx_variant(self.wallet_id) {
-            Ok(v) => v,
-            Err(e) => {
-                let msg = format!("Failed to read wallet variant: {}", e);
-                tracing::error!("{}", msg);
-                self.status = Status::Error(msg);
-                return;
-            }
-        };
-        let vault = KeyVault::new(variant, self.wallet_id);
-        match vault.export_seed_phrase(AuthKey::CryptoKey(key)) {
-            Ok(phrase) => {
-                if let Err(e) = qpv2_core::pinentry::show_seed_phrase(&phrase) {
-                    tracing::error!("{}", e);
-                    self.status = Status::Error(e);
-                } else {
-                    tracing::info!("Seed phrase exported (wallet_id={})", self.wallet_id);
-                }
-            }
-            Err(e) => {
-                let msg = format!("Failed to export seed phrase: {}", e);
-                tracing::error!("{}", msg);
-                self.status = Status::Error(msg);
-            }
-        }
-    }
 }
 
 // ── Last-wallet persistence ──

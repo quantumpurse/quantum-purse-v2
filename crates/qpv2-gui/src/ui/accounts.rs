@@ -72,23 +72,7 @@ impl App {
                     hover.commit(&single_card);
 
                     if single_card.interact(egui::Sense::click()).clicked() {
-                        match &self.auth_method {
-                            Some(AuthMethod::Password) => {
-                                self.create_new_account_with_password();
-                            }
-                            Some(AuthMethod::Keychain) => {
-                                self.create_new_account_with_keychain();
-                            }
-                            Some(AuthMethod::Fido2 { credential_id }) => {
-                                let cred_id = credential_id.clone();
-                                self.create_new_account_with_fido2(&cred_id);
-                            }
-                            None => {
-                                tracing::error!("No authentication method set.");
-                                self.status =
-                                    Status::Error("No authentication method set.".to_string());
-                            }
-                        }
+                        self.create_singlesig_account();
                     }
 
                     // Multi-sig Account

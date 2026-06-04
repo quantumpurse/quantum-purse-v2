@@ -155,23 +155,7 @@ impl App {
                     hover.commit(&export_card);
 
                     if export_card.interact(egui::Sense::click()).clicked() {
-                        match &self.auth_method {
-                            Some(AuthMethod::Password) => {
-                                self.export_seed_phrase_with_password();
-                            }
-                            Some(AuthMethod::Keychain) => {
-                                self.export_seed_phrase_with_keychain();
-                            }
-                            Some(AuthMethod::Fido2 { credential_id }) => {
-                                let cred_id = credential_id.clone();
-                                self.export_seed_phrase_with_fido2(&cred_id);
-                            }
-                            None => {
-                                tracing::error!("No authentication method set.");
-                                self.status =
-                                    Status::Error("No authentication method set.".to_string());
-                            }
-                        }
+                        self.export_seed_phrase();
                     }
                 });
 
