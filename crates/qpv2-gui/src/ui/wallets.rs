@@ -475,7 +475,7 @@ impl App {
                     if let Some(id) = delete_target {
                         let _ = keychain::delete_key(id);
                         let lock_args =
-                            KeyVault::get_all_sphincs_lock_args(id).unwrap_or_default();
+                            KeyVault::get_singlesig_lock_args(id).unwrap_or_default();
                         let _ = ckb_node::wallet_helpers::lc::clear_wallet_scripts(
                             &self.qp_client,
                             &lock_args,

@@ -447,7 +447,7 @@ impl App {
         let mut wallet_accounts: Vec<(String, Vec<String>)> = Vec::new();
         for cw in &self.wallet_cache {
             let accounts =
-                qpv2_core::KeyVault::get_all_sphincs_lock_args(cw.id).unwrap_or_default();
+                qpv2_core::KeyVault::get_singlesig_lock_args(cw.id).unwrap_or_default();
             wallet_accounts.push((cw.name.clone(), accounts));
         }
 

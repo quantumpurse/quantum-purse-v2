@@ -16,7 +16,7 @@ impl App {
             .into_iter()
             .filter_map(|entry| {
                 let info = KeyVault::read_wallet_info(entry.id).ok()?;
-                let account_count = KeyVault::get_all_sphincs_lock_args(entry.id)
+                let account_count = KeyVault::get_singlesig_lock_args(entry.id)
                     .map(|a| a.len())
                     .unwrap_or(0);
                 let path = qpv2_core::db::get_wallet_dir(entry.id)
@@ -88,7 +88,7 @@ impl App {
     ) {
         self.wallet_id = wallet_id;
         self.wallet_name = wallet_name;
-        match KeyVault::get_all_accounts(self.wallet_id) {
+        match KeyVault::get_singlesig_accounts(self.wallet_id) {
             Ok(accounts) => {
                 self.accounts = accounts;
                 self.auth_method = Some(auth_method);
@@ -273,7 +273,7 @@ impl App {
             .map(|w| w.auth_method);
 
         self.lc_scripts_registered = false;
-        self.accounts = KeyVault::get_all_accounts(wallet_id).unwrap_or_default();
+        self.accounts = KeyVault::get_singlesig_accounts(wallet_id).unwrap_or_default();
         self.screen = Screen::Unlocked;
         self.needs_initial_fetch = true;
         self.wallet_selector_open = false;
@@ -440,7 +440,7 @@ impl App {
             return;
         }
 
-        if let Err(e) = vault.gen_new_account(AuthKey::Password(pw_for_account)) {
+        if let Err(e) = vault.gen_singlesig_account(AuthKey::Password(pw_for_account)) {
             let msg = format!("Failed to create first account: {}", e);
             tracing::error!("{}", msg);
             self.status = Status::Error(msg);
@@ -507,7 +507,7 @@ impl App {
             }
         };
         let vault = KeyVault::new(variant, self.wallet_id);
-        match vault.gen_new_account(auth) {
+        match vault.gen_singlesig_account(auth) {
             Ok(account) => {
                 tracing::info!(
                     "Account created (wallet_id={}, lock_args={}...)",
@@ -587,7 +587,7 @@ impl App {
             return;
         }
 
-        if let Err(e) = vault.gen_new_account(AuthKey::Password(pw_for_account)) {
+        if let Err(e) = vault.gen_singlesig_account(AuthKey::Password(pw_for_account)) {
             let msg = format!("Failed to create first account: {}", e);
             tracing::error!("{}", msg);
             self.status = Status::Error(msg);
@@ -682,7 +682,7 @@ impl App {
             return;
         }
 
-        if let Err(e) = vault.gen_new_account(AuthKey::CryptoKey(key_for_account)) {
+        if let Err(e) = vault.gen_singlesig_account(AuthKey::CryptoKey(key_for_account)) {
             let msg = format!("Failed to create first account: {}", e);
             tracing::error!("{}", msg);
             self.status = Status::Error(msg);
@@ -702,7 +702,7 @@ impl App {
     /// Unlocked.
     pub(crate) fn unlock_with_keychain(&mut self) {
         match keychain::retrieve_key(self.wallet_id) {
-            Ok(_) => match KeyVault::get_all_accounts(self.wallet_id) {
+            Ok(_) => match KeyVault::get_singlesig_accounts(self.wallet_id) {
                 Ok(accounts) => {
                     self.accounts = accounts;
                     self.screen = Screen::Unlocked;
@@ -860,7 +860,7 @@ impl App {
             return;
         }
 
-        if let Err(e) = vault.gen_new_account(AuthKey::CryptoKey(key_for_account)) {
+        if let Err(e) = vault.gen_singlesig_account(AuthKey::CryptoKey(key_for_account)) {
             let msg = format!("Failed to create first account: {}", e);
             tracing::error!("{}", msg);
             self.status = Status::Error(msg);
@@ -948,7 +948,7 @@ impl App {
             return;
         }
 
-        if let Err(e) = vault.gen_new_account(AuthKey::CryptoKey(key_for_account)) {
+        if let Err(e) = vault.gen_singlesig_account(AuthKey::CryptoKey(key_for_account)) {
             let msg = format!("Failed to create first account: {}", e);
             tracing::error!("{}", msg);
             self.status = Status::Error(msg);
@@ -989,7 +989,7 @@ impl App {
         };
 
         match keychain::fido2::authenticate(&cred_bytes, &pin) {
-            Ok(_) => match KeyVault::get_all_accounts(self.wallet_id) {
+            Ok(_) => match KeyVault::get_singlesig_accounts(self.wallet_id) {
                 Ok(accounts) => {
                     self.accounts = accounts;
                     self.screen = Screen::Unlocked;
@@ -1096,7 +1096,7 @@ impl App {
             return;
         }
 
-        if let Err(e) = vault.gen_new_account(AuthKey::CryptoKey(key_for_account)) {
+        if let Err(e) = vault.gen_singlesig_account(AuthKey::CryptoKey(key_for_account)) {
             let msg = format!("Failed to create first account: {}", e);
             tracing::error!("{}", msg);
             self.status = Status::Error(msg);

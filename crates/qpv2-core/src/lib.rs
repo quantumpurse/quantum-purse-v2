@@ -115,7 +115,7 @@ impl KeyVault {
     pub fn clear_database(wallet_id: u32) -> Result<(), String> {
         tracing::info!("Clearing wallet database (wallet_id={})", wallet_id);
         db::clear_master_seed(wallet_id).map_err(|e| e.to_string())?;
-        db::clear_accounts(wallet_id).map_err(|e| e.to_string())?;
+        db::clear_singlesig_accounts(wallet_id).map_err(|e| e.to_string())?;
         db::clear_wallet_info(wallet_id).map_err(|e| e.to_string())?;
         db::clear_tx_history(wallet_id).map_err(|e| e.to_string())?;
         Ok(())
@@ -139,8 +139,8 @@ impl KeyVault {
     ///
     /// **Returns**:
     /// - `Result<Vec<String>, String>` - An array of hex-encoded SPHINCS+ lock script arguments on success, or an error on failure.
-    pub fn get_all_sphincs_lock_args(wallet_id: u32) -> Result<Vec<String>, String> {
-        let accounts = db::get_all_accounts(wallet_id).map_err(|e| e.to_string())?;
+    pub fn get_singlesig_lock_args(wallet_id: u32) -> Result<Vec<String>, String> {
+        let accounts = db::get_singlesig_accounts(wallet_id).map_err(|e| e.to_string())?;
         let lock_args_array: Vec<String> = accounts
             .into_iter()
             .map(|account| account.lock_args)
@@ -149,8 +149,8 @@ impl KeyVault {
     }
 
     /// Retrieves all accounts with full config data, ordered by insertion index.
-    pub fn get_all_accounts(wallet_id: u32) -> Result<Vec<SphincsPlusAccount>, String> {
-        db::get_all_accounts(wallet_id).map_err(|e| e.to_string())
+    pub fn get_singlesig_accounts(wallet_id: u32) -> Result<Vec<SphincsPlusAccount>, String> {
+        db::get_singlesig_accounts(wallet_id).map_err(|e| e.to_string())
     }
 
     /// Check if there's a master seed stored.
@@ -246,7 +246,7 @@ impl KeyVault {
     ///
     /// **Returns**:
     /// - `Result<String, String>` - The hex-encoded SPHINCS+ lock argument (processed SPHINCS+ public key) of the account on success, or an error on failure.
-    pub fn gen_new_account(&self, auth: AuthKey) -> Result<SphincsPlusAccount, String> {
+    pub fn gen_singlesig_account(&self, auth: AuthKey) -> Result<SphincsPlusAccount, String> {
         Self::validate_auth(&auth)?;
 
         // Get and decrypt the master seed
@@ -258,7 +258,7 @@ impl KeyVault {
             })?;
         let seed = utilities::decrypt(&auth, payload)?;
 
-        let index = Self::get_all_sphincs_lock_args(self.wallet_id)?.len() as u32;
+        let index = Self::get_singlesig_lock_args(self.wallet_id)?.len() as u32;
         tracing::info!(
             "Deriving new account (wallet_id={}, index={})",
             self.wallet_id,
@@ -279,7 +279,7 @@ impl KeyVault {
             config,
         };
 
-        db::add_account(self.wallet_id, account.clone()).map_err(|e| e.to_string())?;
+        db::add_singlesig_account(self.wallet_id, account.clone()).map_err(|e| e.to_string())?;
 
         Ok(account)
     }
@@ -313,7 +313,7 @@ impl KeyVault {
             })?;
         let seed = utilities::decrypt(&auth, payload)?;
 
-        let index = Self::get_all_sphincs_lock_args(self.wallet_id)?.len() as u32;
+        let index = Self::get_singlesig_lock_args(self.wallet_id)?.len() as u32;
         tracing::info!(
             "Deriving multisig account (wallet_id={}, index={}, co_signers={})",
             self.wallet_id,
@@ -344,7 +344,7 @@ impl KeyVault {
             config,
         };
 
-        db::add_account(self.wallet_id, account.clone()).map_err(|e| e.to_string())?;
+        db::add_singlesig_account(self.wallet_id, account.clone()).map_err(|e| e.to_string())?;
 
         Ok(account)
     }
@@ -509,7 +509,7 @@ impl KeyVault {
             &lock_args[..8.min(lock_args.len())]
         );
 
-        let account = db::get_account(self.wallet_id, &lock_args)
+        let account = db::get_singlesig_account(self.wallet_id, &lock_args)
             .map_err(|e| e.to_string())?
             .ok_or_else(|| {
                 tracing::error!("Account not found");
@@ -590,7 +590,7 @@ impl KeyVault {
             &lock_args[..8.min(lock_args.len())]
         );
 
-        let account = db::get_account(self.wallet_id, &lock_args)
+        let account = db::get_singlesig_account(self.wallet_id, &lock_args)
             .map_err(|e| e.to_string())?
             .ok_or_else(|| {
                 tracing::error!("Account not found");
@@ -784,7 +784,7 @@ impl KeyVault {
             };
             lock_args_array.push(encode(lock_script_args));
 
-            db::add_account(self.wallet_id, account).map_err(|e| e.to_string())?;
+            db::add_singlesig_account(self.wallet_id, account).map_err(|e| e.to_string())?;
         }
         Ok(lock_args_array)
     }

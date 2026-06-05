@@ -466,7 +466,7 @@ fn main() -> Result<(), String> {
                     let vault = KeyVault::new(variant, wallet_id);
 
                     let auth = get_auth_key(wallet_id)?;
-                    let account = vault.gen_new_account(auth)?;
+                    let account = vault.gen_singlesig_account(auth)?;
                     println!("✓ New account created");
                     println!("Identifier(CKB quantum lock script args): {}", account.lock_args);
                 }
@@ -513,7 +513,7 @@ fn main() -> Result<(), String> {
                 }
 
                 AccountCommands::List => {
-                    let accounts = KeyVault::get_all_accounts(wallet_id)?;
+                    let accounts = KeyVault::get_singlesig_accounts(wallet_id)?;
                     if accounts.is_empty() {
                         println!("No accounts found. Run `qpv2-cli account new` to generate a new SPHINCS+ account");
                     } else {
@@ -659,7 +659,7 @@ fn main() -> Result<(), String> {
                     println!("Wallets ({}):\n", wallets.len());
                     for entry in &wallets {
                         let wallet_info = KeyVault::read_wallet_info(entry.id)?;
-                        let accounts = KeyVault::get_all_sphincs_lock_args(entry.id)?;
+                        let accounts = KeyVault::get_singlesig_lock_args(entry.id)?;
                         let data_path =
                             qpv2_core::db::get_wallet_dir(entry.id).map_err(|e| e.to_string())?;
 

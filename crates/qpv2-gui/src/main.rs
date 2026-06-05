@@ -272,7 +272,7 @@ impl App {
 
                 let am = KeyVault::read_wallet_info(wid).ok().map(|w| w.auth_method);
                 if matches!(am, Some(qpv2_core::types::AuthMethod::Password)) {
-                    let accs = KeyVault::get_all_accounts(wid).unwrap_or_default();
+                    let accs = KeyVault::get_singlesig_accounts(wid).unwrap_or_default();
                     (Screen::Unlocked, wid, wname, am, accs, true)
                 } else {
                     (Screen::Locked, wid, wname, am, Vec::new(), false)

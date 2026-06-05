@@ -40,7 +40,7 @@ fn get_master_seed_path(wallet_id: u32) -> Result<PathBuf, KeyVaultDBError> {
     Ok(get_wallet_dir(wallet_id)?.join("seed.json"))
 }
 
-fn get_accounts_path(wallet_id: u32) -> Result<PathBuf, KeyVaultDBError> {
+fn get_singlesig_path(wallet_id: u32) -> Result<PathBuf, KeyVaultDBError> {
     Ok(get_wallet_dir(wallet_id)?.join("accounts.json"))
 }
 
@@ -74,8 +74,8 @@ pub fn get_encrypted_seed(wallet_id: u32) -> Result<Option<CipherPayload>, KeyVa
     Ok(Some(payload))
 }
 
-fn load_accounts(wallet_id: u32) -> Result<HashMap<String, SphincsPlusAccount>, KeyVaultDBError> {
-    let path = get_accounts_path(wallet_id)?;
+fn load_singlesig(wallet_id: u32) -> Result<HashMap<String, SphincsPlusAccount>, KeyVaultDBError> {
+    let path = get_singlesig_path(wallet_id)?;
 
     if !path.exists() {
         return Ok(HashMap::new());
@@ -88,26 +88,26 @@ fn load_accounts(wallet_id: u32) -> Result<HashMap<String, SphincsPlusAccount>, 
     Ok(accounts)
 }
 
-pub fn add_account(wallet_id: u32, mut account: SphincsPlusAccount) -> Result<(), KeyVaultDBError> {
-    let mut accounts = load_accounts(wallet_id)?;
+pub fn add_singlesig_account(wallet_id: u32, mut account: SphincsPlusAccount) -> Result<(), KeyVaultDBError> {
+    let mut accounts = load_singlesig(wallet_id)?;
     if accounts.contains_key(&account.lock_args) {
         return Ok(());
     }
     let count = accounts.len();
     account.index = count as u32;
     accounts.insert(account.lock_args.clone(), account);
-    let path = get_accounts_path(wallet_id)?;
+    let path = get_singlesig_path(wallet_id)?;
     let json = serde_json::to_string_pretty(&accounts)?;
     let mut file = File::create(path)?;
     file.write_all(json.as_bytes())?;
     Ok(())
 }
 
-pub fn get_account(
+pub fn get_singlesig_account(
     wallet_id: u32,
     lock_args: &str,
 ) -> Result<Option<SphincsPlusAccount>, KeyVaultDBError> {
-    let accounts = load_accounts(wallet_id)?;
+    let accounts = load_singlesig(wallet_id)?;
     Ok(accounts.get(lock_args).cloned())
 }
 
@@ -119,16 +119,16 @@ pub fn clear_master_seed(wallet_id: u32) -> Result<(), KeyVaultDBError> {
     Ok(())
 }
 
-pub fn clear_accounts(wallet_id: u32) -> Result<(), KeyVaultDBError> {
-    let path = get_accounts_path(wallet_id)?;
+pub fn clear_singlesig_accounts(wallet_id: u32) -> Result<(), KeyVaultDBError> {
+    let path = get_singlesig_path(wallet_id)?;
     if path.exists() {
         fs::remove_file(path)?;
     }
     Ok(())
 }
 
-pub fn get_all_accounts(wallet_id: u32) -> Result<Vec<SphincsPlusAccount>, KeyVaultDBError> {
-    let accounts = load_accounts(wallet_id)?;
+pub fn get_singlesig_accounts(wallet_id: u32) -> Result<Vec<SphincsPlusAccount>, KeyVaultDBError> {
+    let accounts = load_singlesig(wallet_id)?;
     let mut account_list: Vec<SphincsPlusAccount> = accounts.into_values().collect();
     account_list.sort_by_key(|a| a.index);
     Ok(account_list)
