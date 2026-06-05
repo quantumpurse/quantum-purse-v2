@@ -134,6 +134,64 @@ pub fn get_singlesig_accounts(wallet_id: u32) -> Result<Vec<SphincsPlusAccount>,
     Ok(account_list)
 }
 
+// ── Multisig accounts (multisig_accounts.json) ──
+
+fn get_multisig_path(wallet_id: u32) -> Result<PathBuf, KeyVaultDBError> {
+    Ok(get_wallet_dir(wallet_id)?.join("multisig_accounts.json"))
+}
+
+fn load_multisig(wallet_id: u32) -> Result<HashMap<String, SphincsPlusAccount>, KeyVaultDBError> {
+    let path = get_multisig_path(wallet_id)?;
+
+    if !path.exists() {
+        return Ok(HashMap::new());
+    }
+
+    let mut file = File::open(path)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    let accounts: HashMap<String, SphincsPlusAccount> = serde_json::from_str(&contents)?;
+    Ok(accounts)
+}
+
+pub fn add_multisig_account(wallet_id: u32, mut account: SphincsPlusAccount) -> Result<(), KeyVaultDBError> {
+    let mut accounts = load_multisig(wallet_id)?;
+    if accounts.contains_key(&account.lock_args) {
+        return Ok(());
+    }
+    let count = accounts.len();
+    account.index = count as u32;
+    accounts.insert(account.lock_args.clone(), account);
+    let path = get_multisig_path(wallet_id)?;
+    let json = serde_json::to_string_pretty(&accounts)?;
+    let mut file = File::create(path)?;
+    file.write_all(json.as_bytes())?;
+    Ok(())
+}
+
+pub fn get_multisig_account(
+    wallet_id: u32,
+    lock_args: &str,
+) -> Result<Option<SphincsPlusAccount>, KeyVaultDBError> {
+    let accounts = load_multisig(wallet_id)?;
+    Ok(accounts.get(lock_args).cloned())
+}
+
+pub fn get_multisig_accounts(wallet_id: u32) -> Result<Vec<SphincsPlusAccount>, KeyVaultDBError> {
+    let accounts = load_multisig(wallet_id)?;
+    let mut account_list: Vec<SphincsPlusAccount> = accounts.into_values().collect();
+    account_list.sort_by_key(|a| a.index);
+    Ok(account_list)
+}
+
+pub fn clear_multisig_accounts(wallet_id: u32) -> Result<(), KeyVaultDBError> {
+    let path = get_multisig_path(wallet_id)?;
+    if path.exists() {
+        fs::remove_file(path)?;
+    }
+    Ok(())
+}
+
 pub fn set_wallet_info(wallet_id: u32, info: WalletInfo) -> Result<(), KeyVaultDBError> {
     let path = get_wallet_info_path(wallet_id)?;
     let json = serde_json::to_string_pretty(&info)?;

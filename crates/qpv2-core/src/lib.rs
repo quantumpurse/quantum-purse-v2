@@ -116,6 +116,7 @@ impl KeyVault {
         tracing::info!("Clearing wallet database (wallet_id={})", wallet_id);
         db::clear_master_seed(wallet_id).map_err(|e| e.to_string())?;
         db::clear_singlesig_accounts(wallet_id).map_err(|e| e.to_string())?;
+        db::clear_multisig_accounts(wallet_id).map_err(|e| e.to_string())?;
         db::clear_wallet_info(wallet_id).map_err(|e| e.to_string())?;
         db::clear_tx_history(wallet_id).map_err(|e| e.to_string())?;
         Ok(())
@@ -148,9 +149,29 @@ impl KeyVault {
         Ok(lock_args_array)
     }
 
-    /// Retrieves all accounts with full config data, ordered by insertion index.
+    /// Retrieves all single-sig accounts, ordered by insertion index.
     pub fn get_singlesig_accounts(wallet_id: u32) -> Result<Vec<SphincsPlusAccount>, String> {
         db::get_singlesig_accounts(wallet_id).map_err(|e| e.to_string())
+    }
+
+    /// Retrieves all multisig accounts, ordered by insertion index.
+    pub fn get_multisig_accounts(wallet_id: u32) -> Result<Vec<SphincsPlusAccount>, String> {
+        db::get_multisig_accounts(wallet_id).map_err(|e| e.to_string())
+    }
+
+    /// Retrieves all accounts (single-sig + multisig) combined.
+    pub fn get_all_accounts(wallet_id: u32) -> Result<Vec<SphincsPlusAccount>, String> {
+        let mut all = db::get_singlesig_accounts(wallet_id).map_err(|e| e.to_string())?;
+        all.extend(db::get_multisig_accounts(wallet_id).map_err(|e| e.to_string())?);
+        Ok(all)
+    }
+
+    /// Looks up an account by lock_args across both stores.
+    pub fn get_account(wallet_id: u32, lock_args: &str) -> Result<Option<SphincsPlusAccount>, String> {
+        if let Some(acct) = db::get_singlesig_account(wallet_id, lock_args).map_err(|e| e.to_string())? {
+            return Ok(Some(acct));
+        }
+        db::get_multisig_account(wallet_id, lock_args).map_err(|e| e.to_string())
     }
 
     /// Check if there's a master seed stored.
@@ -313,7 +334,7 @@ impl KeyVault {
             })?;
         let seed = utilities::decrypt(&auth, payload)?;
 
-        let index = Self::get_singlesig_lock_args(self.wallet_id)?.len() as u32;
+        let index = Self::get_multisig_accounts(self.wallet_id)?.len() as u32;
         tracing::info!(
             "Deriving multisig account (wallet_id={}, index={}, co_signers={})",
             self.wallet_id,
@@ -344,7 +365,7 @@ impl KeyVault {
             config,
         };
 
-        db::add_singlesig_account(self.wallet_id, account.clone()).map_err(|e| e.to_string())?;
+        db::add_multisig_account(self.wallet_id, account.clone()).map_err(|e| e.to_string())?;
 
         Ok(account)
     }
@@ -509,8 +530,7 @@ impl KeyVault {
             &lock_args[..8.min(lock_args.len())]
         );
 
-        let account = db::get_singlesig_account(self.wallet_id, &lock_args)
-            .map_err(|e| e.to_string())?
+        let account = Self::get_account(self.wallet_id, &lock_args)?
             .ok_or_else(|| {
                 tracing::error!("Account not found");
                 "Account not found".to_string()
@@ -590,8 +610,7 @@ impl KeyVault {
             &lock_args[..8.min(lock_args.len())]
         );
 
-        let account = db::get_singlesig_account(self.wallet_id, &lock_args)
-            .map_err(|e| e.to_string())?
+        let account = Self::get_account(self.wallet_id, &lock_args)?
             .ok_or_else(|| {
                 tracing::error!("Account not found");
                 "Account not found".to_string()
