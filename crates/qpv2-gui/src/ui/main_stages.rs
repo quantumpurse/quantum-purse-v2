@@ -534,6 +534,7 @@ impl App {
                 self.draw_nav_item(ui, Tab::NodeManager, "\u{25c9}", "Networks");
                 self.draw_nav_item(ui, Tab::Wallets, "\u{25EB}", "Wallets");
                 self.draw_nav_item(ui, Tab::Accounts, "\u{25ce}", "Accounts");
+                self.draw_nav_item(ui, Tab::Multisig, "\u{1f512}", "Multisig");
 
                 // ── Bottom: Lock Wallet ──
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
@@ -617,6 +618,7 @@ impl App {
                             Tab::DaoOperations => self.show_dao_tab(ui),
                             Tab::NodeManager => self.show_node_manager_tab(ui),
                             Tab::Accounts => self.show_accounts_tab(ui),
+                            Tab::Multisig => self.show_multisig_tab(ui),
                             Tab::Wallets => self.show_wallets_tab(ui),
                         }
                     });

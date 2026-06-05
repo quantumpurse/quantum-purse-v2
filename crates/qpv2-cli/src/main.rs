@@ -521,16 +521,25 @@ fn main() -> Result<(), String> {
                         println!("  Index  Type       Account Identifier (CKB Quantum Lock Args)");
                         println!("  ─────────────────────────────────────────────────────────────────────");
                         for (idx, account) in accounts.iter().enumerate() {
-                            let type_label = if account.config.signers.len() > 1 {
+                            let n_signers = account.config.signers.len();
+                            let type_label = if n_signers > 1 {
                                 format!(
                                     "{}-of-{}",
                                     account.config.threshold,
-                                    account.config.signers.len()
+                                    n_signers
                                 )
                             } else {
                                 "single".to_string()
                             };
                             println!("  [{}]    {:<9}  {}", idx, type_label, account.lock_args);
+                            if n_signers == 1 {
+                                let signer = &account.config.signers[0];
+                                println!(
+                                    "         Pubkey:  {}:{}",
+                                    signer.variant,
+                                    hex::encode(&signer.pubkey)
+                                );
+                            }
                         }
                     }
                 }

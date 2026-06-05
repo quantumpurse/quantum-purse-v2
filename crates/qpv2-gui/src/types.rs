@@ -99,6 +99,7 @@ pub(crate) enum Tab {
     DaoOperations,
     NodeManager,
     Accounts,
+    Multisig,
     Wallets,
 }
 
