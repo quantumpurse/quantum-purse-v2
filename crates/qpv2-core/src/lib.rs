@@ -166,6 +166,11 @@ impl KeyVault {
         Ok(all)
     }
 
+    /// Retrieves all lock args (single-sig + multisig) combined.
+    pub fn get_all_lock_args(wallet_id: u32) -> Result<Vec<String>, String> {
+        Ok(Self::get_all_accounts(wallet_id)?.into_iter().map(|a| a.lock_args).collect())
+    }
+
     /// Looks up an account by lock_args across both stores.
     pub fn get_account(wallet_id: u32, lock_args: &str) -> Result<Option<SphincsPlusAccount>, String> {
         if let Some(acct) = db::get_singlesig_account(wallet_id, lock_args).map_err(|e| e.to_string())? {
@@ -305,52 +310,40 @@ impl KeyVault {
         Ok(account)
     }
 
-    /// Creates a multisig account by combining this wallet's next derived key
-    /// with external co-signers. All signers are sorted by pubkey bytes to
-    /// produce a deterministic address.
+    /// Creates a multisig account using an existing single-sig account as
+    /// the local signer, combined with external co-signers. All signers
+    /// are sorted by pubkey bytes to produce a deterministic address.
     ///
     /// **Parameters**:
-    /// - `auth` - Authentication key to decrypt the master seed.
+    /// - `wallet_id` - The wallet containing the single-sig account.
+    /// - `singlesig_lock_args` - Lock args of the single-sig account to use as local signer.
     /// - `co_signers` - External signers (variant + pubkey) to include.
     /// - `threshold` - Minimum signatures required to unlock (M).
     /// - `required_first_n` - How many of the first N sorted signers must always sign (R).
     ///
     /// **Returns**:
-    /// - The hex-encoded lock script arguments of the new multisig account.
-    pub fn gen_new_multisig_account(
-        &self,
-        auth: AuthKey,
+    /// - The new multisig account on success, or an error on failure.
+    pub fn gen_multisig_account(
+        wallet_id: u32,
+        singlesig_lock_args: &str,
         co_signers: Vec<types::Signer>,
         threshold: u8,
         required_first_n: u8,
     ) -> Result<SphincsPlusAccount, String> {
-        Self::validate_auth(&auth)?;
-
-        let payload = db::get_encrypted_seed(self.wallet_id)
+        let singlesig = db::get_singlesig_account(wallet_id, singlesig_lock_args)
             .map_err(|e| e.to_string())?
             .ok_or_else(|| {
-                tracing::error!("Master seed not found");
-                "Master seed not found".to_string()
+                tracing::error!("Single-sig account not found (lock_args={})", singlesig_lock_args);
+                "Single-sig account not found.".to_string()
             })?;
-        let seed = utilities::decrypt(&auth, payload)?;
 
-        let index = Self::get_multisig_accounts(self.wallet_id)?.len() as u32;
+        let local_signer = singlesig.config.signers[0].clone();
         tracing::info!(
-            "Deriving multisig account (wallet_id={}, index={}, co_signers={})",
-            self.wallet_id,
-            index,
+            "Creating multisig account (wallet_id={}, local_signer={}..., co_signers={})",
+            wallet_id,
+            &singlesig_lock_args[..8.min(singlesig_lock_args.len())],
             co_signers.len()
         );
-        let (pub_key, _) = self.derive_spx_keys(&seed, index).map_err(|e| {
-            let msg = format!("Key derivation error: {}", e);
-            tracing::error!("{}", msg);
-            msg
-        })?;
-
-        let local_signer = types::Signer {
-            variant: self.variant,
-            pubkey: pub_key.as_ref().to_vec(),
-        };
 
         let mut signers = co_signers;
         signers.push(local_signer);
@@ -365,7 +358,7 @@ impl KeyVault {
             config,
         };
 
-        db::add_multisig_account(self.wallet_id, account.clone()).map_err(|e| e.to_string())?;
+        db::add_multisig_account(wallet_id, account.clone()).map_err(|e| e.to_string())?;
 
         Ok(account)
     }

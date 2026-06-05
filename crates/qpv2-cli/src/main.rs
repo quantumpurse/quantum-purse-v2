@@ -110,6 +110,9 @@ enum AccountCommands {
     New,
     /// Create a multisig account with co-signers
     NewMultisig {
+        /// Lock args of the single-sig account to use as local signer (from `account list`)
+        #[arg(short = 'a', long)]
+        singlesig_lock_args: String,
         /// Threshold: minimum signatures required (M in M-of-N)
         #[arg(short = 'm', long)]
         threshold: u8,
@@ -472,13 +475,11 @@ fn main() -> Result<(), String> {
                 }
 
                 AccountCommands::NewMultisig {
+                    singlesig_lock_args,
                     threshold,
                     required_first_n,
                     signer,
                 } => {
-                    let variant = KeyVault::get_spx_variant(wallet_id)?;
-                    let vault = KeyVault::new(variant, wallet_id);
-
                     let co_signers: Vec<qpv2_core::types::Signer> = signer
                         .iter()
                         .map(|s| {
@@ -492,15 +493,9 @@ fn main() -> Result<(), String> {
                         })
                         .collect::<Result<Vec<_>, String>>()?;
 
-                    qpv2_core::types::MultisigConfig::pre_validate(
-                        co_signers.len() + 1,
-                        threshold,
-                        required_first_n,
-                    )?;
-
-                    let auth = get_auth_key(wallet_id)?;
-                    let account = vault.gen_new_multisig_account(
-                        auth,
+                    let account = KeyVault::gen_multisig_account(
+                        wallet_id,
+                        &singlesig_lock_args,
                         co_signers,
                         threshold,
                         required_first_n,
@@ -513,31 +508,37 @@ fn main() -> Result<(), String> {
                 }
 
                 AccountCommands::List => {
-                    let accounts = KeyVault::get_singlesig_accounts(wallet_id)?;
-                    if accounts.is_empty() {
+                    let single = KeyVault::get_singlesig_accounts(wallet_id)?;
+                    let multisig = KeyVault::get_multisig_accounts(wallet_id)?;
+
+                    if single.is_empty() && multisig.is_empty() {
                         println!("No accounts found. Run `qpv2-cli account new` to generate a new SPHINCS+ account");
                     } else {
-                        println!("Accounts ({}):", accounts.len());
-                        println!("  Index  Type       Account Identifier (CKB Quantum Lock Args)");
-                        println!("  ─────────────────────────────────────────────────────────────────────");
-                        for (idx, account) in accounts.iter().enumerate() {
-                            let n_signers = account.config.signers.len();
-                            let type_label = if n_signers > 1 {
-                                format!(
-                                    "{}-of-{}",
-                                    account.config.threshold,
-                                    n_signers
-                                )
-                            } else {
-                                "single".to_string()
-                            };
-                            println!("  [{}]    {:<9}  {}", idx, type_label, account.lock_args);
-                            if n_signers == 1 {
+                        if !single.is_empty() {
+                            println!("Single-sig ({}):", single.len());
+                            println!("  Index  Account Identifier (CKB Quantum Lock Args)");
+                            println!("  ─────────────────────────────────────────────────────────────────────");
+                            for (idx, account) in single.iter().enumerate() {
                                 let signer = &account.config.signers[0];
+                                println!("  [{}]    {}", idx, account.lock_args);
                                 println!(
                                     "         Pubkey:  {}:{}",
                                     signer.variant,
                                     hex::encode(&signer.pubkey)
+                                );
+                            }
+                        }
+
+                        if !multisig.is_empty() {
+                            println!();
+                            println!("Multisig ({}):", multisig.len());
+                            println!("  Index  Type       Account Identifier (CKB Quantum Lock Args)");
+                            println!("  ─────────────────────────────────────────────────────────────────────");
+                            for (idx, account) in multisig.iter().enumerate() {
+                                let n = account.config.signers.len();
+                                println!(
+                                    "  [{}]    {}-of-{:<4}  {}",
+                                    idx, account.config.threshold, n, account.lock_args
                                 );
                             }
                         }
@@ -659,7 +660,7 @@ fn main() -> Result<(), String> {
                     println!("Wallets ({}):\n", wallets.len());
                     for entry in &wallets {
                         let wallet_info = KeyVault::read_wallet_info(entry.id)?;
-                        let accounts = KeyVault::get_singlesig_lock_args(entry.id)?;
+                        let accounts = KeyVault::get_all_lock_args(entry.id)?;
                         let data_path =
                             qpv2_core::db::get_wallet_dir(entry.id).map_err(|e| e.to_string())?;
 

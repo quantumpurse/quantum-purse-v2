@@ -239,11 +239,7 @@ impl App {
 											}
 
 											let signer = &account.config.signers[0];
-											let pubkey_text = format!(
-												"{}:{}",
-												signer.variant,
-												hex::encode(&signer.pubkey)
-											);
+											let pubkey_text = hex::encode(&signer.pubkey);
 											if ui
 												.button("\u{1f511}")
 												.on_hover_text("Copy public key")

@@ -66,6 +66,7 @@ impl App {
 				hover.commit(&multisig_card);
 
 				if multisig_card.interact(egui::Sense::click()).clicked() {
+					self.multisig_local_signer_idx = 0;
 					self.multisig_threshold = 2;
 					self.multisig_required_first_n = 0;
 					self.multisig_co_signers = vec![];

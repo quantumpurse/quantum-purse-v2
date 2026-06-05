@@ -54,6 +54,42 @@ impl App {
 						);
 						ui.add_space(16.0);
 
+						// Local signer (pick a single-sig account)
+						let singlesig: Vec<_> = self
+							.accounts
+							.iter()
+							.enumerate()
+							.filter(|(_, a)| a.config.signers.len() == 1)
+							.collect();
+
+						ui.label(
+							egui::RichText::new("Local signer")
+								.size(12.0)
+								.color(self.colors.text_muted),
+						);
+						ui.add_space(4.0);
+
+						let selected_text = if singlesig.is_empty() {
+							"No single-sig accounts".to_string()
+						} else {
+							let idx = self.multisig_local_signer_idx.min(singlesig.len() - 1);
+							let (orig_i, _) = singlesig[idx];
+							format!("Account #{}", orig_i)
+						};
+						egui::ComboBox::from_id_salt("ms_local_signer")
+							.selected_text(&selected_text)
+							.width(ui.available_width())
+							.show_ui(ui, |ui| {
+								for (pos, (orig_i, _)) in singlesig.iter().enumerate() {
+									ui.selectable_value(
+										&mut self.multisig_local_signer_idx,
+										pos,
+										format!("Account #{}", orig_i),
+									);
+								}
+							});
+						ui.add_space(16.0);
+
 						// Threshold (M)
 						ui.horizontal(|ui| {
 							ui.label(

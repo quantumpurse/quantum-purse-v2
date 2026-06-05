@@ -172,6 +172,7 @@ pub(crate) struct App {
 
     // ── Multisig account creation modal ──
     pub(crate) multisig_modal_open: bool,
+    pub(crate) multisig_local_signer_idx: usize,
     pub(crate) multisig_threshold: u8,
     pub(crate) multisig_required_first_n: u8,
     pub(crate) multisig_co_signers: Vec<(String, qpv2_core::types::SpxVariant)>,
@@ -272,7 +273,7 @@ impl App {
 
                 let am = KeyVault::read_wallet_info(wid).ok().map(|w| w.auth_method);
                 if matches!(am, Some(qpv2_core::types::AuthMethod::Password)) {
-                    let accs = KeyVault::get_singlesig_accounts(wid).unwrap_or_default();
+                    let accs = KeyVault::get_all_accounts(wid).unwrap_or_default();
                     (Screen::Unlocked, wid, wname, am, accs, true)
                 } else {
                     (Screen::Locked, wid, wname, am, Vec::new(), false)
@@ -389,6 +390,7 @@ impl App {
             auth_method,
             needs_initial_fetch,
             multisig_modal_open: false,
+            multisig_local_signer_idx: 0,
             multisig_threshold: 2,
             multisig_required_first_n: 0,
             multisig_co_signers: vec![],

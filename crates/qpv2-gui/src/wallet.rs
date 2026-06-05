@@ -16,7 +16,7 @@ impl App {
             .into_iter()
             .filter_map(|entry| {
                 let info = KeyVault::read_wallet_info(entry.id).ok()?;
-                let account_count = KeyVault::get_singlesig_lock_args(entry.id)
+                let account_count = KeyVault::get_all_lock_args(entry.id)
                     .map(|a| a.len())
                     .unwrap_or(0);
                 let path = qpv2_core::db::get_wallet_dir(entry.id)
@@ -88,7 +88,7 @@ impl App {
     ) {
         self.wallet_id = wallet_id;
         self.wallet_name = wallet_name;
-        match KeyVault::get_singlesig_accounts(self.wallet_id) {
+        match KeyVault::get_all_accounts(self.wallet_id) {
             Ok(accounts) => {
                 self.accounts = accounts;
                 self.auth_method = Some(auth_method);
@@ -218,6 +218,7 @@ impl App {
         self.transfer_amount.clear();
         self.transfer_all = false;
         self.transfer_from_account = 0;
+        self.multisig_local_signer_idx = 0;
         self.dao_deposit_amount.clear();
         self.dao_deposit_all = false;
         self.dao_deposit_from_account = 0;
@@ -273,7 +274,7 @@ impl App {
             .map(|w| w.auth_method);
 
         self.lc_scripts_registered = false;
-        self.accounts = KeyVault::get_singlesig_accounts(wallet_id).unwrap_or_default();
+        self.accounts = KeyVault::get_all_accounts(wallet_id).unwrap_or_default();
         self.screen = Screen::Unlocked;
         self.needs_initial_fetch = true;
         self.wallet_selector_open = false;
@@ -702,7 +703,7 @@ impl App {
     /// Unlocked.
     pub(crate) fn unlock_with_keychain(&mut self) {
         match keychain::retrieve_key(self.wallet_id) {
-            Ok(_) => match KeyVault::get_singlesig_accounts(self.wallet_id) {
+            Ok(_) => match KeyVault::get_all_accounts(self.wallet_id) {
                 Ok(accounts) => {
                     self.accounts = accounts;
                     self.screen = Screen::Unlocked;
@@ -733,6 +734,20 @@ impl App {
 
     /// Create a multisig account from the modal form state.
     pub(crate) fn create_multisig_account(&mut self) {
+        let singlesig: Vec<_> = self
+            .accounts
+            .iter()
+            .filter(|a| a.config.signers.len() == 1)
+            .collect();
+
+        let local_lock_args = match singlesig.get(self.multisig_local_signer_idx) {
+            Some(a) => a.lock_args.clone(),
+            None => {
+                self.status = Status::Error("No single-sig account selected.".to_string());
+                return;
+            }
+        };
+
         let co_signers: Vec<qpv2_core::types::Signer> = match self
             .multisig_co_signers
             .iter()
@@ -753,35 +768,9 @@ impl App {
             }
         };
 
-        if let Err(e) = qpv2_core::types::MultisigConfig::pre_validate(
-            co_signers.len() + 1,
-            self.multisig_threshold,
-            self.multisig_required_first_n,
-        ) {
-            self.status = Status::Error(e);
-            return;
-        }
-
-        let auth = match self.resolve_auth_key("create a multisig account") {
-            Ok(a) => a,
-            Err(e) => {
-                self.status = Status::Error(e);
-                return;
-            }
-        };
-
-        let variant = match KeyVault::get_spx_variant(self.wallet_id) {
-            Ok(v) => v,
-            Err(e) => {
-                self.status =
-                    Status::Error(format!("Failed to read wallet variant: {}", e));
-                return;
-            }
-        };
-
-        let vault = KeyVault::new(variant, self.wallet_id);
-        match vault.gen_new_multisig_account(
-            auth,
+        match KeyVault::gen_multisig_account(
+            self.wallet_id,
+            &local_lock_args,
             co_signers,
             self.multisig_threshold,
             self.multisig_required_first_n,
@@ -989,7 +978,7 @@ impl App {
         };
 
         match keychain::fido2::authenticate(&cred_bytes, &pin) {
-            Ok(_) => match KeyVault::get_singlesig_accounts(self.wallet_id) {
+            Ok(_) => match KeyVault::get_all_accounts(self.wallet_id) {
                 Ok(accounts) => {
                     self.accounts = accounts;
                     self.screen = Screen::Unlocked;
