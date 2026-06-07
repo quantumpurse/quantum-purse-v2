@@ -15,6 +15,164 @@ use ckb_types::{
     H256,
 };
 
+/// Computes the 32-byte CKB_TX_MESSAGE_ALL hash for a given unsigned transaction.
+///
+/// This is the message that each signer signs with their SPHINCS+ key.
+/// Handles the `ckb_types` → `ckb_gen_types` conversion internally.
+pub fn compute_signing_message(
+    tx: &TransactionView,
+    input_cells: &[(CellOutput, Bytes)],
+    script_group_index: usize,
+) -> Result<[u8; 32], NodeManagerError> {
+    let packed_tx = tx.data();
+    let gen_tx = ckb_gen_types::packed::Transaction::from_slice(packed_tx.as_slice())
+        .map_err(|e| NodeManagerError::RpcError(format!("Invalid Transaction: {}", e)))?;
+
+    let gen_inputs: Vec<(ckb_gen_types::packed::CellOutput, ckb_gen_types::bytes::Bytes)> =
+        input_cells
+            .iter()
+            .map(|(output, data)| {
+                let gen_output =
+                    ckb_gen_types::packed::CellOutput::from_slice(output.as_slice())
+                        .expect("valid CellOutput");
+                (
+                    gen_output,
+                    ckb_gen_types::bytes::Bytes::copy_from_slice(data),
+                )
+            })
+            .collect();
+
+    let mut hasher = ckb_fips205_utils::Hasher::message_hasher();
+    ckb_fips205_utils::ckb_tx_message_all_from_mock_tx::generate_ckb_tx_message_all(
+        &gen_tx,
+        &gen_inputs,
+        ckb_fips205_utils::ckb_tx_message_all_from_mock_tx::ScriptOrIndex::Index(
+            script_group_index,
+        ),
+        &mut hasher,
+    )
+    .map_err(|e| NodeManagerError::RpcError(format!("Failed to compute tx message: {:?}", e)))?;
+
+    Ok(hasher.hash())
+}
+
+/// Builds a `SigningRequest` from an unsigned transaction and its context.
+///
+/// Computes the CKB_TX_MESSAGE_ALL signing message and packages everything
+/// a co-signer needs to verify and sign the transaction.
+pub fn build_signing_request(
+    tx: &TransactionView,
+    input_cells: &[(CellOutput, Bytes)],
+    config: &qpv2_core::types::MultisigConfig,
+    script_group_index: usize,
+    is_mainnet: bool,
+    metadata: qpv2_core::types::SigningMetadata,
+) -> Result<qpv2_core::types::SigningRequest, NodeManagerError> {
+    let signing_message = compute_signing_message(tx, input_cells, script_group_index)?;
+
+    let json_tx: ckb_jsonrpc_types::Transaction = tx.data().into();
+    let unsigned_tx = serde_json::to_value(json_tx)
+        .map_err(|e| NodeManagerError::RpcError(format!("TX serialization failed: {}", e)))?;
+
+    let input_cells_hex: Vec<(String, String)> = input_cells
+        .iter()
+        .map(|(output, data)| {
+            (
+                hex::encode(output.as_slice()),
+                hex::encode(data.as_ref()),
+            )
+        })
+        .collect();
+
+    Ok(qpv2_core::types::SigningRequest {
+        version: 1,
+        unsigned_tx,
+        input_cells: input_cells_hex,
+        signing_message: hex::encode(signing_message),
+        multisig_config: config.clone(),
+        script_group_index,
+        is_mainnet,
+        metadata,
+    })
+}
+
+/// Assembles the complete witness lock field for a multisig transaction.
+///
+/// Takes the multisig configuration and a set of `(signer_index, raw_signature)`
+/// pairs. Validates that exactly M signatures are present, the first R signers
+/// have signatures, and there are no duplicates.
+///
+/// Returns the byte vector to be placed in `WitnessArgs.lock`.
+pub fn assemble_multisig_witness(
+    config: &qpv2_core::types::MultisigConfig,
+    signatures: &[(usize, Vec<u8>)],
+) -> Result<Vec<u8>, NodeManagerError> {
+    let n = config.signers.len();
+    let m = config.threshold as usize;
+    let r = config.required_first_n as usize;
+
+    if signatures.len() != m {
+        return Err(NodeManagerError::RpcError(format!(
+            "Expected {} signatures (threshold), got {}.",
+            m,
+            signatures.len()
+        )));
+    }
+
+    let sig_indices: std::collections::HashSet<usize> =
+        signatures.iter().map(|(i, _)| *i).collect();
+    if sig_indices.len() != signatures.len() {
+        return Err(NodeManagerError::RpcError(
+            "Duplicate signer indices in signatures.".to_string(),
+        ));
+    }
+
+    for i in 0..r {
+        if !sig_indices.contains(&i) {
+            return Err(NodeManagerError::RpcError(format!(
+                "Signer {} is required (required_first_n={}) but has no signature.",
+                i, r
+            )));
+        }
+    }
+
+    for &(idx, _) in signatures {
+        if idx >= n {
+            return Err(NodeManagerError::RpcError(format!(
+                "Signer index {} out of range (N={}).",
+                idx, n
+            )));
+        }
+    }
+
+    let mut lock = Vec::new();
+    lock.extend_from_slice(&config.header_bytes());
+
+    for (i, signer) in config.signers.iter().enumerate() {
+        let param_id: ckb_fips205_utils::ParamId = (signer.variant as u8)
+            .try_into()
+            .expect("SpxVariant and ParamId share discriminants");
+
+        if let Some((_, sig)) = signatures.iter().find(|(idx, _)| *idx == i) {
+            let (_, expected_sig_len) = ckb_fips205_utils::verifying::lengths(param_id);
+            if sig.len() != expected_sig_len {
+                return Err(NodeManagerError::RpcError(format!(
+                    "Signer {} signature length mismatch: expected {}, got {}.",
+                    i, expected_sig_len, sig.len()
+                )));
+            }
+            lock.push(ckb_fips205_utils::construct_flag(param_id, true));
+            lock.extend_from_slice(&signer.pubkey);
+            lock.extend_from_slice(sig);
+        } else {
+            lock.push(ckb_fips205_utils::construct_flag(param_id, false));
+            lock.extend_from_slice(&signer.pubkey);
+        }
+    }
+
+    Ok(lock)
+}
+
 /// Fetches the input cells (CellOutput + data) for every input in a transaction.
 ///
 /// This data is required by `generate_ckb_tx_message_all` to compute the

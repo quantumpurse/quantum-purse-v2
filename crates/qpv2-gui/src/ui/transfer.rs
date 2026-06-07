@@ -269,6 +269,7 @@ impl App {
                         let btn_text = match &self.tx_status {
                             TransactionStatus::Building => "Building transaction...",
                             TransactionStatus::AwaitingSignature => "Waiting for Touch ID...",
+                            TransactionStatus::AwaitingCoSigners { .. } => "Awaiting co-signers...",
                             TransactionStatus::Sending => "Broadcasting...",
                             _ => "Confirm Send",
                         };
@@ -291,6 +292,11 @@ impl App {
 
                     });
 
+
+                // ── Multisig co-signer coordination ──
+                if matches!(self.tx_status, TransactionStatus::AwaitingCoSigners { .. }) {
+                    self.show_cosigner_panel(ui);
+                }
 
                 // ── Address Book ──
                 let mut seen: HashSet<String> = HashSet::new();

@@ -222,6 +222,26 @@ impl App {
 												.color(self.colors.text_muted)
 												.family(egui::FontFamily::Monospace),
 										);
+										let signer = &account.config.signers[0];
+										let pk_hex = hex::encode(&signer.pubkey);
+										let pk_short = if pk_hex.len() > 40 {
+											format!(
+												"{}...{}",
+												&pk_hex[..20],
+												&pk_hex[pk_hex.len() - 20..]
+											)
+										} else {
+											pk_hex
+										};
+										ui.label(
+											egui::RichText::new(format!(
+												"{} {}",
+												signer.variant, pk_short
+											))
+											.size(9.0)
+											.color(self.colors.accent)
+											.family(egui::FontFamily::Monospace),
+										);
 									});
 
 									// Copy buttons (right-aligned)

@@ -1,7 +1,6 @@
 //! Transaction building, signing, and sending.
 
 use crate::types::{Status, TransactionKind, TransactionStatus, CKB_DECIMAL_PLACES};
-use crate::utils::spx_witness_lock_size;
 use crate::App;
 use ckb_node::{NodeType, QpClient};
 use qpv2_core::{types::AuthKey, KeyVault};
@@ -70,17 +69,8 @@ impl App {
             }
         };
 
-        // Determine the SPHINCS+ variant to calculate placeholder witness size
-        let variant = match KeyVault::get_spx_variant(self.wallet_id) {
-            Ok(v) => v,
-            Err(e) => {
-                let msg = format!("Failed to read wallet variant: {}", e);
-                tracing::error!("{}", msg);
-                self.tx_status = TransactionStatus::Error(msg);
-                return;
-            }
-        };
-        let witness_lock_size = spx_witness_lock_size(variant);
+        let account = &self.accounts[from_idx];
+        let max_witness_lock_size = account.config.max_witness_lock_size();
 
         let send_all = self.transfer_all;
 
@@ -131,7 +121,7 @@ impl App {
                     .map_err(|e| format!("Invalid recipient address: {}", e))?;
 
                 let builder = ckb_node::QpTransferBuilder::new(&qp_client, is_mainnet)
-                    .with_placeholder_lock_size(witness_lock_size);
+                    .with_placeholder_lock_size(max_witness_lock_size);
 
                 let unsigned_tx = if send_all {
                     let (tx, _) = builder
@@ -200,16 +190,8 @@ impl App {
             }
         };
 
-        let variant = match KeyVault::get_spx_variant(self.wallet_id) {
-            Ok(v) => v,
-            Err(e) => {
-                let msg = format!("Failed to read wallet variant: {}", e);
-                tracing::error!("{}", msg);
-                self.tx_status = TransactionStatus::Error(msg);
-                return;
-            }
-        };
-        let witness_lock_size = spx_witness_lock_size(variant);
+        let account = &self.accounts[from_idx];
+        let max_witness_lock_size = account.config.max_witness_lock_size();
 
         let deposit_all = self.dao_deposit_all;
 
@@ -250,7 +232,7 @@ impl App {
                     .map_err(|e| format!("Invalid sender address: {}", e))?;
 
                 let builder = ckb_node::QpDaoDepositBuilder::new(&qp_client, is_mainnet)
-                    .with_placeholder_lock_size(witness_lock_size);
+                    .with_placeholder_lock_size(max_witness_lock_size);
 
                 let unsigned_tx = if deposit_all {
                     let (tx, _) = builder
@@ -295,16 +277,14 @@ impl App {
 
         let fee_rate: u64 = self.dao_deposit_fee_rate.trim().parse().unwrap_or(1000);
 
-        let variant = match KeyVault::get_spx_variant(self.wallet_id) {
-            Ok(v) => v,
-            Err(e) => {
-                let msg = format!("Failed to read wallet variant: {}", e);
-                tracing::error!("{}", msg);
-                self.tx_status = TransactionStatus::Error(msg);
+        let account = match self.accounts.iter().find(|a| a.lock_args == lock_args) {
+            Some(a) => a,
+            None => {
+                self.tx_status = TransactionStatus::Error("Account not found.".to_string());
                 return;
             }
         };
-        let witness_lock_size = spx_witness_lock_size(variant);
+        let max_witness_lock_size = account.config.max_witness_lock_size();
 
         tracing::info!("DAO prepare started: wallet_id={}", self.wallet_id);
         self.tx_status = TransactionStatus::Building;
@@ -324,7 +304,7 @@ impl App {
                     .map_err(|e| format!("Invalid sender address: {}", e))?;
 
                 let unsigned_tx = ckb_node::QpDaoPrepareBuilder::new(&qp_client, is_mainnet)
-                    .with_placeholder_lock_size(witness_lock_size)
+                    .with_placeholder_lock_size(max_witness_lock_size)
                     .build_unsigned_dao_request_withdraw(
                         &from_address,
                         vec![deposit_out_point],
@@ -364,16 +344,14 @@ impl App {
 
         let fee_rate: u64 = self.dao_deposit_fee_rate.trim().parse().unwrap_or(1000);
 
-        let variant = match KeyVault::get_spx_variant(self.wallet_id) {
-            Ok(v) => v,
-            Err(e) => {
-                let msg = format!("Failed to read wallet variant: {}", e);
-                tracing::error!("{}", msg);
-                self.tx_status = TransactionStatus::Error(msg);
+        let account = match self.accounts.iter().find(|a| a.lock_args == lock_args) {
+            Some(a) => a,
+            None => {
+                self.tx_status = TransactionStatus::Error("Account not found.".to_string());
                 return;
             }
         };
-        let witness_lock_size = spx_witness_lock_size(variant);
+        let max_witness_lock_size = account.config.max_witness_lock_size();
 
         tracing::info!("DAO withdraw started: wallet_id={}", self.wallet_id);
         self.tx_status = TransactionStatus::Building;
@@ -393,7 +371,7 @@ impl App {
                     .map_err(|e| format!("Invalid sender address: {}", e))?;
 
                 let unsigned_tx = ckb_node::QpDaoWithdrawBuilder::new(&qp_client, is_mainnet)
-                    .with_placeholder_lock_size(witness_lock_size)
+                    .with_placeholder_lock_size(max_witness_lock_size)
                     .build_unsigned_dao_withdraw(&from_address, vec![prepared_out_point], fee_rate)
                     .map_err(|e| format!("Failed to build DAO withdraw: {}", e))?;
 
@@ -530,11 +508,12 @@ impl App {
         );
     }
 
-    /// Auth-mechanism-agnostic signing core. Used by both the Keychain
-    /// flow (`sign_and_send_with_keychain`) and the password flow
-    /// (`sign_and_send_with_password` in `wallet.rs`). Builds the CKB
-    /// tx-message hash, signs via SPHINCS+, fills the witness, and
-    /// kicks off the send-tx background thread.
+    /// Auth-mechanism-agnostic signing core. Computes the CKB tx-message
+    /// hash, then branches:
+    /// - **Single-sig**: signs, fills witness, and broadcasts in one shot.
+    /// - **Multisig**: signs locally (one of M), builds a `SigningRequest`,
+    ///   and transitions to `AwaitingCoSigners` so the user can export the
+    ///   request and import co-signer responses.
     pub(crate) fn sign_and_send(
         &mut self,
         kind: TransactionKind,
@@ -543,7 +522,13 @@ impl App {
         input_cells: Vec<(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)>,
         lock_args: String,
     ) {
-        use ckb_types::prelude::*;
+        let account = match self.accounts.iter().find(|a| a.lock_args == lock_args) {
+            Some(a) => a.clone(),
+            None => {
+                self.tx_status = TransactionStatus::Error("Account not found.".to_string());
+                return;
+            }
+        };
 
         let variant = match KeyVault::get_spx_variant(self.wallet_id) {
             Ok(v) => v,
@@ -561,71 +546,181 @@ impl App {
             self.wallet_id
         );
 
-        let packed_tx = unsigned_tx.data();
-        let mut hasher = ckb_fips205_utils::Hasher::message_hasher();
+        let message = match ckb_node::compute_signing_message(&unsigned_tx, &input_cells, 0) {
+            Ok(m) => m,
+            Err(e) => {
+                let msg = format!("Failed to compute tx message: {}", e);
+                tracing::error!("{}", msg);
+                self.tx_status = TransactionStatus::Error(msg);
+                return;
+            }
+        };
 
-        let gen_inputs: Vec<(
-            ckb_gen_types::packed::CellOutput,
-            ckb_gen_types::bytes::Bytes,
-        )> = input_cells
-            .iter()
-            .map(|(output, data)| {
-                let raw = output.as_slice();
-                let gen_output =
-                    ckb_gen_types::packed::CellOutput::from_slice(raw).expect("valid CellOutput");
-                (
-                    gen_output,
-                    ckb_gen_types::bytes::Bytes::copy_from_slice(data),
-                )
-            })
-            .collect();
+        if account.config.is_single_sig() {
+            // ── Single-sig fast path: sign, fill, send ──
+            let vault = KeyVault::new(variant, self.wallet_id);
+            let signature_bytes = match vault.ckb_sign(auth, lock_args, message.to_vec()) {
+                Ok(sig) => sig,
+                Err(e) => {
+                    let msg = format!("Signing failed: {}", e);
+                    tracing::error!("{}", msg);
+                    self.tx_status = TransactionStatus::Error(msg);
+                    return;
+                }
+            };
 
-        let gen_tx = ckb_gen_types::packed::Transaction::from_slice(packed_tx.as_slice())
-            .expect("valid Transaction");
+            let signed_tx = match ckb_node::fill_witness(unsigned_tx, 0, signature_bytes) {
+                Ok(tx) => tx,
+                Err(e) => {
+                    let msg = format!("Failed to fill witness: {}", e);
+                    tracing::error!("{}", msg);
+                    self.tx_status = TransactionStatus::Error(msg);
+                    return;
+                }
+            };
 
-        if let Err(e) =
-            ckb_fips205_utils::ckb_tx_message_all_from_mock_tx::generate_ckb_tx_message_all(
-                &gen_tx,
-                &gen_inputs,
-                ckb_fips205_utils::ckb_tx_message_all_from_mock_tx::ScriptOrIndex::Index(0),
-                &mut hasher,
-            )
-        {
-            let msg = format!("Failed to compute tx message: {:?}", e);
-            tracing::error!("{}", msg);
-            self.tx_status = TransactionStatus::Error(msg);
-            return;
+            tracing::info!("Transaction signed successfully, sending to network.");
+            self.tx_status = TransactionStatus::Sending;
+            let qp_client = self.qp_client.clone();
+            let (tx_send, rx_send) = mpsc::channel();
+            self.transaction_send_rx = Some(rx_send);
+
+            std::thread::spawn(move || {
+                let result =
+                    ckb_node::wallet_helpers::tx_builder::send_transaction(&qp_client, &signed_tx)
+                        .map(|hash| format!("{:#x}", hash))
+                        .map_err(|e| format!("Failed to send transaction: {}", e));
+                let _ = tx_send.send((kind, result));
+            });
+        } else {
+            // ── Multisig path: sign locally, then wait for co-signers ──
+            let vault = KeyVault::new(variant, self.wallet_id);
+
+            let local_lock_args = match &account.initiating_signer_lock_args {
+                Some(la) => la.clone(),
+                None => {
+                    self.tx_status = TransactionStatus::Error(
+                        "Multisig account has no local signer recorded.".to_string(),
+                    );
+                    return;
+                }
+            };
+
+            let (raw_sig, _pubkey) = match vault.raw_sign(auth, local_lock_args, message.to_vec()) {
+                Ok(s) => s,
+                Err(e) => {
+                    let msg = format!("Signing failed: {}", e);
+                    tracing::error!("{}", msg);
+                    self.tx_status = TransactionStatus::Error(msg);
+                    return;
+                }
+            };
+
+            let signer_index = match account
+                .config
+                .signers
+                .iter()
+                .position(|s| s.pubkey == _pubkey && s.variant == variant)
+            {
+                Some(i) => i,
+                None => {
+                    self.tx_status = TransactionStatus::Error(
+                        "Local signer pubkey not found in multisig config.".to_string(),
+                    );
+                    return;
+                }
+            };
+
+            let is_mainnet = self.qp_client.is_mainnet();
+            let from_addr = crate::utils::lock_args_to_address(&lock_args, is_mainnet)
+                .unwrap_or_else(|_| format!("0x{}", &lock_args));
+
+            let request = match ckb_node::build_signing_request(
+                &unsigned_tx,
+                &input_cells,
+                &account.config,
+                0,
+                is_mainnet,
+                qpv2_core::types::SigningMetadata {
+                    from_address: from_addr,
+                    to_address: None,
+                    amount_ckb: None,
+                    tx_type: format!("{:?}", kind),
+                },
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    let msg = format!("Failed to build signing request: {}", e);
+                    tracing::error!("{}", msg);
+                    self.tx_status = TransactionStatus::Error(msg);
+                    return;
+                }
+            };
+
+            tracing::info!(
+                "Multisig: local signer {} signed, awaiting {} more signature(s).",
+                signer_index,
+                account.config.threshold as usize - 1
+            );
+
+            self.tx_status = TransactionStatus::AwaitingCoSigners {
+                kind,
+                request,
+                unsigned_tx,
+                signatures: vec![(signer_index, raw_sig)],
+                import_response_json: String::new(),
+            };
         }
-        let message = hasher.hash().to_vec();
+    }
 
-        let vault = KeyVault::new(variant, self.wallet_id);
-        let signature_bytes = match vault.ckb_sign(auth, lock_args, message) {
-            Ok(sig) => sig,
-            Err(e) => {
-                let msg = format!("Signing failed: {}", e);
-                tracing::error!("{}", msg);
-                self.tx_status = TransactionStatus::Error(msg);
+    /// Assemble the collected multisig signatures and broadcast.
+    /// Called from the co-signer coordination UI when M signatures are collected.
+    pub(crate) fn submit_multisig_transaction(&mut self) {
+        let (kind, request, unsigned_tx, signatures) = match std::mem::replace(
+            &mut self.tx_status,
+            TransactionStatus::Idle,
+        ) {
+            TransactionStatus::AwaitingCoSigners {
+                kind,
+                request,
+                unsigned_tx,
+                signatures,
+                ..
+            } => (kind, request, unsigned_tx, signatures),
+            other => {
+                self.tx_status = other;
                 return;
             }
         };
 
-        let signed_tx = match ckb_node::fill_witness(unsigned_tx, 0, signature_bytes) {
-            Ok(tx) => tx,
-            Err(e) => {
-                let msg = format!("Failed to fill witness: {}", e);
-                tracing::error!("{}", msg);
-                self.tx_status = TransactionStatus::Error(msg);
-                return;
-            }
-        };
+        let witness_lock =
+            match ckb_node::assemble_multisig_witness(&request.multisig_config, &signatures) {
+                Ok(w) => w,
+                Err(e) => {
+                    let msg = format!("Failed to assemble witness: {}", e);
+                    tracing::error!("{}", msg);
+                    self.tx_status = TransactionStatus::Error(msg);
+                    return;
+                }
+            };
 
-        tracing::info!("Transaction signed successfully, sending to network.");
+        let signed_tx =
+            match ckb_node::fill_witness(unsigned_tx, request.script_group_index, witness_lock) {
+                Ok(tx) => tx,
+                Err(e) => {
+                    let msg = format!("Failed to fill witness: {}", e);
+                    tracing::error!("{}", msg);
+                    self.tx_status = TransactionStatus::Error(msg);
+                    return;
+                }
+            };
+
+        tracing::info!("Multisig transaction assembled, sending to network.");
         self.tx_status = TransactionStatus::Sending;
         let qp_client = self.qp_client.clone();
         let (tx_send, rx_send) = mpsc::channel();
         self.transaction_send_rx = Some(rx_send);
 
-        // Spawn a thread to handle transaction submission.
         std::thread::spawn(move || {
             let result =
                 ckb_node::wallet_helpers::tx_builder::send_transaction(&qp_client, &signed_tx)

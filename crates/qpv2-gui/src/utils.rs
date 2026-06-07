@@ -1,7 +1,5 @@
 //! Shared utility functions.
 
-use qpv2_core::types::SpxVariant;
-
 use qpv2_core::constants::{
     CKB_MAINNET_CODE_HASH, CKB_MAINNET_HASH_TYPE, CKB_TESTNET_CODE_HASH, CKB_TESTNET_HASH_TYPE,
 };
@@ -64,17 +62,6 @@ pub(crate) fn script_to_address(script: &ckb_types::packed::Script, is_mainnet: 
     };
     let payload = AddressPayload::from(script.clone());
     Address::new(network, payload, true).to_string()
-}
-
-/// Computes the SPHINCS+ witness lock size for a given variant.
-///
-/// The lock field format is: `[4-byte config] + [1-byte flag] + [pubkey] + [signature]`.
-pub(crate) fn spx_witness_lock_size(variant: SpxVariant) -> usize {
-    let param_id: ckb_fips205_utils::ParamId = (variant as u8)
-        .try_into()
-        .expect("SpxVariant and ParamId use the same discriminants");
-    let (pk_len, sig_len) = ckb_fips205_utils::verifying::lengths(param_id);
-    5 + pk_len + sig_len
 }
 
 /// Format shannons as a numeric CKB string without the unit suffix.

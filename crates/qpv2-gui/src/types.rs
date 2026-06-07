@@ -179,6 +179,16 @@ pub(crate) enum TransactionStatus {
     Building,
     /// Waiting for Touch ID to sign.
     AwaitingSignature,
+    /// Multisig: waiting for co-signer responses.
+    AwaitingCoSigners {
+        kind: TransactionKind,
+        request: qpv2_core::types::SigningRequest,
+        unsigned_tx: ckb_types::core::TransactionView,
+        /// Signatures collected so far: (signer_index, raw_sig_bytes).
+        signatures: Vec<(usize, Vec<u8>)>,
+        /// Clipboard/paste buffer for importing a co-signer response.
+        import_response_json: String,
+    },
     /// Sending the signed transaction.
     Sending,
     /// Transaction sent successfully.

@@ -303,6 +303,7 @@ impl KeyVault {
             index: 0,
             lock_args: encode(lock_script_args),
             config,
+            initiating_signer_lock_args: None,
         };
 
         db::add_singlesig_account(self.wallet_id, account.clone()).map_err(|e| e.to_string())?;
@@ -356,6 +357,7 @@ impl KeyVault {
             index: 0,
             lock_args: encode(lock_script_args),
             config,
+            initiating_signer_lock_args: Some(singlesig_lock_args.to_string()),
         };
 
         db::add_multisig_account(wallet_id, account.clone()).map_err(|e| e.to_string())?;
@@ -793,6 +795,7 @@ impl KeyVault {
                 index: 0,
                 lock_args: encode(lock_script_args),
                 config,
+                initiating_signer_lock_args: None,
             };
             lock_args_array.push(encode(lock_script_args));
 

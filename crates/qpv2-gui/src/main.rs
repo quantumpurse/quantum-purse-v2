@@ -177,6 +177,10 @@ pub(crate) struct App {
     pub(crate) multisig_required_first_n: u8,
     pub(crate) multisig_co_signers: Vec<(String, qpv2_core::types::SpxVariant)>,
 
+    // ── Co-signer signing flow (receiving side) ──
+    pub(crate) cosign_request_json: String,
+    pub(crate) cosign_response_json: Option<String>,
+
     // Periodic polling timer for balances, tx history, and DAO cells.
     pub(crate) last_poll_time: std::time::Instant,
 
@@ -394,6 +398,8 @@ impl App {
             multisig_threshold: 2,
             multisig_required_first_n: 0,
             multisig_co_signers: vec![],
+            cosign_request_json: String::new(),
+            cosign_response_json: None,
             last_poll_time: std::time::Instant::now(),
             status_seen: Status::None,
             status_set_at: None,

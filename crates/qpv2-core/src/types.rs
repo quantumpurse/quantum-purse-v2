@@ -46,9 +46,9 @@ pub struct MultisigConfig {
 }
 
 impl MultisigConfig {
-    /// Validate multisig parameters before authentication.
-    /// `total_signers` is the expected N (co_signers + 1 for the local key).
-    pub fn pre_validate(total_signers: usize, threshold: u8, required_first_n: u8) -> Result<(), String> {
+    /// Validate multisig parameters.
+    fn pre_validate(signers: &[Signer], threshold: u8, required_first_n: u8) -> Result<(), String> {
+        let total_signers = signers.len();
         if total_signers == 0 || total_signers > 255 {
             return Err(format!("Signer count must be 1..=255, got {}.", total_signers));
         }
@@ -67,6 +67,13 @@ impl MultisigConfig {
                 required_first_n, threshold
             ));
         }
+        for (i, a) in signers.iter().enumerate() {
+            for b in signers.iter().skip(i + 1) {
+                if a.pubkey == b.pubkey {
+                    return Err("Duplicate public key in signer list.".to_string());
+                }
+            }
+        }
         Ok(())
     }
 
@@ -76,7 +83,7 @@ impl MultisigConfig {
         threshold: u8,
         signers: Vec<Signer>,
     ) -> Result<Self, String> {
-        Self::pre_validate(signers.len(), threshold, required_first_n)?;
+        Self::pre_validate(&signers, threshold, required_first_n)?;
         Ok(MultisigConfig {
             required_first_n,
             threshold,
@@ -101,6 +108,39 @@ impl MultisigConfig {
             self.threshold,
             self.signers.len() as u8,
         ]
+    }
+
+    /// Whether this config represents a single-signer account (1-of-1).
+    pub fn is_single_sig(&self) -> bool {
+        self.signers.len() == 1 && self.threshold == 1
+    }
+
+    /// Maximum byte size of the WitnessArgs lock field for this config.
+    ///
+    /// Uses the M signers with the largest signatures to ensure the fee
+    /// covers any valid M-of-N combination. CKB_TX_MESSAGE_ALL excludes
+    /// the lock field entirely, so the signing message is the same
+    /// regardless of which M signers participate.
+    ///
+    /// Single-sig is the 1-of-1 degenerate case of multisig and uses the
+    /// same witness layout, so this function handles both uniformly.
+    ///
+    /// Layout: `[S R M N]` (4 bytes) + N PWOS entries, where each is:
+    /// - With signature: 1 (flag) + pubkey_len + sig_len
+    /// - Without:        1 (flag) + pubkey_len
+    pub fn max_witness_lock_size(&self) -> usize {
+        let mut size = 4;
+        let mut sig_lens = Vec::with_capacity(self.signers.len());
+        for signer in &self.signers {
+            let param_id: ckb_fips205_utils::ParamId = (signer.variant as u8)
+                .try_into()
+                .expect("SpxVariant and ParamId share discriminants");
+            let (pk_len, sig_len) = ckb_fips205_utils::verifying::lengths(param_id);
+            size += 1 + pk_len;
+            sig_lens.push(sig_len);
+        }
+        sig_lens.sort_unstable_by(|a, b| b.cmp(a));
+        size + sig_lens.iter().take(self.threshold as usize).sum::<usize>()
     }
 
     /// Compute 32-byte lock script args.
@@ -129,6 +169,60 @@ pub struct SphincsPlusAccount {
     pub lock_args: String,
     /// Lock script multisig configuration.
     pub config: MultisigConfig,
+    /// For multisig accounts: the singlesig lock_args of the local signer
+    /// that was chosen when creating this account. Used by `sign_and_send`
+    /// to pick the correct key. `None` for singlesig accounts.
+    #[serde(default)]
+    pub initiating_signer_lock_args: Option<String>,
+}
+
+/// Human-readable metadata so co-signers can verify what they're signing.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SigningMetadata {
+    /// Sender address (bech32m).
+    pub from_address: String,
+    /// Recipient address, if applicable.
+    pub to_address: Option<String>,
+    /// Amount in CKB, if applicable.
+    pub amount_ckb: Option<String>,
+    /// Transaction type description (e.g. "Transfer", "DAO Deposit").
+    pub tx_type: String,
+}
+
+/// A request sent to co-signers asking them to sign a transaction.
+///
+/// Contains the unsigned transaction, pre-computed signing message,
+/// and enough context for the co-signer to independently verify and sign.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SigningRequest {
+    pub version: u8,
+    /// The unsigned CKB transaction (ckb_jsonrpc_types::Transaction as JSON).
+    pub unsigned_tx: serde_json::Value,
+    /// Previous output cells for CKB_TX_MESSAGE_ALL verification.
+    /// Each entry: (CellOutput molecule hex, data hex).
+    pub input_cells: Vec<(String, String)>,
+    /// The 32-byte signing message (blake2b hash), hex-encoded.
+    pub signing_message: String,
+    /// Full multisig configuration for the sending account.
+    pub multisig_config: MultisigConfig,
+    /// Witness index in the transaction where the lock field goes.
+    pub script_group_index: usize,
+    /// Whether this targets mainnet or testnet.
+    pub is_mainnet: bool,
+    /// Human-readable summary for co-signer verification.
+    pub metadata: SigningMetadata,
+}
+
+/// A co-signer's response containing their signature.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SigningResponse {
+    pub version: u8,
+    /// Index of this signer within the multisig config's signers array.
+    pub signer_index: usize,
+    /// Raw SPHINCS+ signature bytes, hex-encoded.
+    pub signature: String,
+    /// Echo of the signing message this was signed against, for cross-check.
+    pub signing_message: String,
 }
 
 /// Authentication method used to protect the vault.

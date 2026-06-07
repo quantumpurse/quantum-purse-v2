@@ -273,6 +273,56 @@ impl App {
 												.color(self.colors.text_muted)
 												.family(egui::FontFamily::Monospace),
 										);
+
+										// Signer list
+										ui.add_space(4.0);
+										for (si, signer) in
+											account.config.signers.iter().enumerate()
+										{
+											let pk_hex = hex::encode(&signer.pubkey);
+											let pk_short = if pk_hex.len() > 40 {
+												format!(
+													"{}...{}",
+													&pk_hex[..20],
+													&pk_hex[pk_hex.len() - 20..]
+												)
+											} else {
+												pk_hex
+											};
+											let is_local = account
+												.initiating_signer_lock_args
+												.as_ref()
+												.and_then(|la| {
+													self.accounts.iter().find(|a| {
+														a.lock_args == *la
+															&& a.config.is_single_sig()
+													})
+												})
+												.is_some_and(|a| {
+													a.config.signers[0].pubkey == signer.pubkey
+												});
+											let label = if is_local {
+												format!(
+													"  {} {} {} (you)",
+													si, signer.variant, pk_short
+												)
+											} else {
+												format!(
+													"  {} {} {}",
+													si, signer.variant, pk_short
+												)
+											};
+											ui.label(
+												egui::RichText::new(label)
+													.size(9.0)
+													.color(if is_local {
+														self.colors.accent
+													} else {
+														self.colors.text_muted
+													})
+													.family(egui::FontFamily::Monospace),
+											);
+										}
 									});
 
 									// Copy address button (right-aligned)
@@ -298,6 +348,9 @@ impl App {
 						ui.add_space(6.0);
 					}
 				}
+
+				// ── Co-signer signing flow ──
+				self.show_sign_request_ui(ui);
 
 				ui.add_space(20.0);
 			}); // vertical

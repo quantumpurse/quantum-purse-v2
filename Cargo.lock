@@ -1171,6 +1171,8 @@ name = "ckb-node"
 version = "0.1.0"
 dependencies = [
  "byteorder",
+ "ckb-fips205-utils",
+ "ckb-gen-types",
  "ckb-jsonrpc-types",
  "ckb-sdk",
  "ckb-types",
@@ -4698,12 +4700,17 @@ dependencies = [
 name = "qpv2-cli"
 version = "1.0.0"
 dependencies = [
+ "ckb-jsonrpc-types",
+ "ckb-node",
+ "ckb-sdk",
+ "ckb-types",
  "clap",
  "hex",
  "keychain",
  "names",
  "qpv2-core",
  "rpassword",
+ "serde_json",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
