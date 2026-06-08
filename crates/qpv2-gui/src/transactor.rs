@@ -65,9 +65,16 @@ impl App {
 
         // check if sender and receiver share the same network prefix.
         if !to_addr_str.starts_with(&from_addr_str[..3]) {
-            self.tx_status = TransactionStatus::Error("Sender and recipient address network prefixes do not match.".to_string());
+            let from_net = if is_mainnet { "mainnet" } else { "testnet" };
+            let to_net = if to_addr_str.starts_with("ckb") { "mainnet" } else { "testnet" };
+            self.tx_status = TransactionStatus::Error(format!(
+                "Network mismatch: sending from {} to a {} address.",
+                from_net, to_net
+            ));
             return;
         }
+
+        // check if recipient address is valid
         let to_address: ckb_sdk::Address = match to_addr_str.parse() {
             Ok(a) => a,
             Err(e) => {

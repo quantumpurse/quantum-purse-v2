@@ -116,13 +116,13 @@ impl App {
                                     if is_mainnet {
                                         ("mainnet", self.colors.accent_tint, self.colors.accent)
                                     } else {
-                                        ("wrong network", egui::Color32::from_rgba_unmultiplied(255, 70, 70, 20), self.colors.danger)
+                                        ("Invalid address", egui::Color32::from_rgba_unmultiplied(255, 70, 70, 20), self.colors.danger)
                                     }
                                 } else if trimmed.starts_with("ckt") {
                                     if !is_mainnet {
                                         ("testnet", self.colors.accent2_tint, self.colors.accent2)
                                     } else {
-                                        ("wrong network", egui::Color32::from_rgba_unmultiplied(255, 70, 70, 20), self.colors.danger)
+                                        ("Invalid address", egui::Color32::from_rgba_unmultiplied(255, 70, 70, 20), self.colors.danger)
                                     }
                                 } else {
                                     (

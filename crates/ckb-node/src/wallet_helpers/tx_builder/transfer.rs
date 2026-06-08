@@ -68,6 +68,11 @@ impl<'a> QpTransferBuilder<'a> {
         fee_rate: u64,
         data: Option<Vec<u8>>,
     ) -> Result<TransactionView, NodeManagerError> {
+        if from_address.network() != to_address.network() {
+            return Err(NodeManagerError::RpcError(
+                "Sender and recipient are on different networks.".to_string(),
+            ));
+        }
         let from_lock_script = Script::from(from_address.payload());
         let to_lock_script = Script::from(to_address.payload());
 
@@ -137,6 +142,11 @@ impl<'a> QpTransferBuilder<'a> {
         fee_rate: u64,
         data: Option<Vec<u8>>,
     ) -> Result<(TransactionView, u64), NodeManagerError> {
+        if from_address.network() != to_address.network() {
+            return Err(NodeManagerError::RpcError(
+                "Sender and recipient are on different networks.".to_string(),
+            ));
+        }
         let from_lock_script = Script::from(from_address.payload());
         let to_lock_script = Script::from(to_address.payload());
         let output_data = Bytes::from(data.unwrap_or_default());
