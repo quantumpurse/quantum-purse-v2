@@ -44,7 +44,7 @@ impl App {
         let lock_args = self.accounts[from_idx].lock_args.clone();
 
         let is_mainnet = self.qp_client.is_mainnet();
-        let from_addr_str = match crate::utils::lock_args_to_address(&lock_args, is_mainnet) {
+        let from_address = match crate::utils::lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
             Err(e) => {
                 let msg = format!("Invalid sender address: {}", e);
@@ -53,15 +53,9 @@ impl App {
                 return;
             }
         };
-        let from_address: ckb_sdk::Address = match from_addr_str.parse() {
-            Ok(a) => a,
-            Err(e) => {
-                self.tx_status = TransactionStatus::Error(format!("Invalid sender address: {}", e));
-                return;
-            }
-        };
+        let from_addr_str = from_address.to_string();
 
-        // validate recepient address
+        // validate recipient address
         let to_addr_str = self.transfer_recipient.trim().to_string();
         if to_addr_str.is_empty() {
             tracing::error!("Recipient address is empty.");
@@ -190,7 +184,7 @@ impl App {
         let lock_args = self.accounts[from_idx].lock_args.clone();
 
         let is_mainnet = self.qp_client.is_mainnet();
-        let from_addr_str = match crate::utils::lock_args_to_address(&lock_args, is_mainnet) {
+        let from_address = match crate::utils::lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
             Err(e) => {
                 let msg = format!("Invalid sender address: {}", e);
@@ -246,10 +240,6 @@ impl App {
             let result = (|| -> Result<_, String> {
                 check_qr_lock_dep_ready(&qp_client, node_type)?;
 
-                let from_address: ckb_sdk::Address = from_addr_str
-                    .parse()
-                    .map_err(|e| format!("Invalid sender address: {}", e))?;
-
                 let builder = ckb_node::QpDaoDepositBuilder::new(&qp_client, is_mainnet)
                     .with_placeholder_lock_size(max_witness_lock_size);
 
@@ -284,7 +274,7 @@ impl App {
         lock_args: String,
     ) {
         let is_mainnet = self.qp_client.is_mainnet();
-        let from_addr_str = match crate::utils::lock_args_to_address(&lock_args, is_mainnet) {
+        let from_address = match crate::utils::lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
             Err(e) => {
                 let msg = format!("Invalid sender address: {}", e);
@@ -318,10 +308,6 @@ impl App {
             let result = (|| -> Result<_, String> {
                 check_qr_lock_dep_ready(&qp_client, node_type)?;
 
-                let from_address: ckb_sdk::Address = from_addr_str
-                    .parse()
-                    .map_err(|e| format!("Invalid sender address: {}", e))?;
-
                 let unsigned_tx = ckb_node::QpDaoPrepareBuilder::new(&qp_client, is_mainnet)
                     .with_placeholder_lock_size(max_witness_lock_size)
                     .build_unsigned_dao_request_withdraw(
@@ -351,7 +337,7 @@ impl App {
         lock_args: String,
     ) {
         let is_mainnet = self.qp_client.is_mainnet();
-        let from_addr_str = match crate::utils::lock_args_to_address(&lock_args, is_mainnet) {
+        let from_address = match crate::utils::lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
             Err(e) => {
                 let msg = format!("Invalid sender address: {}", e);
@@ -384,10 +370,6 @@ impl App {
         std::thread::spawn(move || {
             let result = (|| -> Result<_, String> {
                 check_qr_lock_dep_ready(&qp_client, node_type)?;
-
-                let from_address: ckb_sdk::Address = from_addr_str
-                    .parse()
-                    .map_err(|e| format!("Invalid sender address: {}", e))?;
 
                 let unsigned_tx = ckb_node::QpDaoWithdrawBuilder::new(&qp_client, is_mainnet)
                     .with_placeholder_lock_size(max_witness_lock_size)
@@ -652,6 +634,7 @@ impl App {
 
             let is_mainnet = self.qp_client.is_mainnet();
             let from_addr = crate::utils::lock_args_to_address(&lock_args, is_mainnet)
+                .map(|a| a.to_string())
                 .unwrap_or_else(|_| format!("0x{}", &lock_args));
 
             let request = match ckb_node::build_signing_request(

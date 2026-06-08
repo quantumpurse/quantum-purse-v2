@@ -135,7 +135,7 @@ impl App {
 							lock_args,
 							self.qp_client.is_mainnet(),
 						) {
-							Ok(addr) => addr,
+							Ok(addr) => addr.to_string(),
 							Err(_) => format!("0x{}", lock_args),
 						};
 

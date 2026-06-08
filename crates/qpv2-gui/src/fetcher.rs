@@ -69,15 +69,7 @@ impl App {
             let mut all_ok = true;
 
             for lock_args in &all_lock_args {
-                let address_str = match crate::utils::lock_args_to_address(lock_args, is_mainnet) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        let _ = tx.send(Err(format!("Invalid address: {}", e)));
-                        all_ok = false;
-                        continue;
-                    }
-                };
-                let address: ckb_sdk::Address = match address_str.parse() {
+                let address = match crate::utils::lock_args_to_address(lock_args, is_mainnet) {
                     Ok(v) => v,
                     Err(e) => {
                         let _ = tx.send(Err(format!("Invalid address: {}", e)));
@@ -560,10 +552,7 @@ impl App {
                 // Independent RPC call: keep its error distinct from `total` so a
                 // transient failure here doesn't get masked as a real zero balance.
                 let spendable = (|| -> Result<u64, String> {
-                    let addr_str = crate::utils::lock_args_to_address(&lock_args, is_mainnet)?;
-                    let address: ckb_sdk::Address = addr_str
-                        .parse()
-                        .map_err(|e| format!("Invalid address: {}", e))?;
+                    let address = crate::utils::lock_args_to_address(&lock_args, is_mainnet)?;
                     ckb_node::wallet_helpers::queries::spendable_capacity(&qp_client, &address)
                         .map_err(|e| e.to_string())
                 })();
