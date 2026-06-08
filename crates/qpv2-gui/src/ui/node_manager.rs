@@ -170,11 +170,11 @@ impl App {
         }
 
         if selected != current_network {
-            self.temp_network = selected;
-            self.temp_node_type = self.qp_client.config().node_type;
-            if self.temp_node_type == NodeType::PublicRpc {
+            self.network = selected;
+            self.node_type = self.qp_client.config().node_type;
+            if self.node_type == NodeType::PublicRpc {
                 self.settings_rpc_url =
-                    NodeConfig::default_rpc_url_for(self.temp_node_type, self.temp_network)
+                    NodeConfig::default_rpc_url_for(self.node_type, self.network)
                         .to_string();
             }
             self.commit_node_switch();
@@ -186,8 +186,8 @@ impl App {
         if current.node_type == backend {
             return;
         }
-        self.temp_node_type = backend;
-        self.temp_network = current.network;
+        self.node_type = backend;
+        self.network = current.network;
         self.on_node_type_changed();
         self.commit_node_switch();
     }
@@ -201,7 +201,7 @@ impl App {
             tracing::error!("{}", msg);
             self.status = Status::Error(msg);
         }
-        if self.temp_network != old_network {
+        if self.network != old_network {
             self.tx_history_rx = None;
             self.load_tx_history_from_disk();
         }

@@ -393,8 +393,8 @@ impl App {
                         // previous (un-applied) session don't leak through.
                         if self.node_selector_open {
                             let cfg = self.qp_client.config();
-                            self.temp_network = cfg.network;
-                            self.temp_node_type = cfg.node_type;
+                            self.network = cfg.network;
+                            self.node_type = cfg.node_type;
                         }
                     }
 

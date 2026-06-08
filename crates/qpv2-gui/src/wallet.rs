@@ -283,11 +283,11 @@ impl App {
 
     /// Called when the node type or network changes in the UI. Refreshes
     /// `settings_rpc_url` to the default URL for the pending
-    /// `(temp_node_type, temp_network)` pair so the form preview matches
+    /// `(node_type, network)` pair so the form preview matches
     /// what the user is about to commit.
     pub(crate) fn on_node_type_changed(&mut self) {
         self.settings_rpc_url =
-            ckb_node::NodeConfig::default_rpc_url_for(self.temp_node_type, self.temp_network)
+            ckb_node::NodeConfig::default_rpc_url_for(self.node_type, self.network)
                 .to_string();
     }
 
@@ -307,8 +307,8 @@ impl App {
     /// 5. Kick off fresh balance + node-status fetches.
     pub(crate) fn apply_node_config(&mut self) {
         let mut new_cfg = self.qp_client.config().clone();
-        new_cfg.node_type = self.temp_node_type;
-        new_cfg.network = self.temp_network;
+        new_cfg.node_type = self.node_type;
+        new_cfg.network = self.network;
         new_cfg.rpc_url = self.settings_rpc_url.clone();
 
         if new_cfg.requires_binary() && !self.settings_binary_path.is_empty() {
@@ -355,8 +355,8 @@ impl App {
         self.status = Status::Info("Configuration saved. RPC reconnected.".to_string());
         tracing::info!(
             "Node config applied (node_type={:?}, network={:?})",
-            self.temp_node_type,
-            self.temp_network
+            self.node_type,
+            self.network
         );
 
         // Refresh balances + node status against the new connection so

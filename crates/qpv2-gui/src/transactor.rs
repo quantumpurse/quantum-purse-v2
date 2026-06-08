@@ -39,6 +39,7 @@ impl App {
             return;
         }
 
+        // validate from account
         let from_idx = self.transfer_from_account.min(self.accounts.len() - 1);
         let lock_args = self.accounts[from_idx].lock_args.clone();
 
@@ -52,11 +53,37 @@ impl App {
                 return;
             }
         };
+        let from_address: ckb_sdk::Address = match from_addr_str.parse() {
+            Ok(a) => a,
+            Err(e) => {
+                self.tx_status = TransactionStatus::Error(format!("Invalid sender address: {}", e));
+                return;
+            }
+        };
 
+        // validate recepient address
         let to_addr_str = self.transfer_recipient.trim().to_string();
         if to_addr_str.is_empty() {
             tracing::error!("Recipient address is empty.");
             self.tx_status = TransactionStatus::Error("Recipient address is empty.".to_string());
+            return;
+        }
+
+        // check if sender and receiver share the same network prefix.
+        if !to_addr_str.starts_with(&from_addr_str[..3]) {
+            self.tx_status = TransactionStatus::Error("Sender and recipient address network prefixes do not match.".to_string());
+            return;
+        }
+        let to_address: ckb_sdk::Address = match to_addr_str.parse() {
+            Ok(a) => a,
+            Err(e) => {
+                self.tx_status = TransactionStatus::Error(format!("Invalid recipient address: {}", e));
+                return;
+            }
+        };
+        let expected_net = if is_mainnet { ckb_sdk::NetworkType::Mainnet } else { ckb_sdk::NetworkType::Testnet };
+        if to_address.network() != expected_net {
+            self.tx_status = TransactionStatus::Error("Recipient address is for the wrong network.".to_string());
             return;
         }
 
@@ -111,14 +138,6 @@ impl App {
         std::thread::spawn(move || {
             let result = (|| -> Result<_, String> {
                 check_qr_lock_dep_ready(&qp_client, node_type)?;
-
-                // Parse addresses
-                let from_address: ckb_sdk::Address = from_addr_str
-                    .parse()
-                    .map_err(|e| format!("Invalid sender address: {}", e))?;
-                let to_address: ckb_sdk::Address = to_addr_str
-                    .parse()
-                    .map_err(|e| format!("Invalid recipient address: {}", e))?;
 
                 let builder = ckb_node::QpTransferBuilder::new(&qp_client, is_mainnet)
                     .with_placeholder_lock_size(max_witness_lock_size);

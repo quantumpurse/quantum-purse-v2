@@ -90,9 +90,9 @@ pub(crate) struct App {
     // Node selector popup state.
     pub(crate) node_selector_open: bool,
     pub(crate) node_selector_rect: Option<egui::Rect>,
-    // Temporary values for node selector popup.
-    pub(crate) temp_network: ckb_node::NetworkType,
-    pub(crate) temp_node_type: NodeType,
+    // Temporary values for node manager page (buffered until applied).
+    pub(crate) network: ckb_node::NetworkType,
+    pub(crate) node_type: NodeType,
 
     // Transaction state shared by both transfer and DAO flows.
     pub(crate) tx_status: TransactionStatus,
@@ -320,8 +320,8 @@ impl App {
         let settings_data_dir = node_config.data_dir.display().to_string();
 
         // Store temp values before moving node_config
-        let temp_network = node_config.network;
-        let temp_node_type = node_config.node_type;
+        let network = node_config.network;
+        let node_type = node_config.node_type;
 
         let wallet_cache = Self::current_wallet_cache();
 
@@ -353,8 +353,8 @@ impl App {
             balance_receiver: None,
             node_selector_open: false,
             node_selector_rect: None,
-            temp_network,
-            temp_node_type,
+            network,
+            node_type,
             transfer_recipient: String::new(),
             transfer_amount: String::new(),
             transfer_fee_rate: "1000".to_string(),

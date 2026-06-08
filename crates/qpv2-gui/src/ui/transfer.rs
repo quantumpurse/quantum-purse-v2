@@ -109,13 +109,21 @@ impl App {
                                     .size(12.0)
                                     .color(self.colors.text_muted),
                             );
-                            // Lightweight prefix check (avoids parsing every frame).
                             let trimmed = self.transfer_recipient.trim();
                             if !trimmed.is_empty() {
-                                let (label, fill, color) = if trimmed.starts_with("ckb1q") {
-                                    ("mainnet", self.colors.accent_tint, self.colors.accent)
-                                } else if trimmed.starts_with("ckt1q") {
-                                    ("testnet", self.colors.accent2_tint, self.colors.accent2)
+                                let is_mainnet = self.qp_client.is_mainnet();
+                                let (label, fill, color) = if trimmed.starts_with("ckb") {
+                                    if is_mainnet {
+                                        ("mainnet", self.colors.accent_tint, self.colors.accent)
+                                    } else {
+                                        ("wrong network", egui::Color32::from_rgba_unmultiplied(255, 70, 70, 20), self.colors.danger)
+                                    }
+                                } else if trimmed.starts_with("ckt") {
+                                    if !is_mainnet {
+                                        ("testnet", self.colors.accent2_tint, self.colors.accent2)
+                                    } else {
+                                        ("wrong network", egui::Color32::from_rgba_unmultiplied(255, 70, 70, 20), self.colors.danger)
+                                    }
                                 } else {
                                     (
                                         "invalid prefix",
