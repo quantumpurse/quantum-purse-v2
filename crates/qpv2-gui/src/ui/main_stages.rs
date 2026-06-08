@@ -512,7 +512,7 @@ impl App {
                         egui::RichText::new("DAO")
                             .size(8.0)
                             .strong()
-                            .color(self.colors.text)
+                            .color(self.colors.text),
                     );
                 });
                 ui.add_space(4.0);

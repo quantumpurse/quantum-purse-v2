@@ -60,7 +60,8 @@ impl App {
 
         let is_mainnet = self.qp_client.is_mainnet();
         let qp_client = self.qp_client.clone();
-        let all_lock_args: Vec<String> = self.accounts.iter().map(|a| a.lock_args.clone()).collect();
+        let all_lock_args: Vec<String> =
+            self.accounts.iter().map(|a| a.lock_args.clone()).collect();
 
         let (tx, rx) = mpsc::channel();
         self.dao_cells_query_rx = Some(rx);
@@ -197,7 +198,8 @@ impl App {
         };
 
         let qp_client = self.qp_client.clone();
-        let all_lock_args: Vec<String> = self.accounts.iter().map(|a| a.lock_args.clone()).collect();
+        let all_lock_args: Vec<String> =
+            self.accounts.iter().map(|a| a.lock_args.clone()).collect();
 
         let (sender, rx) = mpsc::channel();
         self.tx_history_rx = Some(rx);
@@ -525,7 +527,8 @@ impl App {
             return;
         }
 
-        let lock_args_list: Vec<String> = self.accounts.iter().map(|a| a.lock_args.clone()).collect();
+        let lock_args_list: Vec<String> =
+            self.accounts.iter().map(|a| a.lock_args.clone()).collect();
         if lock_args_list.is_empty() {
             return;
         }

@@ -66,7 +66,11 @@ impl App {
         // check if sender and receiver share the same network prefix.
         if !to_addr_str.starts_with(&from_addr_str[..3]) {
             let from_net = if is_mainnet { "mainnet" } else { "testnet" };
-            let to_net = if to_addr_str.starts_with("ckb") { "mainnet" } else { "testnet" };
+            let to_net = if to_addr_str.starts_with("ckb") {
+                "mainnet"
+            } else {
+                "testnet"
+            };
             self.tx_status = TransactionStatus::Error(format!(
                 "Network mismatch: sending from {} to a {} address.",
                 from_net, to_net
@@ -78,13 +82,19 @@ impl App {
         let to_address: ckb_sdk::Address = match to_addr_str.parse() {
             Ok(a) => a,
             Err(e) => {
-                self.tx_status = TransactionStatus::Error(format!("Invalid recipient address: {}", e));
+                self.tx_status =
+                    TransactionStatus::Error(format!("Invalid recipient address: {}", e));
                 return;
             }
         };
-        let expected_net = if is_mainnet { ckb_sdk::NetworkType::Mainnet } else { ckb_sdk::NetworkType::Testnet };
+        let expected_net = if is_mainnet {
+            ckb_sdk::NetworkType::Mainnet
+        } else {
+            ckb_sdk::NetworkType::Testnet
+        };
         if to_address.network() != expected_net {
-            self.tx_status = TransactionStatus::Error("Recipient address is for the wrong network.".to_string());
+            self.tx_status =
+                TransactionStatus::Error("Recipient address is for the wrong network.".to_string());
             return;
         }
 
@@ -685,22 +695,20 @@ impl App {
     /// Assemble the collected multisig signatures and broadcast.
     /// Called from the co-signer coordination UI when M signatures are collected.
     pub(crate) fn submit_multisig_transaction(&mut self) {
-        let (kind, request, unsigned_tx, signatures) = match std::mem::replace(
-            &mut self.tx_status,
-            TransactionStatus::Idle,
-        ) {
-            TransactionStatus::AwaitingCoSigners {
-                kind,
-                request,
-                unsigned_tx,
-                signatures,
-                ..
-            } => (kind, request, unsigned_tx, signatures),
-            other => {
-                self.tx_status = other;
-                return;
-            }
-        };
+        let (kind, request, unsigned_tx, signatures) =
+            match std::mem::replace(&mut self.tx_status, TransactionStatus::Idle) {
+                TransactionStatus::AwaitingCoSigners {
+                    kind,
+                    request,
+                    unsigned_tx,
+                    signatures,
+                    ..
+                } => (kind, request, unsigned_tx, signatures),
+                other => {
+                    self.tx_status = other;
+                    return;
+                }
+            };
 
         let witness_lock =
             match ckb_node::assemble_multisig_witness(&request.multisig_config, &signatures) {

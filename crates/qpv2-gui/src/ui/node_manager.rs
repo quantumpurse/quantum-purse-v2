@@ -72,8 +72,7 @@ impl App {
                 }
 
                 // ── Tracked Scripts (LC only) ──────────
-                if backend == NodeType::LightClient
-                    && !self.node_status.tracked_scripts.is_empty()
+                if backend == NodeType::LightClient && !self.node_status.tracked_scripts.is_empty()
                 {
                     ui.add_space(16.0);
                     self.draw_tracked_scripts_section(ui);
@@ -174,8 +173,7 @@ impl App {
             self.node_type = self.qp_client.config().node_type;
             if self.node_type == NodeType::PublicRpc {
                 self.settings_rpc_url =
-                    NodeConfig::default_rpc_url_for(self.node_type, self.network)
-                        .to_string();
+                    NodeConfig::default_rpc_url_for(self.node_type, self.network).to_string();
             }
             self.commit_node_switch();
         }
@@ -294,19 +292,17 @@ impl App {
                 pill_fg,
             );
 
-            let sync_pill: Option<(String, egui::Color32, egui::Color32)> =
-                if active && self.node_status.online && backend != NodeType::PublicRpc {
-                    let pct = self.sync_pct(backend);
-                    let tint = egui::Color32::from_rgba_unmultiplied(
-                        accent.r(),
-                        accent.g(),
-                        accent.b(),
-                        38,
-                    );
-                    Some((format!("{:.1}%", pct * 100.0), tint, accent))
-                } else {
-                    None
-                };
+            let sync_pill: Option<(String, egui::Color32, egui::Color32)> = if active
+                && self.node_status.online
+                && backend != NodeType::PublicRpc
+            {
+                let pct = self.sync_pct(backend);
+                let tint =
+                    egui::Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 38);
+                Some((format!("{:.1}%", pct * 100.0), tint, accent))
+            } else {
+                None
+            };
 
             let label_text = format!("{} {}", icon, name);
             let label_galley =
@@ -438,16 +434,12 @@ impl App {
 
     fn draw_tracked_scripts_section(&self, ui: &mut egui::Ui) {
         let scripts = &self.node_status.tracked_scripts;
-        self.draw_section_heading(
-            ui,
-            &format!("Tracked Scripts ({})", scripts.len()),
-        );
+        self.draw_section_heading(ui, &format!("Tracked Scripts ({})", scripts.len()));
 
         // Build a map: wallet_id -> (wallet_name, Vec<lock_args>)
         let mut wallet_accounts: Vec<(String, Vec<String>)> = Vec::new();
         for cw in &self.wallet_cache {
-            let accounts =
-                qpv2_core::KeyVault::get_all_lock_args(cw.id).unwrap_or_default();
+            let accounts = qpv2_core::KeyVault::get_all_lock_args(cw.id).unwrap_or_default();
             wallet_accounts.push((cw.name.clone(), accounts));
         }
 
@@ -637,8 +629,12 @@ impl App {
         };
         let ok_btn = ui.add_enabled(
             valid,
-            egui::Button::new(egui::RichText::new("\u{2713} ok").size(12.0).color(ok_color))
-                .fill(egui::Color32::TRANSPARENT),
+            egui::Button::new(
+                egui::RichText::new("\u{2713} ok")
+                    .size(12.0)
+                    .color(ok_color),
+            )
+            .fill(egui::Color32::TRANSPARENT),
         );
 
         let cancel_btn = ui.add(
@@ -650,24 +646,24 @@ impl App {
             .fill(egui::Color32::TRANSPARENT),
         );
 
-        let auto_enabled =
-            self.earliest_funding_block_rx.is_none() && !self.accounts.is_empty();
+        let auto_enabled = self.earliest_funding_block_rx.is_none() && !self.accounts.is_empty();
         let auto_label = if self.earliest_funding_block_rx.is_some() {
             "\u{2699} auto..."
         } else {
             "\u{2699} auto"
         };
-        let auto_btn = ui.add_enabled(
-            auto_enabled,
-            egui::Button::new(egui::RichText::new(auto_label).size(12.0).color(
-                if auto_enabled {
-                    self.colors.accent2
-                } else {
-                    self.colors.text_muted
-                },
-            ))
-            .fill(egui::Color32::TRANSPARENT),
-        );
+        let auto_btn =
+            ui.add_enabled(
+                auto_enabled,
+                egui::Button::new(egui::RichText::new(auto_label).size(12.0).color(
+                    if auto_enabled {
+                        self.colors.accent2
+                    } else {
+                        self.colors.text_muted
+                    },
+                ))
+                .fill(egui::Color32::TRANSPARENT),
+            );
 
         let enter = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
@@ -701,7 +697,13 @@ impl App {
             .map(|i| format!("{:#x}", i.difficulty))
             .unwrap_or_else(|| DASH.into());
         let ibd = info
-            .map(|i| if i.is_initial_block_download { "Yes" } else { "No" })
+            .map(|i| {
+                if i.is_initial_block_download {
+                    "Yes"
+                } else {
+                    "No"
+                }
+            })
             .unwrap_or(DASH)
             .to_string();
         let median = info
@@ -743,7 +745,10 @@ impl App {
                         .sync_state
                         .as_ref()
                         .map(|s| {
-                            format!("#{}", crate::utils::format_with_commas(s.tip_number.value()))
+                            format!(
+                                "#{}",
+                                crate::utils::format_with_commas(s.tip_number.value())
+                            )
                         })
                         .unwrap_or_else(|| DASH.into()),
                     NodeType::PublicRpc => unreachable!(),
@@ -954,7 +959,6 @@ fn full_node_sync_view(sync_state: Option<&ckb_jsonrpc_types::SyncState>) -> (f3
         (0.0, "\u{2014}".to_string())
     }
 }
-
 
 fn target_tip_value(backend: NodeType, status: &crate::types::NodeStatus) -> String {
     match backend {

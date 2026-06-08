@@ -385,7 +385,9 @@ impl App {
                     let records: Vec<TxRecord> = self.tx_history.clone();
                     let accounts = &self.accounts;
                     for record in &records {
-                        let owner_idx = accounts.iter().position(|a| a.lock_args == record.owner_lock_args);
+                        let owner_idx = accounts
+                            .iter()
+                            .position(|a| a.lock_args == record.owner_lock_args);
                         let counterparty_idx = record
                             .internal_counterparty_lock_args
                             .as_ref()

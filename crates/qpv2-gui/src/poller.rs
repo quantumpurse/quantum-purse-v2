@@ -381,7 +381,8 @@ impl App {
             // new accounts don't skip history; falls back to 0 when no
             // scripts are tracked yet (fresh LC after remove+recreate).
             if !self.lc_scripts_registered && !self.accounts.is_empty() {
-                let lock_args: Vec<String> = self.accounts.iter().map(|a| a.lock_args.clone()).collect();
+                let lock_args: Vec<String> =
+                    self.accounts.iter().map(|a| a.lock_args.clone()).collect();
                 let start_block = self.qp_client.synced_block().ok().flatten().unwrap_or(0);
                 match ckb_node::wallet_helpers::lc::register_lock_scripts(
                     &self.qp_client,

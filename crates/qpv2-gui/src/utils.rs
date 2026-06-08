@@ -8,7 +8,10 @@ use qpv2_core::constants::{
 ///
 /// Assumes the wallet's quantum-resistant lock script code_hash / hash_type.
 /// Use `script_to_address` for arbitrary external locks instead.
-pub(crate) fn lock_args_to_address(lock_args: &str, is_mainnet: bool) -> Result<ckb_sdk::Address, String> {
+pub(crate) fn lock_args_to_address(
+    lock_args: &str,
+    is_mainnet: bool,
+) -> Result<ckb_sdk::Address, String> {
     use ckb_sdk::{Address, AddressPayload, NetworkType};
     use ckb_types::{bytes::Bytes, core::ScriptHashType};
 

@@ -627,9 +627,13 @@ impl App {
         let mut withdraw_action: Option<(ckb_types::packed::OutPoint, String)> = None;
 
         // Helper: find the account index for a given lock_args.
-        let account_index = |lock_args: &str, accounts: &[qpv2_core::types::SphincsPlusAccount]| -> usize {
-            accounts.iter().position(|a| a.lock_args == lock_args).unwrap_or(0)
-        };
+        let account_index =
+            |lock_args: &str, accounts: &[qpv2_core::types::SphincsPlusAccount]| -> usize {
+                accounts
+                    .iter()
+                    .position(|a| a.lock_args == lock_args)
+                    .unwrap_or(0)
+            };
 
         let wide = ui.available_width() > 1100.0;
         let table_avail = ui.available_width();
@@ -640,9 +644,7 @@ impl App {
             .data(|d| d.get_temp::<f32>(egui::Id::new("dao_data_cols_width")))
             .unwrap_or(if wide { 950.0 } else { 750.0 });
         let filler_step = 72.0;
-        let num_fillers = ((inner_avail - data_width) / filler_step)
-            .floor()
-            .max(0.0) as usize;
+        let num_fillers = ((inner_avail - data_width) / filler_step).floor().max(0.0) as usize;
 
         let table_fill = egui::Color32::from_rgba_unmultiplied(
             self.colors.accent.r(),

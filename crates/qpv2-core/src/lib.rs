@@ -168,12 +168,20 @@ impl KeyVault {
 
     /// Retrieves all lock args (single-sig + multisig) combined.
     pub fn get_all_lock_args(wallet_id: u32) -> Result<Vec<String>, String> {
-        Ok(Self::get_all_accounts(wallet_id)?.into_iter().map(|a| a.lock_args).collect())
+        Ok(Self::get_all_accounts(wallet_id)?
+            .into_iter()
+            .map(|a| a.lock_args)
+            .collect())
     }
 
     /// Looks up an account by lock_args across both stores.
-    pub fn get_account(wallet_id: u32, lock_args: &str) -> Result<Option<SphincsPlusAccount>, String> {
-        if let Some(acct) = db::get_singlesig_account(wallet_id, lock_args).map_err(|e| e.to_string())? {
+    pub fn get_account(
+        wallet_id: u32,
+        lock_args: &str,
+    ) -> Result<Option<SphincsPlusAccount>, String> {
+        if let Some(acct) =
+            db::get_singlesig_account(wallet_id, lock_args).map_err(|e| e.to_string())?
+        {
             return Ok(Some(acct));
         }
         db::get_multisig_account(wallet_id, lock_args).map_err(|e| e.to_string())
@@ -334,7 +342,10 @@ impl KeyVault {
         let singlesig = db::get_singlesig_account(wallet_id, singlesig_lock_args)
             .map_err(|e| e.to_string())?
             .ok_or_else(|| {
-                tracing::error!("Single-sig account not found (lock_args={})", singlesig_lock_args);
+                tracing::error!(
+                    "Single-sig account not found (lock_args={})",
+                    singlesig_lock_args
+                );
                 "Single-sig account not found.".to_string()
             })?;
 
@@ -525,11 +536,10 @@ impl KeyVault {
             &lock_args[..8.min(lock_args.len())]
         );
 
-        let account = Self::get_account(self.wallet_id, &lock_args)?
-            .ok_or_else(|| {
-                tracing::error!("Account not found");
-                "Account not found".to_string()
-            })?;
+        let account = Self::get_account(self.wallet_id, &lock_args)?.ok_or_else(|| {
+            tracing::error!("Account not found");
+            "Account not found".to_string()
+        })?;
 
         // Get and decrypt the master seed
         let payload = db::get_encrypted_seed(self.wallet_id)
@@ -605,11 +615,10 @@ impl KeyVault {
             &lock_args[..8.min(lock_args.len())]
         );
 
-        let account = Self::get_account(self.wallet_id, &lock_args)?
-            .ok_or_else(|| {
-                tracing::error!("Account not found");
-                "Account not found".to_string()
-            })?;
+        let account = Self::get_account(self.wallet_id, &lock_args)?.ok_or_else(|| {
+            tracing::error!("Account not found");
+            "Account not found".to_string()
+        })?;
 
         // Get and decrypt the master seed
         let payload = db::get_encrypted_seed(self.wallet_id)

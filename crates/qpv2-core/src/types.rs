@@ -50,7 +50,10 @@ impl MultisigConfig {
     fn pre_validate(signers: &[Signer], threshold: u8, required_first_n: u8) -> Result<(), String> {
         let total_signers = signers.len();
         if total_signers == 0 || total_signers > 255 {
-            return Err(format!("Signer count must be 1..=255, got {}.", total_signers));
+            return Err(format!(
+                "Signer count must be 1..=255, got {}.",
+                total_signers
+            ));
         }
         if threshold == 0 {
             return Err("Threshold must be at least 1.".to_string());
@@ -58,7 +61,9 @@ impl MultisigConfig {
         if threshold as usize > total_signers {
             return Err(format!(
                 "Threshold ({}) exceeds total signers ({}: {} co-signer(s) + your wallet's key).",
-                threshold, total_signers, total_signers - 1
+                threshold,
+                total_signers,
+                total_signers - 1
             ));
         }
         if required_first_n > threshold {
@@ -78,11 +83,7 @@ impl MultisigConfig {
     }
 
     /// Validated constructor. Returns an error if the config violates on-chain constraints.
-    pub fn new(
-        required_first_n: u8,
-        threshold: u8,
-        signers: Vec<Signer>,
-    ) -> Result<Self, String> {
+    pub fn new(required_first_n: u8, threshold: u8, signers: Vec<Signer>) -> Result<Self, String> {
         Self::pre_validate(&signers, threshold, required_first_n)?;
         Ok(MultisigConfig {
             required_first_n,

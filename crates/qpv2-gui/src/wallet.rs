@@ -92,7 +92,8 @@ impl App {
             Ok(accounts) => {
                 self.accounts = accounts;
                 self.auth_method = Some(auth_method);
-                let lock_args: Vec<String> = self.accounts.iter().map(|a| a.lock_args.clone()).collect();
+                let lock_args: Vec<String> =
+                    self.accounts.iter().map(|a| a.lock_args.clone()).collect();
                 self.register_lock_scripts_with_light_client(&lock_args);
                 self.screen = Screen::Unlocked;
                 self.status = Status::Info(success_msg.to_string());
@@ -287,8 +288,7 @@ impl App {
     /// what the user is about to commit.
     pub(crate) fn on_node_type_changed(&mut self) {
         self.settings_rpc_url =
-            ckb_node::NodeConfig::default_rpc_url_for(self.node_type, self.network)
-                .to_string();
+            ckb_node::NodeConfig::default_rpc_url_for(self.node_type, self.network).to_string();
     }
 
     /// Commit the staged settings edits as the active node config:
@@ -462,13 +462,11 @@ impl App {
     /// (password/FIDO2 paths).
     fn resolve_auth_key(&self, purpose: &str) -> Result<AuthKey, String> {
         match &self.auth_method {
-            Some(AuthMethod::Password) => {
-                qpv2_core::pinentry::prompt_password(
-                    &format!("Enter your wallet password to {}.", purpose),
-                    "Password:",
-                )
-                .map(AuthKey::Password)
-            }
+            Some(AuthMethod::Password) => qpv2_core::pinentry::prompt_password(
+                &format!("Enter your wallet password to {}.", purpose),
+                "Password:",
+            )
+            .map(AuthKey::Password),
             Some(AuthMethod::Keychain) => {
                 keychain::retrieve_key(self.wallet_id).map(AuthKey::CryptoKey)
             }
@@ -516,8 +514,11 @@ impl App {
                     &account.lock_args[..8.min(account.lock_args.len())]
                 );
                 self.balances.insert(account.lock_args.clone(), Some(0));
-                self.spendable_balances.insert(account.lock_args.clone(), Some(0));
-                self.register_lock_scripts_with_light_client(std::slice::from_ref(&account.lock_args));
+                self.spendable_balances
+                    .insert(account.lock_args.clone(), Some(0));
+                self.register_lock_scripts_with_light_client(std::slice::from_ref(
+                    &account.lock_args,
+                ));
                 self.accounts.push(account);
                 self.refresh_wallet_cache();
                 self.status = Status::Info("New account created!".to_string());
@@ -752,8 +753,8 @@ impl App {
             .multisig_co_signers
             .iter()
             .map(|(hex, variant)| {
-                let pubkey = hex::decode(hex.trim())
-                    .map_err(|e| format!("Invalid pubkey hex: {}", e))?;
+                let pubkey =
+                    hex::decode(hex.trim()).map_err(|e| format!("Invalid pubkey hex: {}", e))?;
                 Ok(qpv2_core::types::Signer {
                     variant: *variant,
                     pubkey,
@@ -782,7 +783,8 @@ impl App {
                     &account.lock_args[..8.min(account.lock_args.len())]
                 );
                 self.balances.insert(account.lock_args.clone(), Some(0));
-                self.spendable_balances.insert(account.lock_args.clone(), Some(0));
+                self.spendable_balances
+                    .insert(account.lock_args.clone(), Some(0));
                 self.register_lock_scripts_with_light_client(std::slice::from_ref(
                     &account.lock_args,
                 ));
@@ -864,7 +866,6 @@ impl App {
             wallet_name,
         );
     }
-
 
     /// Create a FIDO2-authenticated wallet. Prompts for the device PIN
     /// via pinentry, registers a credential, then derives the encryption
@@ -1100,7 +1101,6 @@ impl App {
             wallet_name,
         );
     }
-
 }
 
 // ── Last-wallet persistence ──

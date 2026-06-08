@@ -88,10 +88,15 @@ fn load_singlesig(wallet_id: u32) -> Result<HashMap<String, SphincsPlusAccount>,
     Ok(accounts)
 }
 
-pub fn add_singlesig_account(wallet_id: u32, mut account: SphincsPlusAccount) -> Result<(), KeyVaultDBError> {
+pub fn add_singlesig_account(
+    wallet_id: u32,
+    mut account: SphincsPlusAccount,
+) -> Result<(), KeyVaultDBError> {
     let mut accounts = load_singlesig(wallet_id)?;
     if accounts.contains_key(&account.lock_args) {
-        return Err(KeyVaultDBError::DatabaseError("Account already exists.".to_string()));
+        return Err(KeyVaultDBError::DatabaseError(
+            "Account already exists.".to_string(),
+        ));
     }
     let count = accounts.len();
     account.index = count as u32;
@@ -154,10 +159,15 @@ fn load_multisig(wallet_id: u32) -> Result<HashMap<String, SphincsPlusAccount>, 
     Ok(accounts)
 }
 
-pub fn add_multisig_account(wallet_id: u32, mut account: SphincsPlusAccount) -> Result<(), KeyVaultDBError> {
+pub fn add_multisig_account(
+    wallet_id: u32,
+    mut account: SphincsPlusAccount,
+) -> Result<(), KeyVaultDBError> {
     let mut accounts = load_multisig(wallet_id)?;
     if accounts.contains_key(&account.lock_args) {
-        return Err(KeyVaultDBError::DatabaseError("Multisig account already exists.".to_string()));
+        return Err(KeyVaultDBError::DatabaseError(
+            "Multisig account already exists.".to_string(),
+        ));
     }
     let count = accounts.len();
     account.index = count as u32;

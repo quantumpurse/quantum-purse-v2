@@ -28,19 +28,20 @@ pub fn compute_signing_message(
     let gen_tx = ckb_gen_types::packed::Transaction::from_slice(packed_tx.as_slice())
         .map_err(|e| NodeManagerError::RpcError(format!("Invalid Transaction: {}", e)))?;
 
-    let gen_inputs: Vec<(ckb_gen_types::packed::CellOutput, ckb_gen_types::bytes::Bytes)> =
-        input_cells
-            .iter()
-            .map(|(output, data)| {
-                let gen_output =
-                    ckb_gen_types::packed::CellOutput::from_slice(output.as_slice())
-                        .expect("valid CellOutput");
-                (
-                    gen_output,
-                    ckb_gen_types::bytes::Bytes::copy_from_slice(data),
-                )
-            })
-            .collect();
+    let gen_inputs: Vec<(
+        ckb_gen_types::packed::CellOutput,
+        ckb_gen_types::bytes::Bytes,
+    )> = input_cells
+        .iter()
+        .map(|(output, data)| {
+            let gen_output = ckb_gen_types::packed::CellOutput::from_slice(output.as_slice())
+                .expect("valid CellOutput");
+            (
+                gen_output,
+                ckb_gen_types::bytes::Bytes::copy_from_slice(data),
+            )
+        })
+        .collect();
 
     let mut hasher = ckb_fips205_utils::Hasher::message_hasher();
     ckb_fips205_utils::ckb_tx_message_all_from_mock_tx::generate_ckb_tx_message_all(
@@ -76,12 +77,7 @@ pub fn build_signing_request(
 
     let input_cells_hex: Vec<(String, String)> = input_cells
         .iter()
-        .map(|(output, data)| {
-            (
-                hex::encode(output.as_slice()),
-                hex::encode(data.as_ref()),
-            )
-        })
+        .map(|(output, data)| (hex::encode(output.as_slice()), hex::encode(data.as_ref())))
         .collect();
 
     Ok(qpv2_core::types::SigningRequest {
@@ -158,7 +154,9 @@ pub fn assemble_multisig_witness(
             if sig.len() != expected_sig_len {
                 return Err(NodeManagerError::RpcError(format!(
                     "Signer {} signature length mismatch: expected {}, got {}.",
-                    i, expected_sig_len, sig.len()
+                    i,
+                    expected_sig_len,
+                    sig.len()
                 )));
             }
             lock.push(ckb_fips205_utils::construct_flag(param_id, true));
