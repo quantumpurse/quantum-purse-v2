@@ -26,3 +26,72 @@
 
 - [ ] **Reorg handling for tx history.** `tx_history.json` currently freezes records once their block is below the watermark. CKB reorgs (rare) would leave stale records in the store. Maintain a mutable "reorg window" of the last ~24 blocks: re-fetch on each tick, reconcile pending↔committed, remove records whose hash is no longer on chain. Below the window, finalize.
 - [ ] **Cancellable tx-history sync thread.** The sync thread retries transient RPC failures forever. If the network is permanently down, the thread stays alive until app quit (harmless but inelegant). Add a cancel flag (e.g. an `Arc<AtomicBool>` reset when the user locks the wallet or changes node config) so retries terminate promptly.
+
+
+# KNOWN BUGS
+
+## Co-signer does not verify signing message independently
+
+**Status:** Open
+
+**Problem:** The co-signer signing flow (both GUI `cosign_sign_request` and CLI `msig sign`) signs the `signing_message` from the `SigningRequest` JSON without recomputing it from `unsigned_tx` + `input_cells`. A malicious initiator could craft a valid transaction (e.g., sending funds to an attacker address) while displaying fake metadata ("10 CKB to Alice"). The co-signer signs the real transaction without knowing what it does. On-chain verification passes because the signature matches the actual transaction.
+
+**Fix:** Before signing, reconstruct `TransactionView` from `unsigned_tx`, convert `input_cells` from hex back to packed types, call `compute_signing_message`, and compare with the stated `signing_message`. Refuse to sign if they differ.
+
+## SigningRequest uses serde_json::Value for unsigned_tx
+
+**Status:** Open
+
+**Problem:** `SigningRequest.unsigned_tx` is typed as `serde_json::Value` instead of `ckb_jsonrpc_types::Transaction`. This loses type safety and requires an extra `serde_json::from_value` conversion when deserializing. The `Value` type was chosen to avoid adding `ckb-jsonrpc-types` to `qpv2-core`, but that crate is already pulled in transitively.
+
+**Fix:** Change `unsigned_tx` to `ckb_jsonrpc_types::Transaction` and `input_cells` to `Vec<(ckb_jsonrpc_types::CellOutput, ckb_jsonrpc_types::JsonBytes)>`. Add `ckb-jsonrpc-types` as a direct dependency of `qpv2-core`.
+
+## assemble_multisig_witness is in the wrong crate
+
+**Status:** Open
+
+**Problem:** `assemble_multisig_witness` lives in `ckb-node` but does pure in-memory witness assembly — no node interaction, no RPC. Callers write `ckb_node::assemble_multisig_witness(...)` which is semantically wrong. It also forces the function to use `NodeManagerError::RpcError` for validation errors that have nothing to do with RPC.
+
+**Fix:** Move `assemble_multisig_witness` to `qpv2-core` alongside `MultisigConfig` where it belongs. It only depends on `MultisigConfig`, `ckb_fips205_utils`, and the signer data — all already in `qpv2-core`.
+
+## Multisig signing state inconsistent on wallet switch
+
+**Status:** Open
+
+**Problem:** On wallet switch (`wallet.rs:225`), `tx_status` is reset to `Idle`, which destroys `AwaitingCoSigners` state — the unsigned transaction, signing request, and all collected signatures are lost. Meanwhile, `cosign_response_json` and `cosign_request_json` are never cleared, so a co-signer response from wallet A lingers when switching to wallet B.
+
+**Fix:** On wallet switch, also clear `cosign_response_json` and `cosign_request_json`. Optionally warn the user before switching if `AwaitingCoSigners` is active with collected signatures.
+
+## lock_script_args manually reconstructs flag byte
+
+**Status:** Open
+
+**Problem:** `MultisigConfig::lock_script_args()` in `types.rs:172` manually computes the param flag with `(signer.variant as u8) << 1` instead of using `ckb_fips205_utils::construct_flag(param_id, false)` which does the same thing. `construct_flag` is the canonical implementation used by the lock script and by `assemble_multisig_witness`. Duplicating the bit logic risks divergence.
+
+**Fix:** Use `construct_flag(param_id, false)` in `lock_script_args()` to match `assemble_multisig_witness` and the on-chain lock script.
+
+## raw_sign returns public key unnecessarily
+
+**Status:** Open
+
+**Problem:** `KeyVault::raw_sign()` returns `(Vec<u8>, Vec<u8>)` — a tuple of (signature, public_key). The public key is derived from the private key during signing, but every account already stores its public key in `config.signers[0].pubkey`. Callers use the returned pubkey only to look up the signer index in the multisig config, which they could do directly from the account's stored pubkey.
+
+**Fix:** Change `raw_sign` to return `Result<Vec<u8>, String>` (signature only). Callers that need the pubkey should read it from the account's config instead of relying on the signing function to extract it from the private key.
+
+## CKB amount parsed via f64 loses precision
+
+**Status:** Open
+
+**Problem:** Both CLI and GUI parse CKB amounts through `f64` then multiply by `1e8` and truncate with `as u64`. Decimal values like `0.29999999` CKB can't be represented exactly in binary floating point — `0.29999999 * 1e8 = 29999998.999...` truncates to `29999998`, losing 1 shannon. Affects `handle_transfer`, `handle_msig_build_transfer` in CLI and `transfer_async` in GUI.
+
+**Fix:** Parse the amount string directly into shannons using integer arithmetic (split on `.`, pad fraction to 8 digits, combine as `u64`). Same approach as CCC's `fixedPointFrom`.
+
+## Submitter does not verify signatures before broadcasting
+
+**Status:** Open
+
+**Problem:** `handle_msig_submit` in the CLI (and `submit_multisig_transaction` in the GUI) checks that the response count matches threshold and that signing messages match, but never verifies that each signature is actually valid against the corresponding signer's public key. Garbage signatures pass all CLI/GUI validation and only fail on-chain.
+
+A malicious co-signer could repeatedly submit invalid signatures to delay a legitimate transaction. In time-sensitive scenarios (e.g., DAO withdrawal before maturity deadline), this could cause the user to miss the window and lose DAO interest.
+
+**Fix:** Before assembling the witness, verify each `(signer_index, signature)` pair against the signer's public key from `multisig_config.signers[signer_index]` using `KeyVault::raw_verify`. Reject invalid signatures before broadcasting.

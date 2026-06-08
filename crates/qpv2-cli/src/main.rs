@@ -71,6 +71,49 @@ enum Commands {
         #[command(subcommand)]
         command: CkbCommands,
     },
+    /// Send CKB from an account (single-sig or 1-of-1 multisig)
+    Transfer {
+        /// Account lock args (from `account list`)
+        #[arg(short, long)]
+        lock_args: String,
+        /// Recipient CKB address (bech32m)
+        #[arg(short, long)]
+        to: String,
+        /// Amount in CKB (decimal, e.g. 100.5)
+        #[arg(short, long)]
+        amount: f64,
+        /// Fee rate (shannons per 1000 bytes)
+        #[arg(short, long, default_value = "1000")]
+        fee_rate: u64,
+        /// Network: mainnet or testnet
+        #[arg(long, default_value = "testnet")]
+        network: String,
+        /// CKB RPC URL (overrides the default for the chosen network)
+        #[arg(long)]
+        rpc_url: Option<String>,
+    },
+    /// NervosDAO operations (single-sig)
+    Dao {
+        /// Network: mainnet or testnet
+        #[arg(long, default_value = "testnet")]
+        network: String,
+        /// CKB RPC URL (overrides the default for the chosen network)
+        #[arg(long)]
+        rpc_url: Option<String>,
+        #[command(subcommand)]
+        command: DaoCommands,
+    },
+    /// Multisig transaction operations (build, sign, submit)
+    Msig {
+        /// Network: mainnet or testnet
+        #[arg(long, default_value = "testnet")]
+        network: String,
+        /// CKB RPC URL (overrides the default for the chosen network)
+        #[arg(long)]
+        rpc_url: Option<String>,
+        #[command(subcommand)]
+        command: MsigCommands,
+    },
     /// Delete the selected wallet and all its data
     Delete,
     /// Wallet management operations
@@ -170,6 +213,149 @@ enum WalletCommands {
         /// New display name for the wallet
         #[arg(long)]
         to: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum DaoCommands {
+    /// List deposited and prepared DAO cells
+    List {
+        /// Account lock args (from `account list`). If omitted, lists for all accounts
+        #[arg(short, long)]
+        lock_args: Option<String>,
+    },
+    /// Deposit CKB into NervosDAO
+    Deposit {
+        /// Account lock args (from `account list`)
+        #[arg(short, long)]
+        lock_args: String,
+        /// Amount in CKB (decimal, e.g. 100.5)
+        #[arg(short, long)]
+        amount: f64,
+        /// Fee rate (shannons per 1000 bytes)
+        #[arg(short, long, default_value = "1000")]
+        fee_rate: u64,
+    },
+    /// Prepare a DAO withdrawal (phase 1)
+    Prepare {
+        /// Account lock args (from `account list`)
+        #[arg(short, long)]
+        lock_args: String,
+        /// Deposit cell tx hash
+        #[arg(long)]
+        tx_hash: String,
+        /// Deposit cell output index
+        #[arg(long, default_value = "0")]
+        index: u32,
+        /// Fee rate (shannons per 1000 bytes)
+        #[arg(short, long, default_value = "1000")]
+        fee_rate: u64,
+    },
+    /// Complete a DAO withdrawal (phase 2)
+    Withdraw {
+        /// Account lock args (from `account list`)
+        #[arg(short, long)]
+        lock_args: String,
+        /// Prepared cell tx hash
+        #[arg(long)]
+        tx_hash: String,
+        /// Prepared cell output index
+        #[arg(long, default_value = "0")]
+        index: u32,
+        /// Fee rate (shannons per 1000 bytes)
+        #[arg(short, long, default_value = "1000")]
+        fee_rate: u64,
+    },
+}
+
+#[derive(Subcommand)]
+enum MsigCommands {
+    /// Build an unsigned transfer and output a signing request
+    BuildTransfer {
+        /// Multisig account lock args (from `account list`)
+        #[arg(short, long)]
+        lock_args: String,
+        /// Recipient CKB address (bech32m)
+        #[arg(short, long)]
+        to: String,
+        /// Amount in CKB (decimal, e.g. 100.5)
+        #[arg(short, long)]
+        amount: f64,
+        /// Fee rate (shannons per 1000 bytes)
+        #[arg(short, long, default_value = "1000")]
+        fee_rate: u64,
+        /// Output file for the signing request JSON
+        #[arg(short, long, default_value = "signing_request.json")]
+        output: String,
+    },
+    /// Build an unsigned DAO deposit and output a signing request
+    BuildDeposit {
+        /// Multisig account lock args (from `account list`)
+        #[arg(short, long)]
+        lock_args: String,
+        /// Amount in CKB (decimal, e.g. 100.5)
+        #[arg(short, long)]
+        amount: f64,
+        /// Fee rate (shannons per 1000 bytes)
+        #[arg(short, long, default_value = "1000")]
+        fee_rate: u64,
+        /// Output file for the signing request JSON
+        #[arg(short, long, default_value = "signing_request.json")]
+        output: String,
+    },
+    /// Build an unsigned DAO prepare (phase 1) and output a signing request
+    BuildPrepare {
+        /// Multisig account lock args (from `account list`)
+        #[arg(short, long)]
+        lock_args: String,
+        /// Deposit cell tx hash
+        #[arg(long)]
+        tx_hash: String,
+        /// Deposit cell output index
+        #[arg(long, default_value = "0")]
+        index: u32,
+        /// Fee rate (shannons per 1000 bytes)
+        #[arg(short, long, default_value = "1000")]
+        fee_rate: u64,
+        /// Output file for the signing request JSON
+        #[arg(short, long, default_value = "signing_request.json")]
+        output: String,
+    },
+    /// Build an unsigned DAO withdraw (phase 2) and output a signing request
+    BuildWithdraw {
+        /// Multisig account lock args (from `account list`)
+        #[arg(short, long)]
+        lock_args: String,
+        /// Prepared cell tx hash
+        #[arg(long)]
+        tx_hash: String,
+        /// Prepared cell output index
+        #[arg(long, default_value = "0")]
+        index: u32,
+        /// Fee rate (shannons per 1000 bytes)
+        #[arg(short, long, default_value = "1000")]
+        fee_rate: u64,
+        /// Output file for the signing request JSON
+        #[arg(short, long, default_value = "signing_request.json")]
+        output: String,
+    },
+    /// Sign a signing request with a local key
+    Sign {
+        /// Path to the signing request JSON file
+        #[arg(short, long)]
+        request: String,
+        /// Output file for the signing response JSON
+        #[arg(short, long, default_value = "signing_response.json")]
+        output: String,
+    },
+    /// Assemble co-signer responses and submit the signed transaction
+    Submit {
+        /// Path to the signing request JSON file
+        #[arg(short = 'q', long)]
+        request: String,
+        /// Paths to signing response JSON files (repeat for each response)
+        #[arg(short, long, num_args = 1..)]
+        response: Vec<String>,
     },
 }
 
@@ -323,6 +509,680 @@ fn prepare_new_wallet(wallet_name: &Option<String>) -> Result<(u32, String), Str
     Ok((id, name))
 }
 
+fn lock_args_to_address(lock_args: &str, is_mainnet: bool) -> Result<ckb_sdk::Address, String> {
+    use ckb_sdk::{Address, AddressPayload, NetworkType};
+    use ckb_types::{bytes::Bytes, core::ScriptHashType};
+    use qpv2_core::constants::{
+        CKB_MAINNET_CODE_HASH, CKB_MAINNET_HASH_TYPE, CKB_TESTNET_CODE_HASH,
+        CKB_TESTNET_HASH_TYPE,
+    };
+
+    let (code_hash_hex, hash_type_str, network) = if is_mainnet {
+        (CKB_MAINNET_CODE_HASH, CKB_MAINNET_HASH_TYPE, NetworkType::Mainnet)
+    } else {
+        (CKB_TESTNET_CODE_HASH, CKB_TESTNET_HASH_TYPE, NetworkType::Testnet)
+    };
+
+    let code_hash_bytes = hex::decode(code_hash_hex.trim_start_matches("0x"))
+        .map_err(|e| format!("Failed to decode code_hash: {:?}", e))?;
+    let mut code_hash_array = [0u8; 32];
+    code_hash_array.copy_from_slice(&code_hash_bytes);
+
+    let script_hash_type = match hash_type_str {
+        "type" => ScriptHashType::Type,
+        "data1" => ScriptHashType::Data1,
+        _ => return Err(format!("Unsupported hash_type: {}", hash_type_str)),
+    };
+
+    let args_bytes =
+        hex::decode(lock_args).map_err(|e| format!("Failed to decode lock_args: {:?}", e))?;
+    let payload = AddressPayload::new_full(
+        script_hash_type,
+        code_hash_array.into(),
+        Bytes::from(args_bytes),
+    );
+    Ok(Address::new(network, payload, true))
+}
+
+fn make_qp_client(network: &str, rpc_url: &Option<String>) -> Result<(ckb_node::QpClient, bool), String> {
+    let (net, is_mainnet) = match network {
+        "mainnet" => (ckb_node::NetworkType::Mainnet, true),
+        "testnet" => (ckb_node::NetworkType::Testnet, false),
+        _ => return Err(format!("Invalid network '{}'. Use 'mainnet' or 'testnet'.", network)),
+    };
+
+    let url = match rpc_url {
+        Some(u) => u.clone(),
+        None => ckb_node::NodeConfig::default_rpc_url_for(ckb_node::NodeType::PublicRpc, net)
+            .to_string(),
+    };
+
+    let config = ckb_node::NodeConfig {
+        node_type: ckb_node::NodeType::PublicRpc,
+        network: net,
+        binary_path: None,
+        rpc_url: url,
+        data_dir: qpv2_core::db::get_data_dir()
+            .map_err(|e| e.to_string())?
+            .join("node"),
+    };
+
+    Ok((ckb_node::QpClient::new(config), is_mainnet))
+}
+
+fn parse_out_point(tx_hash: &str, index: u32) -> Result<ckb_types::packed::OutPoint, String> {
+    use std::str::FromStr;
+    let hash = ckb_types::H256::from_str(tx_hash.trim_start_matches("0x"))
+        .map_err(|e| format!("Invalid tx hash: {}", e))?;
+    let json_out_point = ckb_jsonrpc_types::OutPoint {
+        tx_hash: hash,
+        index: ckb_jsonrpc_types::Uint32::from(index),
+    };
+    Ok(json_out_point.into())
+}
+
+fn handle_dao_list(
+    wallet_id: u32,
+    lock_args: &Option<String>,
+    network: &str,
+    rpc_url: &Option<String>,
+) -> Result<(), String> {
+    let (qp_client, is_mainnet) = make_qp_client(network, rpc_url)?;
+
+    let accounts: Vec<qpv2_core::types::SphincsPlusAccount> = if let Some(la) = lock_args {
+        let acct = KeyVault::get_account(wallet_id, la)?
+            .ok_or_else(|| format!("Account with lock_args '{}' not found.", la))?;
+        vec![acct]
+    } else {
+        KeyVault::get_all_accounts(wallet_id)?
+    };
+
+    let mut found_any = false;
+    for account in &accounts {
+        let address = lock_args_to_address(&account.lock_args, is_mainnet)?;
+        let (deposited, prepared) =
+            ckb_node::wallet_helpers::queries::categorize_dao_cells(&qp_client, &address)
+                .map_err(|e| format!("Failed to query DAO cells: {}", e))?;
+
+        if deposited.is_empty() && prepared.is_empty() {
+            continue;
+        }
+        found_any = true;
+
+        println!("Account: {}", account.lock_args);
+        if !deposited.is_empty() {
+            println!("  Deposited:");
+            for cell in &deposited {
+                use ckb_types::prelude::*;
+                let tx_hash: ckb_types::H256 = cell.out_point.tx_hash().unpack();
+                let idx: u32 = cell.out_point.index().unpack();
+                println!(
+                    "    {:#x}:{} — {} CKB (block #{})",
+                    tx_hash,
+                    idx,
+                    cell.capacity as f64 / 1e8,
+                    cell.block_number
+                );
+            }
+        }
+        if !prepared.is_empty() {
+            println!("  Prepared (ready to withdraw):");
+            for cell in &prepared {
+                use ckb_types::prelude::*;
+                let tx_hash: ckb_types::H256 = cell.out_point.tx_hash().unpack();
+                let idx: u32 = cell.out_point.index().unpack();
+                println!(
+                    "    {:#x}:{} — {} CKB (max withdraw: {} CKB)",
+                    tx_hash,
+                    idx,
+                    cell.capacity as f64 / 1e8,
+                    cell.maximum_withdraw as f64 / 1e8
+                );
+            }
+        }
+    }
+
+    if !found_any {
+        println!("No DAO cells found.");
+    }
+
+    Ok(())
+}
+
+fn handle_dao_deposit(
+    wallet_id: u32,
+    lock_args: &str,
+    amount: f64,
+    fee_rate: u64,
+    network: &str,
+    rpc_url: &Option<String>,
+) -> Result<(), String> {
+    let account = KeyVault::get_account(wallet_id, lock_args)?
+        .ok_or_else(|| format!("Account with lock_args '{}' not found.", lock_args))?;
+    if !account.config.is_single_sig() {
+        return Err("This account requires multiple signatures. Use `msig build-deposit` instead.".to_string());
+    }
+    if !amount.is_finite() || amount <= 0.0 {
+        return Err("Amount must be a positive number.".to_string());
+    }
+    let capacity_sh = (amount * 1e8) as u64;
+    if capacity_sh == 0 {
+        return Err("Amount too small.".to_string());
+    }
+
+    let max_witness_lock_size = account.config.max_witness_lock_size();
+    let (qp_client, is_mainnet) = make_qp_client(network, rpc_url)?;
+    let from_address = lock_args_to_address(lock_args, is_mainnet)?;
+
+    println!("Building DAO deposit...");
+    let unsigned_tx = ckb_node::QpDaoDepositBuilder::new(&qp_client, is_mainnet)
+        .with_placeholder_lock_size(max_witness_lock_size)
+        .build_unsigned_deposit(&from_address, capacity_sh, fee_rate)
+        .map_err(|e| format!("Failed to build DAO deposit: {}", e))?;
+
+    let input_cells =
+        ckb_node::wallet_helpers::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
+            .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
+
+    let message = ckb_node::compute_signing_message(&unsigned_tx, &input_cells, 0)
+        .map_err(|e| format!("Failed to compute tx message: {}", e))?;
+
+    let auth = get_auth_key(wallet_id)?;
+    let variant = KeyVault::get_spx_variant(wallet_id)?;
+    let vault = KeyVault::new(variant, wallet_id);
+    let signature_bytes = vault.ckb_sign(auth, lock_args.to_string(), message.to_vec())?;
+
+    let signed_tx = ckb_node::fill_witness(unsigned_tx, 0, signature_bytes)
+        .map_err(|e| format!("Failed to fill witness: {}", e))?;
+
+    println!("Submitting transaction...");
+    let tx_hash = ckb_node::wallet_helpers::tx_builder::send_transaction(&qp_client, &signed_tx)
+        .map_err(|e| format!("Failed to send transaction: {}", e))?;
+    println!("DAO deposit submitted: {:#x}", tx_hash);
+    Ok(())
+}
+
+fn handle_dao_prepare(
+    wallet_id: u32,
+    lock_args: &str,
+    tx_hash: &str,
+    index: u32,
+    fee_rate: u64,
+    network: &str,
+    rpc_url: &Option<String>,
+) -> Result<(), String> {
+    let account = KeyVault::get_account(wallet_id, lock_args)?
+        .ok_or_else(|| format!("Account with lock_args '{}' not found.", lock_args))?;
+    if !account.config.is_single_sig() {
+        return Err("This account requires multiple signatures. Use `msig build-prepare` instead.".to_string());
+    }
+
+    let max_witness_lock_size = account.config.max_witness_lock_size();
+    let (qp_client, is_mainnet) = make_qp_client(network, rpc_url)?;
+    let from_address = lock_args_to_address(lock_args, is_mainnet)?;
+    let out_point = parse_out_point(tx_hash, index)?;
+
+    println!("Building DAO prepare...");
+    let unsigned_tx = ckb_node::QpDaoPrepareBuilder::new(&qp_client, is_mainnet)
+        .with_placeholder_lock_size(max_witness_lock_size)
+        .build_unsigned_dao_request_withdraw(&from_address, vec![out_point], fee_rate)
+        .map_err(|e| format!("Failed to build DAO prepare: {}", e))?;
+
+    let input_cells =
+        ckb_node::wallet_helpers::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
+            .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
+
+    let message = ckb_node::compute_signing_message(&unsigned_tx, &input_cells, 0)
+        .map_err(|e| format!("Failed to compute tx message: {}", e))?;
+
+    let auth = get_auth_key(wallet_id)?;
+    let variant = KeyVault::get_spx_variant(wallet_id)?;
+    let vault = KeyVault::new(variant, wallet_id);
+    let signature_bytes = vault.ckb_sign(auth, lock_args.to_string(), message.to_vec())?;
+
+    let signed_tx = ckb_node::fill_witness(unsigned_tx, 0, signature_bytes)
+        .map_err(|e| format!("Failed to fill witness: {}", e))?;
+
+    println!("Submitting transaction...");
+    let tx_hash = ckb_node::wallet_helpers::tx_builder::send_transaction(&qp_client, &signed_tx)
+        .map_err(|e| format!("Failed to send transaction: {}", e))?;
+    println!("DAO prepare submitted: {:#x}", tx_hash);
+    Ok(())
+}
+
+fn handle_dao_withdraw(
+    wallet_id: u32,
+    lock_args: &str,
+    tx_hash: &str,
+    index: u32,
+    fee_rate: u64,
+    network: &str,
+    rpc_url: &Option<String>,
+) -> Result<(), String> {
+    let account = KeyVault::get_account(wallet_id, lock_args)?
+        .ok_or_else(|| format!("Account with lock_args '{}' not found.", lock_args))?;
+    if !account.config.is_single_sig() {
+        return Err("This account requires multiple signatures. Use `msig build-withdraw` instead.".to_string());
+    }
+
+    let max_witness_lock_size = account.config.max_witness_lock_size();
+    let (qp_client, is_mainnet) = make_qp_client(network, rpc_url)?;
+    let from_address = lock_args_to_address(lock_args, is_mainnet)?;
+    let out_point = parse_out_point(tx_hash, index)?;
+
+    println!("Building DAO withdraw...");
+    let unsigned_tx = ckb_node::QpDaoWithdrawBuilder::new(&qp_client, is_mainnet)
+        .with_placeholder_lock_size(max_witness_lock_size)
+        .build_unsigned_dao_withdraw(&from_address, vec![out_point], fee_rate)
+        .map_err(|e| format!("Failed to build DAO withdraw: {}", e))?;
+
+    let input_cells =
+        ckb_node::wallet_helpers::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
+            .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
+
+    let message = ckb_node::compute_signing_message(&unsigned_tx, &input_cells, 0)
+        .map_err(|e| format!("Failed to compute tx message: {}", e))?;
+
+    let auth = get_auth_key(wallet_id)?;
+    let variant = KeyVault::get_spx_variant(wallet_id)?;
+    let vault = KeyVault::new(variant, wallet_id);
+    let signature_bytes = vault.ckb_sign(auth, lock_args.to_string(), message.to_vec())?;
+
+    let signed_tx = ckb_node::fill_witness(unsigned_tx, 0, signature_bytes)
+        .map_err(|e| format!("Failed to fill witness: {}", e))?;
+
+    println!("Submitting transaction...");
+    let tx_hash = ckb_node::wallet_helpers::tx_builder::send_transaction(&qp_client, &signed_tx)
+        .map_err(|e| format!("Failed to send transaction: {}", e))?;
+    println!("DAO withdraw submitted: {:#x}", tx_hash);
+    Ok(())
+}
+
+fn handle_transfer(
+    wallet_id: u32,
+    lock_args: &str,
+    to: &str,
+    amount: f64,
+    fee_rate: u64,
+    network: &str,
+    rpc_url: &Option<String>,
+) -> Result<(), String> {
+    let account = KeyVault::get_account(wallet_id, lock_args)?
+        .ok_or_else(|| format!("Account with lock_args '{}' not found.", lock_args))?;
+
+    if !account.config.is_single_sig() {
+        return Err(
+            "This account requires multiple signatures. Use `msig build-transfer` instead."
+                .to_string(),
+        );
+    }
+
+    if !amount.is_finite() || amount <= 0.0 {
+        return Err("Amount must be a positive number.".to_string());
+    }
+    let capacity_sh = (amount * 1e8) as u64;
+    if capacity_sh == 0 {
+        return Err("Amount too small.".to_string());
+    }
+
+    let max_witness_lock_size = account.config.max_witness_lock_size();
+    let (qp_client, is_mainnet) = make_qp_client(network, rpc_url)?;
+
+    let from_address = lock_args_to_address(lock_args, is_mainnet)?;
+    let to_address: ckb_sdk::Address = to
+        .parse()
+        .map_err(|e| format!("Invalid recipient address: {}", e))?;
+    let expected_net = if is_mainnet { ckb_sdk::NetworkType::Mainnet } else { ckb_sdk::NetworkType::Testnet };
+    if to_address.network() != expected_net {
+        return Err("Recipient address is for the wrong network.".to_string());
+    }
+
+    println!("Building transaction...");
+    let builder = ckb_node::QpTransferBuilder::new(&qp_client, is_mainnet)
+        .with_placeholder_lock_size(max_witness_lock_size);
+    let unsigned_tx = builder
+        .build_unsigned_transfer(&from_address, &to_address, capacity_sh, fee_rate, None)
+        .map_err(|e| format!("Failed to build transaction: {}", e))?;
+
+    println!("Fetching input cells...");
+    let input_cells =
+        ckb_node::wallet_helpers::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
+            .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
+
+    println!("Computing signing message...");
+    let message = ckb_node::compute_signing_message(&unsigned_tx, &input_cells, 0)
+        .map_err(|e| format!("Failed to compute tx message: {}", e))?;
+
+    let auth = get_auth_key(wallet_id)?;
+    let variant = KeyVault::get_spx_variant(wallet_id)?;
+    let vault = KeyVault::new(variant, wallet_id);
+
+    let signature_bytes = vault.ckb_sign(auth, lock_args.to_string(), message.to_vec())?;
+
+    let signed_tx = ckb_node::fill_witness(unsigned_tx, 0, signature_bytes)
+        .map_err(|e| format!("Failed to fill witness: {}", e))?;
+
+    println!("Submitting transaction...");
+    let tx_hash = ckb_node::wallet_helpers::tx_builder::send_transaction(&qp_client, &signed_tx)
+        .map_err(|e| format!("Failed to send transaction: {}", e))?;
+
+    println!("Transaction submitted: {:#x}", tx_hash);
+    Ok(())
+}
+
+fn handle_msig_build_dao(
+    wallet_id: u32,
+    lock_args: &str,
+    op: &str,
+    amount: f64,
+    tx_hash: Option<&str>,
+    index: u32,
+    fee_rate: u64,
+    output: &str,
+    network: &str,
+    rpc_url: &Option<String>,
+) -> Result<(), String> {
+    let account = KeyVault::get_account(wallet_id, lock_args)?
+        .ok_or_else(|| format!("Account with lock_args '{}' not found.", lock_args))?;
+
+    if account.config.is_single_sig() {
+        return Err(format!("This is a single-sig account. Use `dao {}` instead.", op));
+    }
+
+    let max_witness_lock_size = account.config.max_witness_lock_size();
+    let (qp_client, is_mainnet) = make_qp_client(network, rpc_url)?;
+    let from_address = lock_args_to_address(lock_args, is_mainnet)?;
+
+    println!("Building unsigned DAO {} transaction...", op);
+    let unsigned_tx = match op {
+        "deposit" => {
+            if !amount.is_finite() || amount <= 0.0 {
+                return Err("Amount must be a positive number.".to_string());
+            }
+            let capacity_sh = (amount * 1e8) as u64;
+            if capacity_sh == 0 {
+                return Err("Amount too small.".to_string());
+            }
+            ckb_node::QpDaoDepositBuilder::new(&qp_client, is_mainnet)
+                .with_placeholder_lock_size(max_witness_lock_size)
+                .build_unsigned_deposit(&from_address, capacity_sh, fee_rate)
+                .map_err(|e| format!("Failed to build DAO deposit: {}", e))?
+        }
+        "prepare" => {
+            let out_point = parse_out_point(tx_hash.ok_or("tx_hash required for prepare")?, index)?;
+            ckb_node::QpDaoPrepareBuilder::new(&qp_client, is_mainnet)
+                .with_placeholder_lock_size(max_witness_lock_size)
+                .build_unsigned_dao_request_withdraw(&from_address, vec![out_point], fee_rate)
+                .map_err(|e| format!("Failed to build DAO prepare: {}", e))?
+        }
+        "withdraw" => {
+            let out_point = parse_out_point(tx_hash.ok_or("tx_hash required for withdraw")?, index)?;
+            ckb_node::QpDaoWithdrawBuilder::new(&qp_client, is_mainnet)
+                .with_placeholder_lock_size(max_witness_lock_size)
+                .build_unsigned_dao_withdraw(&from_address, vec![out_point], fee_rate)
+                .map_err(|e| format!("Failed to build DAO withdraw: {}", e))?
+        }
+        _ => return Err(format!("Unknown DAO operation: {}", op)),
+    };
+
+    println!("Fetching input cells...");
+    let input_cells = ckb_node::wallet_helpers::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
+        .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
+
+    let metadata = qpv2_core::types::SigningMetadata {
+        from_address: from_address.to_string(),
+        to_address: None,
+        amount_ckb: if op == "deposit" { Some(format!("{}", amount)) } else { None },
+        tx_type: format!("DAO {}", op),
+    };
+
+    println!("Computing signing message...");
+    let request = ckb_node::build_signing_request(
+        &unsigned_tx,
+        &input_cells,
+        &account.config,
+        0,
+        is_mainnet,
+        metadata,
+    )
+    .map_err(|e| format!("Failed to build signing request: {}", e))?;
+
+    let json = serde_json::to_string_pretty(&request)
+        .map_err(|e| format!("JSON serialization failed: {}", e))?;
+    fs::write(output, &json).map_err(|e| format!("Failed to write file: {}", e))?;
+
+    println!("Signing request written to: {}", output);
+    println!("Message: {}", request.signing_message);
+    println!(
+        "Requires {} of {} signatures.",
+        account.config.threshold,
+        account.config.signers.len()
+    );
+    Ok(())
+}
+
+fn handle_msig_build_transfer(
+    wallet_id: u32,
+    lock_args: &str,
+    to: &str,
+    amount: f64,
+    fee_rate: u64,
+    output: &str,
+    network: &str,
+    rpc_url: &Option<String>,
+) -> Result<(), String> {
+    let account = KeyVault::get_account(wallet_id, lock_args)?
+        .ok_or_else(|| format!("Account with lock_args '{}' not found.", lock_args))?;
+
+    if account.config.is_single_sig() {
+        return Err("This is a single-sig account. Use `transfer` instead.".to_string());
+    }
+
+    let max_witness_lock_size = account.config.max_witness_lock_size();
+
+    let (qp_client, is_mainnet) = make_qp_client(network, rpc_url)?;
+
+    let from_address = lock_args_to_address(lock_args, is_mainnet)?;
+    let to_address: ckb_sdk::Address = to
+        .parse()
+        .map_err(|e| format!("Invalid recipient address: {}", e))?;
+    let expected_net = if is_mainnet { ckb_sdk::NetworkType::Mainnet } else { ckb_sdk::NetworkType::Testnet };
+    if to_address.network() != expected_net {
+        return Err("Recipient address is for the wrong network.".to_string());
+    }
+
+    if !amount.is_finite() || amount <= 0.0 {
+        return Err("Amount must be a positive number.".to_string());
+    }
+    let capacity_sh = (amount * 1e8) as u64;
+    if capacity_sh == 0 {
+        return Err("Amount too small.".to_string());
+    }
+
+    let builder = ckb_node::QpTransferBuilder::new(&qp_client, is_mainnet)
+        .with_placeholder_lock_size(max_witness_lock_size);
+
+    println!("Building unsigned transaction...");
+    let unsigned_tx = builder
+        .build_unsigned_transfer(&from_address, &to_address, capacity_sh, fee_rate, None)
+        .map_err(|e| format!("Failed to build transaction: {}", e))?;
+
+    println!("Fetching input cells...");
+    let input_cells = ckb_node::wallet_helpers::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
+        .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
+
+    let metadata = qpv2_core::types::SigningMetadata {
+        from_address: from_address.to_string(),
+        to_address: Some(to.to_string()),
+        amount_ckb: Some(format!("{}", amount)),
+        tx_type: "Transfer".to_string(),
+    };
+
+    println!("Computing signing message...");
+    let request = ckb_node::build_signing_request(
+        &unsigned_tx,
+        &input_cells,
+        &account.config,
+        0,
+        is_mainnet,
+        metadata,
+    )
+    .map_err(|e| format!("Failed to build signing request: {}", e))?;
+
+    let json = serde_json::to_string_pretty(&request)
+        .map_err(|e| format!("JSON serialization failed: {}", e))?;
+    fs::write(output, &json).map_err(|e| format!("Failed to write file: {}", e))?;
+
+    println!("Signing request written to: {}", output);
+    println!("Message: {}", request.signing_message);
+    println!(
+        "Requires {} of {} signatures.",
+        account.config.threshold,
+        account.config.signers.len()
+    );
+    Ok(())
+}
+
+fn handle_msig_sign(
+    wallet_id: u32,
+    request_path: &str,
+    output: &str,
+) -> Result<(), String> {
+    let json = fs::read_to_string(request_path)
+        .map_err(|e| format!("Failed to read request file: {}", e))?;
+    let request: qpv2_core::types::SigningRequest = serde_json::from_str(&json)
+        .map_err(|e| format!("Invalid signing request JSON: {}", e))?;
+
+    println!("Transaction type: {}", request.metadata.tx_type);
+    println!("From: {}", request.metadata.from_address);
+    if let Some(ref to) = request.metadata.to_address {
+        println!("To: {}", to);
+    }
+    if let Some(ref amount) = request.metadata.amount_ckb {
+        println!("Amount: {} CKB", amount);
+    }
+    println!(
+        "Threshold: {}-of-{}",
+        request.multisig_config.threshold,
+        request.multisig_config.signers.len()
+    );
+
+    let singlesig_accounts = KeyVault::get_singlesig_accounts(wallet_id)?;
+    let variant = KeyVault::get_spx_variant(wallet_id)?;
+
+    let mut matched_signer_index = None;
+    let mut matched_lock_args = None;
+
+    for account in &singlesig_accounts {
+        let account_pubkey = &account.config.signers[0].pubkey;
+        for (i, signer) in request.multisig_config.signers.iter().enumerate() {
+            if signer.pubkey == *account_pubkey && signer.variant == variant {
+                matched_signer_index = Some(i);
+                matched_lock_args = Some(account.lock_args.clone());
+                break;
+            }
+        }
+        if matched_signer_index.is_some() {
+            break;
+        }
+    }
+
+    let signer_index = matched_signer_index
+        .ok_or_else(|| "No local singlesig account matches any signer in this multisig config.".to_string())?;
+    let singlesig_lock_args = matched_lock_args.unwrap();
+
+    println!("Matched local account as signer index {}.", signer_index);
+
+    let message_bytes = hex::decode(&request.signing_message)
+        .map_err(|e| format!("Invalid signing message hex: {}", e))?;
+
+    let auth = get_auth_key(wallet_id)?;
+    let vault = KeyVault::new(variant, wallet_id);
+
+    let (signature, _pubkey) = vault.raw_sign(auth, singlesig_lock_args, message_bytes)?;
+
+    let response = qpv2_core::types::SigningResponse {
+        version: request.version,
+        signer_index,
+        signature: hex::encode(&signature),
+        signing_message: request.signing_message.clone(),
+    };
+
+    let response_json = serde_json::to_string_pretty(&response)
+        .map_err(|e| format!("JSON serialization failed: {}", e))?;
+    fs::write(output, &response_json).map_err(|e| format!("Failed to write file: {}", e))?;
+
+    println!("Signing response written to: {}", output);
+    Ok(())
+}
+
+fn handle_msig_submit(
+    request_path: &str,
+    response_paths: &[String],
+    network: &str,
+    rpc_url: &Option<String>,
+) -> Result<(), String> {
+    let req_json = fs::read_to_string(request_path)
+        .map_err(|e| format!("Failed to read request file: {}", e))?;
+    let request: qpv2_core::types::SigningRequest = serde_json::from_str(&req_json)
+        .map_err(|e| format!("Invalid signing request JSON: {}", e))?;
+
+    if (network == "mainnet") != request.is_mainnet {
+        return Err("Network mismatch: request was built for a different network.".to_string());
+    }
+
+    let mut signatures: Vec<(usize, Vec<u8>)> = Vec::new();
+
+    for path in response_paths {
+        let resp_json = fs::read_to_string(path)
+            .map_err(|e| format!("Failed to read response file '{}': {}", path, e))?;
+        let response: qpv2_core::types::SigningResponse = serde_json::from_str(&resp_json)
+            .map_err(|e| format!("Invalid signing response JSON in '{}': {}", path, e))?;
+
+        if response.signing_message != request.signing_message {
+            return Err(format!(
+                "Response from '{}' has mismatched signing message.",
+                path
+            ));
+        }
+
+        let sig_bytes = hex::decode(&response.signature)
+            .map_err(|e| format!("Invalid signature hex in '{}': {}", path, e))?;
+        signatures.push((response.signer_index, sig_bytes));
+    }
+
+    let threshold = request.multisig_config.threshold as usize;
+    if signatures.len() != threshold {
+        return Err(format!(
+            "Expected {} response file(s) (threshold), got {}.",
+            threshold,
+            signatures.len()
+        ));
+    }
+
+    println!("Assembling witness with {} signatures...", signatures.len());
+    let witness_lock = ckb_node::assemble_multisig_witness(&request.multisig_config, &signatures)
+        .map_err(|e| format!("Failed to assemble witness: {}", e))?;
+
+    let json_tx: ckb_jsonrpc_types::Transaction = serde_json::from_value(request.unsigned_tx)
+        .map_err(|e| format!("Failed to parse unsigned tx: {}", e))?;
+    let packed_tx: ckb_types::packed::Transaction = json_tx.into();
+    use ckb_types::prelude::IntoTransactionView;
+    let unsigned_tx = packed_tx.into_view();
+
+    let signed_tx = ckb_node::fill_witness(unsigned_tx, request.script_group_index, witness_lock)
+        .map_err(|e| format!("Failed to fill witness: {}", e))?;
+
+    let (qp_client, _) = make_qp_client(network, rpc_url)?;
+
+    println!("Submitting transaction...");
+    let tx_hash = ckb_node::wallet_helpers::tx_builder::send_transaction(&qp_client, &signed_tx)
+        .map_err(|e| format!("Failed to send transaction: {}", e))?;
+
+    println!("Transaction submitted: {:#x}", tx_hash);
+    Ok(())
+}
+
 fn main() -> Result<(), String> {
     if let Ok(data_dir) = qpv2_core::db::get_data_dir() {
         let log_path = data_dir.join("qpv2.log");
@@ -451,7 +1311,13 @@ fn main() -> Result<(), String> {
                 let seed_phrase = vault.export_seed_phrase(auth)?;
 
                 if let Some(output_path) = output {
-                    fs::write(output_path, &*seed_phrase).map_err(|e| e.to_string())?;
+                    fs::write(&output_path, &*seed_phrase).map_err(|e| e.to_string())?;
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        fs::set_permissions(&output_path, fs::Permissions::from_mode(0o600))
+                            .map_err(|e| e.to_string())?;
+                    }
                     println!("✓ Seed phrase exported to file");
                 } else {
                     println!("Seed phrase:");
@@ -628,6 +1494,124 @@ fn main() -> Result<(), String> {
                 println!("CKB Tx message hash: {}", hex::encode(message));
             }
         },
+
+        Commands::Transfer {
+            lock_args,
+            to,
+            amount,
+            fee_rate,
+            network,
+            rpc_url,
+        } => {
+            let (wallet_id, _) = find_wallet(&cli.wallet)?;
+            handle_transfer(wallet_id, &lock_args, &to, amount, fee_rate, &network, &rpc_url)?;
+        }
+
+        Commands::Dao {
+            network,
+            rpc_url,
+            command,
+        } => {
+            let (wallet_id, _) = find_wallet(&cli.wallet)?;
+
+            match command {
+                DaoCommands::List { lock_args } => {
+                    handle_dao_list(wallet_id, &lock_args, &network, &rpc_url)?;
+                }
+                DaoCommands::Deposit {
+                    lock_args,
+                    amount,
+                    fee_rate,
+                } => {
+                    handle_dao_deposit(
+                        wallet_id, &lock_args, amount, fee_rate, &network, &rpc_url,
+                    )?;
+                }
+                DaoCommands::Prepare {
+                    lock_args,
+                    tx_hash,
+                    index,
+                    fee_rate,
+                } => {
+                    handle_dao_prepare(
+                        wallet_id, &lock_args, &tx_hash, index, fee_rate, &network, &rpc_url,
+                    )?;
+                }
+                DaoCommands::Withdraw {
+                    lock_args,
+                    tx_hash,
+                    index,
+                    fee_rate,
+                } => {
+                    handle_dao_withdraw(
+                        wallet_id, &lock_args, &tx_hash, index, fee_rate, &network, &rpc_url,
+                    )?;
+                }
+            }
+        }
+
+        Commands::Msig {
+            network,
+            rpc_url,
+            command,
+        } => {
+            let (wallet_id, _) = find_wallet(&cli.wallet)?;
+
+            match command {
+                MsigCommands::BuildTransfer {
+                    lock_args,
+                    to,
+                    amount,
+                    fee_rate,
+                    output,
+                } => {
+                    handle_msig_build_transfer(
+                        wallet_id, &lock_args, &to, amount, fee_rate, &output, &network, &rpc_url,
+                    )?;
+                }
+                MsigCommands::BuildDeposit {
+                    lock_args,
+                    amount,
+                    fee_rate,
+                    output,
+                } => {
+                    handle_msig_build_dao(
+                        wallet_id, &lock_args, "deposit", amount, None, 0, fee_rate, &output,
+                        &network, &rpc_url,
+                    )?;
+                }
+                MsigCommands::BuildPrepare {
+                    lock_args,
+                    tx_hash,
+                    index,
+                    fee_rate,
+                    output,
+                } => {
+                    handle_msig_build_dao(
+                        wallet_id, &lock_args, "prepare", 0.0, Some(&tx_hash), index, fee_rate,
+                        &output, &network, &rpc_url,
+                    )?;
+                }
+                MsigCommands::BuildWithdraw {
+                    lock_args,
+                    tx_hash,
+                    index,
+                    fee_rate,
+                    output,
+                } => {
+                    handle_msig_build_dao(
+                        wallet_id, &lock_args, "withdraw", 0.0, Some(&tx_hash), index, fee_rate,
+                        &output, &network, &rpc_url,
+                    )?;
+                }
+                MsigCommands::Sign { request, output } => {
+                    handle_msig_sign(wallet_id, &request, &output)?;
+                }
+                MsigCommands::Submit { request, response } => {
+                    handle_msig_submit(&request, &response, &network, &rpc_url)?;
+                }
+            }
+        }
 
         Commands::Delete => {
             let (wallet_id, name) = find_wallet(&cli.wallet)?;
