@@ -130,16 +130,9 @@ impl App {
         ui.horizontal_centered(|ui| {
             ui.add_space(12.0);
 
-            // Ident block.
-            let (logo, _) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
-            ui.painter().rect_filled(logo, 0.0, c_accent);
-            ui.painter().text(
-                logo.center(),
-                egui::Align2::CENTER_CENTER,
-                "Q",
-                display_font(12.0),
-                c_bg,
-            );
+            // Ident block: the qp∞ mark knocked out of the accent chip.
+            let (logo, _) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::hover());
+            draw_qp_logo_chip(ui.painter(), logo, c_accent, c_bg);
             ui.add_space(8.0);
             ui.label(
                 egui::RichText::new("QUANTUM PURSE")
@@ -507,7 +500,12 @@ impl App {
         let panel_w = 680.0;
 
         ui.vertical_centered(|ui| {
-            ui.add_space(40.0);
+            ui.add_space(32.0);
+
+            // The qp∞ mark at full size — the one place it gets room.
+            let (logo, _) = ui.allocate_exact_size(egui::vec2(56.0, 56.0), egui::Sense::hover());
+            draw_qp_logo_chip(ui.painter(), logo, self.colors.accent, self.colors.bg);
+            ui.add_space(10.0);
 
             ui.label(
                 egui::RichText::new("QUANTUM PURSE")
@@ -805,6 +803,53 @@ fn boot_lines(
     let (rect, _) = ui.allocate_exact_size(full.size(), egui::Sense::hover());
     ui.painter()
         .text(rect.left_top(), egui::Align2::LEFT_TOP, typed, font, color);
+}
+
+/// The Quantum Purse mark: a "qp" ligature that reads as an infinity
+/// symbol — two bowls side by side with their stems descending past the
+/// baseline, woven by a diagonal cut at the crossing (a faithful
+/// procedural rebuild of the original raster logo). Painter strokes
+/// only: resolution-independent and identical on macOS / Windows /
+/// Linux, with no font or image asset involved.
+fn draw_qp_mark(painter: &egui::Painter, rect: egui::Rect, color: egui::Color32) {
+    let s = rect.width().min(rect.height());
+    let o = rect.left_top();
+    let p = |x: f32, y: f32| egui::pos2(o.x + x * s, o.y + y * s);
+    let stroke = egui::Stroke::new((s * 0.115).max(1.2), color);
+
+    // Bowls of the q (left) and p (right) — the infinity lobes.
+    let r = s * 0.21;
+    let cy = 0.40;
+    painter.circle_stroke(p(0.27, cy), r, stroke);
+    painter.circle_stroke(p(0.73, cy), r, stroke);
+
+    // Descenders: the q's stem hugs the right of its bowl, the p's the
+    // left of its bowl, running side by side through the center.
+    let stem_top = cy + 0.02;
+    let stem_bottom = 0.90;
+    painter.line_segment([p(0.48, stem_top), p(0.48, stem_bottom)], stroke);
+    painter.line_segment([p(0.52, stem_top), p(0.52, stem_bottom)], stroke);
+}
+
+/// The app chip: solid accent square with the qp∞ mark knocked out in
+/// the canvas color, mirroring the original white-on-black logo.
+fn draw_qp_logo_chip(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    chip: egui::Color32,
+    mark: egui::Color32,
+) {
+    painter.rect_filled(rect, 0.0, chip);
+    let inner = rect.shrink(rect.width() * 0.16);
+    draw_qp_mark(painter, inner, mark);
+    // Diagonal weave cut through the stem crossing, in the chip color.
+    let s = inner.width().min(inner.height());
+    let o = inner.left_top();
+    let p = |x: f32, y: f32| egui::pos2(o.x + x * s, o.y + y * s);
+    painter.line_segment(
+        [p(0.41, 0.66), p(0.59, 0.36)],
+        egui::Stroke::new((s * 0.10).max(1.0), chip),
+    );
 }
 
 /// Reveal `text` progressively at `cps` characters per second from the
