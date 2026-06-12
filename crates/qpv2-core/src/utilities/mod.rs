@@ -327,3 +327,60 @@ pub fn password_checker(password: &SecureString) -> Result<u32, String> {
     let rounded_entropy = entropy.round() as u32;
     Ok(rounded_entropy)
 }
+
+/// Parses a decimal CKB amount string into shannons (1 CKB = 10^8
+/// shannons) using pure integer arithmetic.
+///
+/// f64 must never touch money: binary floats mis-convert a large share
+/// of valid 8-decimal amounts by one shannon in either direction (e.g.
+/// `"0.00000003" as f64 * 1e8` truncates to 2). A CKB amount IS an
+/// integer of shannons — the decimal string denotes it exactly, so the
+/// translation can and must be exact.
+///
+/// Accepts forms like `"12"`, `"12."`, `".5"`, `"0.00000003"`
+/// (surrounding whitespace ignored). Rejects signs, exponents, more
+/// than 8 fraction digits, and amounts overflowing u64.
+pub fn parse_ckb_to_shannons(input: &str) -> Result<u64, String> {
+    const SHANNONS_PER_CKB: u64 = 100_000_000;
+
+    let s = input.trim();
+    let (int_part, frac_part) = match s.split_once('.') {
+        Some((i, f)) => (i, f),
+        None => (s, ""),
+    };
+
+    if int_part.is_empty() && frac_part.is_empty() {
+        return Err("Amount is empty.".to_string());
+    }
+    if !int_part.bytes().all(|b| b.is_ascii_digit())
+        || !frac_part.bytes().all(|b| b.is_ascii_digit())
+    {
+        return Err("Amount must be a plain decimal number.".to_string());
+    }
+    if frac_part.len() > 8 {
+        return Err("CKB supports at most 8 decimal places.".to_string());
+    }
+
+    let int_shannons = if int_part.is_empty() {
+        0
+    } else {
+        int_part
+            .parse::<u64>()
+            .ok()
+            .and_then(|n| n.checked_mul(SHANNONS_PER_CKB))
+            .ok_or_else(|| "Amount too large.".to_string())?
+    };
+
+    // Pad the fraction to exactly 8 digits: "5" means 0.5 CKB, i.e.
+    // 50_000_000 shannons. An 8-digit number always fits u64.
+    let frac_shannons = if frac_part.is_empty() {
+        0
+    } else {
+        frac_part.parse::<u64>().expect("all-digit, <=8 chars")
+            * 10u64.pow(8 - frac_part.len() as u32)
+    };
+
+    int_shannons
+        .checked_add(frac_shannons)
+        .ok_or_else(|| "Amount too large.".to_string())
+}

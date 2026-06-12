@@ -27,7 +27,8 @@ const STATUS_DURATION: Duration = Duration::from_secs(5);
 
 use types::{
     AppColors, BalanceResult, DaoQueryResult, DaoView, NodeStatus, NodeStatusUpdate, Screen,
-    Status, Tab, TransactionSendResult, TransactionStatus, TxBuildResult, TxHistoryEvent, TxRecord,
+    Status, Tab, TransactionKind, TransactionSendResult, TransactionStatus, TxBuildResult,
+    TxHistoryEvent, TxRecord,
 };
 
 pub(crate) struct App {
@@ -96,6 +97,11 @@ pub(crate) struct App {
 
     // Transaction state shared by both transfer and DAO flows.
     pub(crate) tx_status: TransactionStatus,
+    /// Which flow owns the in-flight `tx_status`. Most status variants
+    /// don't record their kind, so screens use this to avoid claiming
+    /// the other flow's transaction as their own. Only meaningful while
+    /// `tx_status` is non-Idle.
+    pub(crate) active_tx_kind: Option<TransactionKind>,
     pub(crate) transaction_send_rx: Option<mpsc::Receiver<TransactionSendResult>>,
     pub(crate) transaction_build_rx: Option<mpsc::Receiver<TxBuildResult>>,
 
@@ -192,38 +198,70 @@ pub(crate) struct App {
 
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        // Configure visuals for dark theme
+        // Flight Deck visuals: dark instrument panel, sharp corners,
+        // cryo-cyan signal color.
         let mut visuals = egui::Visuals::dark();
         let colors = AppColors::default();
 
         visuals.override_text_color = Some(colors.text);
-        visuals.panel_fill = colors.surface;
-        visuals.window_fill = colors.surface2;
-        visuals.faint_bg_color = colors.surface2;
+        visuals.panel_fill = colors.bg;
+        visuals.window_fill = colors.surface;
+        visuals.window_stroke = egui::Stroke::new(1.0, colors.border2);
+        visuals.faint_bg_color = colors.surface;
         visuals.extreme_bg_color = colors.bg;
-        visuals.widgets.noninteractive.bg_fill = colors.surface2;
-        visuals.widgets.inactive.bg_fill = colors.surface2;
-        visuals.widgets.hovered.bg_fill = colors.surface2;
-        visuals.widgets.active.bg_fill = colors.surface2;
-        visuals.widgets.open.bg_fill = colors.surface2;
+        visuals.selection.bg_fill = colors.accent_tint;
+        visuals.selection.stroke = egui::Stroke::new(1.0, colors.accent);
+        visuals.hyperlink_color = colors.accent;
 
+        // Sharp corners everywhere — an instrument has no soft edges.
+        visuals.window_corner_radius = egui::CornerRadius::ZERO;
+        visuals.menu_corner_radius = egui::CornerRadius::ZERO;
+        for w in [
+            &mut visuals.widgets.noninteractive,
+            &mut visuals.widgets.inactive,
+            &mut visuals.widgets.hovered,
+            &mut visuals.widgets.active,
+            &mut visuals.widgets.open,
+        ] {
+            w.corner_radius = egui::CornerRadius::ZERO;
+            w.bg_fill = colors.surface2;
+        }
+        visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, colors.border);
+        visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, colors.border);
+        visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, colors.border2);
+        visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, colors.accent);
+        visuals.widgets.open.bg_stroke = egui::Stroke::new(1.0, colors.border2);
+
+        // The Flight Deck theme is the app's only theme: never follow
+        // the OS light/dark preference. Without this pin, egui swaps in
+        // its stock white widget visuals (combo boxes, text fields,
+        // dropdown popups) whenever the system is in light mode.
+        cc.egui_ctx.set_theme(egui::ThemePreference::Dark);
         cc.egui_ctx.set_visuals(visuals);
 
-        // Register custom fonts.
+        // Register custom fonts. All text is monospace: IBM Plex Mono
+        // carries body and data, Martian Mono Condensed carries display
+        // numerals and tiny labels.
         let mut fonts = egui::FontDefinitions::default();
 
-        // Audiowide for hero balance display and headings.
         fonts.font_data.insert(
-            "audiowide".to_owned(),
+            "plex_mono".to_owned(),
             std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
-                "../../../assets/fonts/Audiowide-Regular.ttf"
+                "../../../assets/fonts/IBMPlexMono-Regular.ttf"
             ))),
         );
-        fonts.families.insert(
-            egui::FontFamily::Name("hero".into()),
-            vec!["audiowide".to_owned()],
+        fonts.font_data.insert(
+            "martian_bold".to_owned(),
+            std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+                "../../../assets/fonts/MartianMono-CnBd.ttf"
+            ))),
         );
-
+        fonts.font_data.insert(
+            "martian_reg".to_owned(),
+            std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+                "../../../assets/fonts/MartianMono-CnRg.ttf"
+            ))),
+        );
         // Noto Sans Symbols for arrows and basic symbol glyphs (U+2190–U+21FF, etc.).
         fonts.font_data.insert(
             "noto_symbols".to_owned(),
@@ -238,15 +276,28 @@ impl App {
                 "../../../assets/fonts/NotoSansSymbols2-Regular.ttf"
             ))),
         );
-        // Append both as fallbacks so missing glyphs are resolved.
-        if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
-            family.push("noto_symbols".to_owned());
-            family.push("noto_symbols2".to_owned());
+
+        let fallbacks = ["noto_symbols".to_owned(), "noto_symbols2".to_owned()];
+
+        // Plex Mono becomes the default for BOTH families so every
+        // existing `FontId::proportional` call renders mono.
+        for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+            let list = fonts.families.entry(family).or_default();
+            list.insert(0, "plex_mono".to_owned());
+            list.extend(fallbacks.clone());
         }
-        if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
-            family.push("noto_symbols".to_owned());
-            family.push("noto_symbols2".to_owned());
-        }
+        fonts.families.insert(
+            egui::FontFamily::Name("display".into()),
+            std::iter::once("martian_bold".to_owned())
+                .chain(fallbacks.clone())
+                .collect(),
+        );
+        fonts.families.insert(
+            egui::FontFamily::Name("label".into()),
+            std::iter::once("martian_reg".to_owned())
+                .chain(fallbacks.clone())
+                .collect(),
+        );
 
         cc.egui_ctx.set_fonts(fonts);
 
@@ -361,6 +412,7 @@ impl App {
             transfer_from_account: 0,
             transfer_all: false,
             tx_status: TransactionStatus::Idle,
+            active_tx_kind: None,
             transaction_build_rx: None,
             transaction_send_rx: None,
             dao_view: DaoView::Overview,

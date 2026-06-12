@@ -1,681 +1,461 @@
-//! Wallets tab rendering — create, inspect, and delete wallets.
+//! Wallets tab rendering — vault registry: create, import, export,
+//! rename, switch, and delete wallets.
 
 use eframe::egui;
 use qpv2_core::types::AuthMethod;
 use qpv2_core::KeyVault;
 
-use super::utils::{paint_corner_accent, CardHover};
-use crate::types::Status;
+use super::accounts::{header_cell, table_rule, truncate_middle};
+use super::utils::{accent_button, badge, ghost_button, panel_frame, row_hover, section_header};
+use crate::types::{display_font, label_font, Status};
 use crate::App;
+
+const COL_NAME: f32 = 210.0;
+const COL_VAR: f32 = 110.0;
+const COL_AUTH: f32 = 100.0;
+const COL_ACCT: f32 = 56.0;
+const ROW_H: f32 = 32.0;
+/// Width reserved for the right-aligned SWITCH / DELETE actions.
+const ACTIONS_W: f32 = 160.0;
+/// Hold duration on DELETE before a wallet is removed — destructive,
+/// so a plain click must never be enough.
+const HOLD_SECS: f64 = 2.0;
 
 impl App {
     pub(crate) fn show_wallets_tab(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.add_space(30.0);
+            ui.add_space(24.0);
             ui.vertical(|ui| {
-                ui.set_width(ui.available_width() - 30.0);
+                ui.set_width(ui.available_width() - 24.0);
 
-                ui.heading(
-                    egui::RichText::new("Wallets")
-                        .size(26.0)
-                        .strong()
+                ui.label(
+                    egui::RichText::new("WALLETS")
+                        .font(display_font(16.0))
                         .color(self.colors.text),
                 );
+                ui.add_space(2.0);
                 ui.label(
-                    egui::RichText::new("Create, manage, and inspect your wallets.")
-                        .size(13.0)
-                        .color(self.colors.text_muted),
+                    egui::RichText::new(
+                        "Create, import, rename, switch, and remove local wallets.",
+                    )
+                    .size(11.0)
+                    .color(self.colors.text_muted),
                 );
+                ui.add_space(14.0);
 
-                ui.add_space(22.0);
+                // Targets are collected during the loop and applied after
+                // it: the handlers mutate `wallet_cache` (the Vec being
+                // iterated) via `refresh_wallet_cache` / `switch_wallet`.
+                let mut delete_target: Option<u32> = None;
+                let mut rename_target: Option<(u32, String)> = None;
+                let mut switch_target: Option<(u32, String)> = None;
 
-                // ── Action cards (3-column) ──
-                ui.columns(3, |cols| {
-                    // Create Wallet
-                    let hover = CardHover::new(&cols[0], "wallet-create", &self.colors);
+                panel_frame(&self.colors).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
 
-                    let create_card = egui::Frame::new()
-                        .fill(hover.fill)
-                        .corner_radius(14.0)
-                        .inner_margin(egui::Margin::symmetric(20, 24))
-                        .stroke(hover.stroke)
-                        .show(&mut cols[0], |ui| {
-                            ui.vertical_centered(|ui| {
-                                hover.apply_lift(ui);
-                                ui.label(egui::RichText::new("\u{2726}").size(26.0));
-                                ui.add_space(6.0);
-                                ui.label(
-                                    egui::RichText::new("Create Wallet")
-                                        .size(14.0)
-                                        .strong()
-                                        .color(self.colors.text),
+                    ui.horizontal(|ui| {
+                        // NEW WALLET (solid accent) + IMPORT / EXPORT SEED (ghost).
+                        let btns_w = 120.0 + 80.0 + 110.0 + 3.0 * 8.0;
+                        let header_w = (ui.available_width() - btns_w).max(0.0);
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(header_w, 24.0),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                section_header(
+                                    ui,
+                                    &self.colors,
+                                    "01",
+                                    &format!("Vault Registry // {}", self.wallet_cache.len()),
                                 );
-                                ui.add_space(4.0);
-                                ui.label(
-                                    egui::RichText::new("Generate a new wallet.")
-                                        .size(11.0)
-                                        .color(self.colors.text_muted),
-                                );
-                            });
-                        })
-                        .response;
-
-                    paint_corner_accent(
-                        cols[0].painter(),
-                        create_card.rect,
-                        14.0,
-                        self.colors.accent,
-                    );
-                    hover.commit(&create_card);
-
-                    if create_card.interact(egui::Sense::click()).clicked() {
-                        self.wallet_modal = crate::types::WalletModal::Create;
-                        self.new_wallet_name.clear();
-                        self.new_wallet_variant = qpv2_core::types::SpxVariant::Sha2128S;
-                    }
-
-                    // Import Seed
-                    let hover = CardHover::new(&cols[1], "wallet-import", &self.colors);
-
-                    let import_card = egui::Frame::new()
-                        .fill(hover.fill)
-                        .corner_radius(14.0)
-                        .inner_margin(egui::Margin::symmetric(20, 24))
-                        .stroke(hover.stroke)
-                        .show(&mut cols[1], |ui| {
-                            ui.vertical_centered(|ui| {
-                                hover.apply_lift(ui);
-                                ui.label(egui::RichText::new("\u{2b07}").size(26.0));
-                                ui.add_space(6.0);
-                                ui.label(
-                                    egui::RichText::new("Import Seed")
-                                        .size(14.0)
-                                        .strong()
-                                        .color(self.colors.text),
-                                );
-                                ui.add_space(4.0);
-                                ui.label(
-                                    egui::RichText::new("Restore a wallet from a seed phrase.")
-                                        .size(11.0)
-                                        .color(self.colors.text_muted),
-                                );
-                            });
-                        })
-                        .response;
-
-                    paint_corner_accent(
-                        cols[1].painter(),
-                        import_card.rect,
-                        14.0,
-                        self.colors.warn,
-                    );
-                    hover.commit(&import_card);
-
-                    if import_card.interact(egui::Sense::click()).clicked() {
-                        self.wallet_modal = crate::types::WalletModal::Import;
-                        self.new_wallet_name.clear();
-                        self.new_wallet_variant = qpv2_core::types::SpxVariant::Sha2128S;
-                    }
-
-                    // Export Seed
-                    let hover = CardHover::new(&cols[2], "wallet-export", &self.colors);
-
-                    let export_card = egui::Frame::new()
-                        .fill(hover.fill)
-                        .corner_radius(14.0)
-                        .inner_margin(egui::Margin::symmetric(20, 24))
-                        .stroke(hover.stroke)
-                        .show(&mut cols[2], |ui| {
-                            ui.vertical_centered(|ui| {
-                                hover.apply_lift(ui);
-                                ui.label(egui::RichText::new("\u{2b06}").size(26.0));
-                                ui.add_space(6.0);
-                                ui.label(
-                                    egui::RichText::new("Export Seed")
-                                        .size(14.0)
-                                        .strong()
-                                        .color(self.colors.text),
-                                );
-                                ui.add_space(4.0);
-                                ui.label(
-                                    egui::RichText::new("Make sure no one is watching.")
-                                        .size(11.0)
-                                        .color(self.colors.warn),
-                                );
-                            });
-                        })
-                        .response;
-
-                    paint_corner_accent(
-                        cols[2].painter(),
-                        export_card.rect,
-                        14.0,
-                        self.colors.accent2,
-                    );
-                    hover.commit(&export_card);
-
-                    if export_card.interact(egui::Sense::click()).clicked() {
-                        self.export_seed_phrase();
-                    }
-                });
-
-                ui.add_space(20.0);
-
-                // ── Saved Wallets section ──
-                let wallet_count = self.wallet_cache.len();
-
-                let pill =
-                    |ui: &mut egui::Ui, fill: egui::Color32, text: String, color: egui::Color32| {
-                        egui::Frame::new()
-                            .fill(fill)
-                            .corner_radius(4.0)
-                            .inner_margin(egui::Margin::symmetric(8, 2))
-                            .show(ui, |ui| {
-                                ui.label(
-                                    egui::RichText::new(text)
-                                        .size(8.5)
-                                        .family(egui::FontFamily::Monospace)
-                                        .color(color),
-                                );
-                            });
-                    };
-
-                ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new("Saved Wallets")
-                            .size(15.0)
-                            .strong()
-                            .color(self.colors.text),
-                    );
-                    ui.add_space(10.0);
-                    pill(
-                        ui,
-                        self.colors.accent_tint,
-                        format!("{} total", wallet_count),
-                        self.colors.accent,
-                    );
-                    ui.add_space(10.0);
-                    self.show_status(ui);
-                });
-
-                ui.add_space(12.0);
-
-                if self.wallet_cache.is_empty() {
-                    ui.label(
-                        egui::RichText::new("No wallets yet. Create one above.")
-                            .color(self.colors.text_muted),
-                    );
-                } else {
-                    let mut delete_target: Option<u32> = None;
-                    let mut rename_target: Option<(u32, String)> = None;
-                    let mut switch_target: Option<(u32, String)> = None;
-
-                    for i in 0..self.wallet_cache.len() {
-                        let cw = &self.wallet_cache[i];
-                        let is_active = cw.id == self.wallet_id;
-
-                        let hover = CardHover::new(ui, ("wallet-row", i), &self.colors);
-
-                        let cw_id = cw.id;
-                        let cw_name = cw.name.clone();
-                        let cw_variant = cw.spx_variant;
-                        let cw_auth = cw.auth_method.clone();
-                        let cw_acct_count = cw.account_count;
-                        let cw_path = cw.path.clone();
-
-                        let row_resp = egui::Frame::new()
-                            .fill(hover.fill)
-                            .corner_radius(8.0)
-                            .inner_margin(egui::Margin::symmetric(18, 16))
-                            .stroke(hover.stroke)
-                            .show(ui, |ui| {
-                                ui.with_layout(
-                                    egui::Layout::left_to_right(egui::Align::Min),
-                                    |ui| {
-                                        let (tile_rect, _) = ui.allocate_exact_size(
-                                            egui::vec2(64.0, 64.0),
-                                            egui::Sense::hover(),
-                                        );
-                                        paint_wallet_tile(
-                                            ui.painter(),
-                                            tile_rect,
-                                            &cw_name,
-                                            self.colors.surface2,
-                                            self.colors.border,
-                                            self.colors.text_muted,
-                                        );
-
-                                        ui.add_space(12.0);
-
-                                        // Info column
-                                        let info_width = ui.available_width();
-                                        ui.vertical(|ui| {
-                                            ui.set_width(info_width);
-                                            let is_renaming = self.rename_wallet_id == Some(cw_id);
-
-                                            if is_renaming {
-                                                ui.horizontal(|ui| {
-                                                    let field = egui::TextEdit::singleline(
-                                                        &mut self.rename_wallet_buf,
-                                                    )
-                                                    .desired_width(140.0)
-                                                    .font(egui::TextStyle::Body);
-                                                    let response = ui.add(field);
-
-                                                    if response.lost_focus()
-                                                        && ui.input(|i| {
-                                                            i.key_pressed(egui::Key::Enter)
-                                                        })
-                                                    {
-                                                        rename_target = Some((
-                                                            cw_id,
-                                                            self.rename_wallet_buf.clone(),
-                                                        ));
-                                                    }
-
-                                                    let ok_btn = egui::Button::new(
-                                                        egui::RichText::new("\u{2713}")
-                                                            .size(13.0)
-                                                            .color(self.colors.accent),
-                                                    )
-                                                    .fill(egui::Color32::TRANSPARENT);
-
-                                                    if ui.add(ok_btn).clicked() {
-                                                        rename_target = Some((
-                                                            cw_id,
-                                                            self.rename_wallet_buf.clone(),
-                                                        ));
-                                                    }
-
-                                                    let cancel_btn = egui::Button::new(
-                                                        egui::RichText::new("\u{2715}")
-                                                            .size(13.0)
-                                                            .color(self.colors.text_muted),
-                                                    )
-                                                    .fill(egui::Color32::TRANSPARENT);
-
-                                                    if ui.add(cancel_btn).clicked() {
-                                                        self.rename_wallet_id = None;
-                                                        self.rename_wallet_buf.clear();
-                                                    }
-                                                });
-                                            } else {
-                                                ui.horizontal(|ui| {
-                                                    ui.label(
-                                                        egui::RichText::new(&cw_name)
-                                                            .size(14.0)
-                                                            .strong()
-                                                            .color(self.colors.text),
-                                                    );
-                                                    let pen = ui.add(
-                                                        egui::Button::new(
-                                                            egui::RichText::new("\u{270f}")
-                                                                .size(11.0)
-                                                                .color(self.colors.text_muted),
-                                                        )
-                                                        .fill(egui::Color32::TRANSPARENT)
-                                                        .frame(false),
-                                                    );
-                                                    if pen.clicked() {
-                                                        self.rename_wallet_id = Some(cw_id);
-                                                        self.rename_wallet_buf = cw_name.clone();
-                                                    }
-
-                                                    if is_active {
-                                                        ui.add_space(4.0);
-                                                        pill(
-                                                            ui,
-                                                            self.colors.accent_tint,
-                                                            "ACTIVE".to_string(),
-                                                            self.colors.accent,
-                                                        );
-                                                    }
-                                                });
-                                            }
-
-                                            ui.add_space(4.0);
-
-                                            ui.horizontal(|ui| {
-                                                pill(
-                                                    ui,
-                                                    self.colors.surface2,
-                                                    format!("{}", cw_variant),
-                                                    self.colors.text_muted,
-                                                );
-                                                let (auth_label, auth_color) = match &cw_auth {
-                                                    AuthMethod::Password => {
-                                                        ("Password", self.colors.text_muted)
-                                                    }
-                                                    AuthMethod::Keychain => (
-                                                        keychain::short_name(),
-                                                        self.colors.accent2,
-                                                    ),
-                                                    AuthMethod::Fido2 { .. } => {
-                                                        ("FIDO2 Key", self.colors.accent3)
-                                                    }
-                                                };
-                                                pill(
-                                                    ui,
-                                                    egui::Color32::from_rgba_unmultiplied(
-                                                        auth_color.r(),
-                                                        auth_color.g(),
-                                                        auth_color.b(),
-                                                        20,
-                                                    ),
-                                                    auth_label.to_string(),
-                                                    auth_color,
-                                                );
-
-                                                let acct_text = if cw_acct_count == 1 {
-                                                    "1 account".to_string()
-                                                } else {
-                                                    format!("{} accounts", cw_acct_count)
-                                                };
-                                                pill(
-                                                    ui,
-                                                    self.colors.surface2,
-                                                    acct_text,
-                                                    self.colors.text_muted,
-                                                );
-                                            });
-
-                                            ui.add_space(4.0);
-
-                                            ui.horizontal(|ui| {
-                                                pill(
-                                                    ui,
-                                                    self.colors.surface2,
-                                                    cw_path.clone(),
-                                                    self.colors.text_muted,
-                                                );
-
-                                                // Hold-to-delete pill
-                                                const HOLD_SECS: f64 = 2.0;
-                                                let del_id = ui.id().with(("del-hold", cw_id));
-                                                let press_start: Option<f64> =
-                                                    ui.ctx().memory(|m| m.data.get_temp(del_id));
-
-                                                let del_resp = egui::Frame::new()
-                                                    .fill(egui::Color32::TRANSPARENT)
-                                                    .stroke(egui::Stroke::new(
-                                                        1.0,
-                                                        egui::Color32::from_rgba_unmultiplied(
-                                                            255, 77, 109, 77,
-                                                        ),
-                                                    ))
-                                                    .corner_radius(4.0)
-                                                    .inner_margin(egui::Margin::symmetric(8, 2))
-                                                    .show(ui, |ui| {
-                                                        ui.label(
-                                                            egui::RichText::new("\u{1f5d1} Delete")
-                                                                .size(8.5)
-                                                                .family(egui::FontFamily::Monospace)
-                                                                .color(self.colors.danger),
-                                                        );
-                                                    })
-                                                    .response
-                                                    .interact(egui::Sense::click_and_drag());
-
-                                                if del_resp.is_pointer_button_down_on() {
-                                                    let now = ui.input(|i| i.time);
-                                                    if press_start.is_none()
-                                                        && del_resp.contains_pointer()
-                                                        && ui.input(|i| i.pointer.any_pressed())
-                                                    {
-                                                        ui.ctx().memory_mut(|m| {
-                                                            m.data.insert_temp(del_id, now)
-                                                        });
-                                                    }
-                                                    let start = press_start.unwrap_or(now);
-                                                    let progress = ((now - start) / HOLD_SECS)
-                                                        .clamp(0.0, 1.0)
-                                                        as f32;
-                                                    paint_hold_border(
-                                                        ui.painter(),
-                                                        del_resp.rect,
-                                                        4.0,
-                                                        progress,
-                                                        egui::Stroke::new(
-                                                            1.0,
-                                                            egui::Color32::from_rgb(255, 77, 109),
-                                                        ),
-                                                    );
-                                                    if progress >= 1.0 {
-                                                        delete_target = Some(cw_id);
-                                                        ui.ctx().memory_mut(|m| {
-                                                            m.data.remove::<f64>(del_id)
-                                                        });
-                                                    }
-                                                    ui.ctx().request_repaint();
-                                                } else if press_start.is_some() {
-                                                    ui.ctx().memory_mut(|m| {
-                                                        m.data.remove::<f64>(del_id)
-                                                    });
-                                                }
-                                            });
-                                        });
-                                    },
-                                );
-                            });
-
-                        hover.commit(&row_resp.response);
-                        if !is_active {
-                            let click = row_resp
-                                .response
-                                .interact(egui::Sense::click())
-                                .on_hover_cursor(egui::CursorIcon::PointingHand);
-                            if click.clicked() {
-                                switch_target = Some((cw_id, cw_name.clone()));
-                            }
-                        }
-                        ui.add_space(6.0);
-                    }
-
-                    // Handle delete outside the iteration to avoid borrow issues.
-                    if let Some(id) = delete_target {
-                        let _ = keychain::delete_key(id);
-                        let lock_args = KeyVault::get_all_lock_args(id).unwrap_or_default();
-                        let _ = ckb_node::wallet_helpers::lc::clear_wallet_scripts(
-                            &self.qp_client,
-                            &lock_args,
+                            },
                         );
-
-                        match KeyVault::remove_wallet(id) {
-                            Ok(()) => {
-                                if id == self.wallet_id {
-                                    self.lock_wallet();
-                                    self.refresh_wallet_cache();
-                                    if let Some(first) = self.wallet_cache.first() {
-                                        let fid = first.id;
-                                        let fname = first.name.clone();
-                                        self.switch_wallet(fid, &fname);
-                                    } else {
-                                        self.wallet_id = 0;
-                                        self.wallet_name.clear();
-                                        self.screen = crate::types::Screen::Setup;
-                                    }
-                                } else {
-                                    self.refresh_wallet_cache();
-                                }
-                                self.status =
-                                    Status::Info("Wallet removed successfully.".to_string());
-                            }
-                            Err(e) => {
-                                let msg = format!("Failed to remove wallet: {}", e);
-                                tracing::error!("{}", msg);
-                                self.status = Status::Error(msg);
-                            }
+                        let export =
+                            ghost_button(&self.colors, "EXPORT SEED", egui::vec2(110.0, 24.0));
+                        if ui
+                            .add(export)
+                            .on_hover_text("Reveal the active wallet's seed phrase")
+                            .clicked()
+                        {
+                            self.export_seed_phrase();
                         }
-                    }
+                        let import = ghost_button(&self.colors, "IMPORT", egui::vec2(80.0, 24.0));
+                        if ui
+                            .add(import)
+                            .on_hover_text("Restore a wallet from a seed phrase")
+                            .clicked()
+                        {
+                            self.wallet_modal = crate::types::WalletModal::Import;
+                            self.new_wallet_name.clear();
+                            self.new_wallet_variant = qpv2_core::types::SpxVariant::Sha2128S;
+                        }
+                        let create =
+                            accent_button(&self.colors, "NEW WALLET", egui::vec2(120.0, 24.0));
+                        if ui.add(create).clicked() {
+                            self.wallet_modal = crate::types::WalletModal::Create;
+                            self.new_wallet_name.clear();
+                            self.new_wallet_variant = qpv2_core::types::SpxVariant::Sha2128S;
+                        }
+                    });
+                    ui.add_space(10.0);
 
-                    // Handle rename outside the iteration because
-                    // `refresh_wallet_cache()` replaces the Vec being iterated.
-                    if let Some((id, new_name)) = rename_target {
-                        let trimmed = new_name.trim();
-                        match qpv2_core::db::wallets::rename_wallet(id, trimmed) {
-                            Ok(()) => {
-                                if id == self.wallet_id {
-                                    self.wallet_name = trimmed.to_string();
-                                }
+                    if self.wallet_cache.is_empty() {
+                        ui.label(
+                            egui::RichText::new("NO VAULTS REGISTERED — CREATE ONE TO BEGIN.")
+                                .font(label_font(9.5))
+                                .color(self.colors.text_muted),
+                        );
+                    } else {
+                        self.wallets_table(
+                            ui,
+                            &mut delete_target,
+                            &mut rename_target,
+                            &mut switch_target,
+                        );
+                    }
+                });
+
+                if let Some(id) = delete_target {
+                    let _ = keychain::delete_key(id);
+                    let lock_args = KeyVault::get_all_lock_args(id).unwrap_or_default();
+                    let _ = ckb_node::wallet_helpers::lc::clear_wallet_scripts(
+                        &self.qp_client,
+                        &lock_args,
+                    );
+
+                    match KeyVault::remove_wallet(id) {
+                        Ok(()) => {
+                            if id == self.wallet_id {
+                                self.lock_wallet();
                                 self.refresh_wallet_cache();
-                                self.status =
-                                    Status::Info(format!("Wallet renamed to '{}'.", trimmed,));
+                                if let Some(first) = self.wallet_cache.first() {
+                                    let fid = first.id;
+                                    let fname = first.name.clone();
+                                    self.switch_wallet(fid, &fname);
+                                } else {
+                                    self.wallet_id = 0;
+                                    self.wallet_name.clear();
+                                    self.screen = crate::types::Screen::Setup;
+                                }
+                            } else {
+                                self.refresh_wallet_cache();
                             }
-                            Err(e) => {
-                                let msg = format!("Failed to rename wallet: {}", e,);
-                                tracing::error!("{}", msg);
-                                self.status = Status::Error(msg);
-                            }
+                            self.status = Status::Info("Wallet removed successfully.".to_string());
                         }
-                        self.rename_wallet_id = None;
-                        self.rename_wallet_buf.clear();
+                        Err(e) => {
+                            let msg = format!("Failed to remove wallet: {}", e);
+                            tracing::error!("{}", msg);
+                            self.status = Status::Error(msg);
+                        }
                     }
+                }
 
-                    if let Some((id, name)) = switch_target {
-                        self.switch_wallet(id, &name);
+                if let Some((id, new_name)) = rename_target {
+                    let trimmed = new_name.trim();
+                    match qpv2_core::db::wallets::rename_wallet(id, trimmed) {
+                        Ok(()) => {
+                            if id == self.wallet_id {
+                                self.wallet_name = trimmed.to_string();
+                            }
+                            self.refresh_wallet_cache();
+                            self.status = Status::Info(format!("Wallet renamed to '{}'.", trimmed));
+                        }
+                        Err(e) => {
+                            let msg = format!("Failed to rename wallet: {}", e);
+                            tracing::error!("{}", msg);
+                            self.status = Status::Error(msg);
+                        }
                     }
+                    self.rename_wallet_id = None;
+                    self.rename_wallet_buf.clear();
+                }
+
+                if let Some((id, name)) = switch_target {
+                    self.switch_wallet(id, &name);
                 }
 
                 ui.add_space(20.0);
             });
         });
     }
-}
 
-fn paint_hold_border(
-    painter: &egui::Painter,
-    rect: egui::Rect,
-    cr: f32,
-    progress: f32,
-    stroke: egui::Stroke,
-) {
-    use std::f32::consts::{FRAC_PI_2, PI};
+    fn wallets_table(
+        &mut self,
+        ui: &mut egui::Ui,
+        delete_target: &mut Option<u32>,
+        rename_target: &mut Option<(u32, String)>,
+        switch_target: &mut Option<(u32, String)>,
+    ) {
+        ui.scope(|ui| {
+            // Rows must sit flush against their hairlines.
+            ui.spacing_mut().item_spacing.y = 0.0;
 
-    let w = rect.width();
-    let h = rect.height();
-    let cx = rect.center().x;
+            ui.horizontal(|ui| {
+                ui.add_space(6.0);
+                header_cell(ui, &self.colors, COL_NAME, "NAME", false);
+                header_cell(ui, &self.colors, COL_VAR, "VARIANT", false);
+                header_cell(ui, &self.colors, COL_AUTH, "AUTH", false);
+                header_cell(ui, &self.colors, COL_ACCT, "ACCTS", false);
+                header_cell(ui, &self.colors, 120.0, "PATH", false);
+            });
+            ui.add_space(4.0);
+            table_rule(ui, &self.colors);
 
-    let seg_lengths: [f32; 9] = [
-        w / 2.0 - cr,
-        FRAC_PI_2 * cr,
-        h - 2.0 * cr,
-        FRAC_PI_2 * cr,
-        w - 2.0 * cr,
-        FRAC_PI_2 * cr,
-        h - 2.0 * cr,
-        FRAC_PI_2 * cr,
-        w / 2.0 - cr,
-    ];
-    let total: f32 = seg_lengths.iter().sum();
-    let mut budget = total * progress;
+            for i in 0..self.wallet_cache.len() {
+                // Snapshot the row fields so the cell closures don't hold a
+                // borrow of `wallet_cache` while mutating rename state.
+                let cw = &self.wallet_cache[i];
+                let cw_id = cw.id;
+                let cw_name = cw.name.clone();
+                let cw_variant = format!("{}", cw.spx_variant);
+                let auth_label = match &cw.auth_method {
+                    AuthMethod::Password => "PASSWORD".to_string(),
+                    AuthMethod::Keychain => keychain::short_name().to_string(),
+                    AuthMethod::Fido2 { .. } => "FIDO2".to_string(),
+                };
+                let cw_acct_count = cw.account_count;
+                let cw_path = cw.path.clone();
+                let is_active = cw_id == self.wallet_id;
 
-    let mut points = Vec::with_capacity(72);
-    points.push(egui::pos2(cx, rect.min.y));
+                let full_w = ui.available_width();
+                let rect = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(full_w, ROW_H));
+                if is_active {
+                    // Persistent variant of the hover treatment: tint
+                    // fill plus a 2px accent left tick.
+                    ui.painter().rect_filled(rect, 0.0, self.colors.accent_tint);
+                    ui.painter().rect_filled(
+                        egui::Rect::from_min_size(rect.left_top(), egui::vec2(2.0, rect.height())),
+                        0.0,
+                        self.colors.accent,
+                    );
+                } else if ui.rect_contains_pointer(rect) {
+                    row_hover(ui.painter(), rect, &self.colors);
+                }
 
-    for (i, &seg_len) in seg_lengths.iter().enumerate() {
-        if budget <= 0.0 {
-            break;
+                ui.allocate_ui_with_layout(
+                    egui::vec2(full_w, ROW_H),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        // Keep content clear of the 2px tick.
+                        ui.add_space(6.0);
+
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(COL_NAME, ROW_H),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                // Pin to the column width (see header_cell).
+                                ui.set_min_width(COL_NAME);
+                                if self.rename_wallet_id == Some(cw_id) {
+                                    let field =
+                                        egui::TextEdit::singleline(&mut self.rename_wallet_buf)
+                                            .desired_width(118.0)
+                                            .font(egui::FontId::monospace(11.0));
+                                    let response = ui.add(field);
+                                    if response.lost_focus()
+                                        && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                                    {
+                                        *rename_target =
+                                            Some((cw_id, self.rename_wallet_buf.clone()));
+                                    }
+                                    let ok =
+                                        ghost_button(&self.colors, "OK", egui::vec2(30.0, 18.0));
+                                    if ui.add(ok).clicked() {
+                                        *rename_target =
+                                            Some((cw_id, self.rename_wallet_buf.clone()));
+                                    }
+                                    let cancel = egui::Button::new(
+                                        egui::RichText::new("X")
+                                            .font(label_font(9.0))
+                                            .color(self.colors.text_muted),
+                                    )
+                                    .fill(egui::Color32::TRANSPARENT)
+                                    .stroke(egui::Stroke::new(1.0, self.colors.border))
+                                    .corner_radius(0.0)
+                                    .min_size(egui::vec2(22.0, 18.0));
+                                    if ui.add(cancel).clicked() {
+                                        self.rename_wallet_id = None;
+                                        self.rename_wallet_buf.clear();
+                                    }
+                                } else {
+                                    let label = egui::Label::new(
+                                        egui::RichText::new(&cw_name)
+                                            .size(11.5)
+                                            .color(self.colors.text),
+                                    )
+                                    .sense(egui::Sense::click());
+                                    let resp = ui
+                                        .add(label)
+                                        .on_hover_text("Click to rename")
+                                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                    if resp.clicked() {
+                                        self.rename_wallet_id = Some(cw_id);
+                                        self.rename_wallet_buf = cw_name.clone();
+                                    }
+                                }
+                            },
+                        );
+
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(COL_VAR, ROW_H),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.set_min_width(COL_VAR);
+                                badge(ui, &cw_variant, self.colors.accent3);
+                            },
+                        );
+
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(COL_AUTH, ROW_H),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.set_min_width(COL_AUTH);
+                                badge(ui, &auth_label, self.colors.text_muted);
+                            },
+                        );
+
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(COL_ACCT, ROW_H),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.set_min_width(COL_ACCT);
+                                ui.label(
+                                    egui::RichText::new(format!("{}", cw_acct_count))
+                                        .size(11.5)
+                                        .color(self.colors.text),
+                                );
+                            },
+                        );
+
+                        let path_w = (ui.available_width() - ACTIONS_W).max(60.0);
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(path_w, ROW_H),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.set_min_width(path_w);
+                                ui.add(egui::Label::new(
+                                    egui::RichText::new(truncate_middle(&cw_path, 14, 16))
+                                        .size(10.5)
+                                        .color(self.colors.text_muted),
+                                ))
+                                .on_hover_text(&cw_path);
+                            },
+                        );
+
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.add_space(6.0);
+                            self.delete_hold_button(ui, cw_id, delete_target);
+                            ui.add_space(4.0);
+                            if is_active {
+                                // Solid accent marker in the SWITCH slot:
+                                // unmistakably "this one is live", and the
+                                // action column stays on one grid.
+                                let (rect, _) = ui.allocate_exact_size(
+                                    egui::vec2(64.0, 20.0),
+                                    egui::Sense::hover(),
+                                );
+                                ui.painter().rect_filled(rect, 0.0, self.colors.accent);
+                                ui.painter().text(
+                                    rect.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    "ACTIVE",
+                                    label_font(9.0),
+                                    self.colors.bg,
+                                );
+                            } else {
+                                let sw =
+                                    ghost_button(&self.colors, "SWITCH", egui::vec2(64.0, 20.0));
+                                if ui.add(sw).clicked() {
+                                    *switch_target = Some((cw_id, cw_name.clone()));
+                                }
+                            }
+                        });
+                    },
+                );
+
+                table_rule(ui, &self.colors);
+            }
+        });
+    }
+
+    /// Ghost-style DELETE in semantic red that must be held for
+    /// `HOLD_SECS` — a flat progress fill sweeps across while held, so
+    /// the confirmation gesture is visible at all times.
+    fn delete_hold_button(
+        &self,
+        ui: &mut egui::Ui,
+        wallet_id: u32,
+        delete_target: &mut Option<u32>,
+    ) {
+        let c = self.colors.danger;
+        let btn = egui::Button::new(
+            egui::RichText::new("DELETE")
+                .font(label_font(11.0))
+                .color(c),
+        )
+        .fill(egui::Color32::TRANSPARENT)
+        .stroke(egui::Stroke::new(
+            1.0,
+            egui::Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), 90),
+        ))
+        .corner_radius(0.0)
+        .min_size(egui::vec2(64.0, 20.0));
+
+        let del_id = ui.id().with(("wallet-del-hold", wallet_id));
+        let press_start: Option<f64> = ui.ctx().memory(|m| m.data.get_temp(del_id));
+        let resp = ui.add(btn).on_hover_text("Hold to delete");
+
+        // Once a hold fires, that physical press is spent: after the
+        // deleted row disappears, the next row shifts under the still-
+        // held pointer and would otherwise start charging immediately —
+        // cascading into the wrong wallet. Latched until release.
+        let consumed_id = egui::Id::new("wallet-del-press-consumed");
+        let consumed: bool = ui
+            .ctx()
+            .memory(|m| m.data.get_temp(consumed_id).unwrap_or(false));
+        let pointer_down = ui.input(|i| i.pointer.primary_down());
+        if consumed && !pointer_down {
+            ui.ctx().memory_mut(|m| m.data.remove::<bool>(consumed_id));
         }
-        let usable = budget.min(seg_len);
-        let frac = if seg_len > 0.0 { usable / seg_len } else { 0.0 };
 
-        match i {
-            0 => points.push(egui::pos2(cx + usable, rect.min.y)),
-            1 => {
-                let c = egui::pos2(rect.max.x - cr, rect.min.y + cr);
-                let n = (8.0 * frac).ceil().max(1.0) as usize;
-                for s in 1..=n {
-                    let a = -FRAC_PI_2 + (s as f32 / n as f32) * frac * FRAC_PI_2;
-                    points.push(c + egui::vec2(cr * a.cos(), cr * a.sin()));
-                }
+        // Read the pointer directly instead of is_pointer_button_down_on():
+        // egui drops that flag once a press outlives its max click
+        // duration (~0.8s), which silently cancelled the 2s hold. The
+        // press must start on the button AND stay over it — dragging
+        // off cancels, like a regular button.
+        let held = !consumed
+            && pointer_down
+            && ui.input(|i| {
+                i.pointer
+                    .press_origin()
+                    .is_some_and(|p| resp.rect.contains(p))
+                    && i.pointer
+                        .latest_pos()
+                        .is_some_and(|p| resp.rect.contains(p))
+            });
+
+        if held {
+            let now = ui.input(|i| i.time);
+            if press_start.is_none() {
+                ui.ctx().memory_mut(|m| m.data.insert_temp(del_id, now));
             }
-            2 => points.push(egui::pos2(rect.max.x, rect.min.y + cr + usable)),
-            3 => {
-                let c = egui::pos2(rect.max.x - cr, rect.max.y - cr);
-                let n = (8.0 * frac).ceil().max(1.0) as usize;
-                for s in 1..=n {
-                    let a = (s as f32 / n as f32) * frac * FRAC_PI_2;
-                    points.push(c + egui::vec2(cr * a.cos(), cr * a.sin()));
-                }
+            let start = press_start.unwrap_or(now);
+            let progress = ((now - start) / HOLD_SECS).clamp(0.0, 1.0) as f32;
+            let r = resp.rect;
+            ui.painter().rect_filled(
+                egui::Rect::from_min_size(r.min, egui::vec2(r.width() * progress, r.height())),
+                0.0,
+                egui::Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), 60),
+            );
+            if progress >= 1.0 {
+                *delete_target = Some(wallet_id);
+                ui.ctx().memory_mut(|m| {
+                    m.data.remove::<f64>(del_id);
+                    m.data.insert_temp(consumed_id, true);
+                });
             }
-            4 => points.push(egui::pos2(rect.max.x - cr - usable, rect.max.y)),
-            5 => {
-                let c = egui::pos2(rect.min.x + cr, rect.max.y - cr);
-                let n = (8.0 * frac).ceil().max(1.0) as usize;
-                for s in 1..=n {
-                    let a = FRAC_PI_2 + (s as f32 / n as f32) * frac * FRAC_PI_2;
-                    points.push(c + egui::vec2(cr * a.cos(), cr * a.sin()));
-                }
-            }
-            6 => points.push(egui::pos2(rect.min.x, rect.max.y - cr - usable)),
-            7 => {
-                let c = egui::pos2(rect.min.x + cr, rect.min.y + cr);
-                let n = (8.0 * frac).ceil().max(1.0) as usize;
-                for s in 1..=n {
-                    let a = PI + (s as f32 / n as f32) * frac * FRAC_PI_2;
-                    points.push(c + egui::vec2(cr * a.cos(), cr * a.sin()));
-                }
-            }
-            8 => points.push(egui::pos2(rect.min.x + cr + usable, rect.min.y)),
-            _ => {}
+            ui.ctx().request_repaint();
+        } else if press_start.is_some() {
+            // Released early: disarm so the next press starts from zero.
+            ui.ctx().memory_mut(|m| m.data.remove::<f64>(del_id));
         }
-
-        budget -= usable;
     }
-
-    if points.len() >= 2 {
-        painter.add(egui::Shape::line(points, stroke));
-    }
-}
-
-fn paint_wallet_tile(
-    painter: &egui::Painter,
-    rect: egui::Rect,
-    name: &str,
-    fill: egui::Color32,
-    border: egui::Color32,
-    text_color: egui::Color32,
-) {
-    let cr = 8.0;
-    painter.rect_filled(rect, cr, fill);
-    painter.rect_stroke(
-        rect,
-        cr,
-        egui::Stroke::new(1.0, border),
-        egui::StrokeKind::Inside,
-    );
-
-    let stripe = egui::Color32::from_rgba_unmultiplied(border.r(), border.g(), border.b(), 40);
-    let step = 8.0;
-    let clip = rect.shrink(1.0);
-    let mut x = rect.left() - rect.height();
-    while x < rect.right() {
-        let p0 = egui::pos2(x, rect.bottom());
-        let p1 = egui::pos2(x + rect.height(), rect.top());
-        let p0c = egui::pos2(
-            p0.x.clamp(clip.left(), clip.right()),
-            p0.y.clamp(clip.top(), clip.bottom()),
-        );
-        let p1c = egui::pos2(
-            p1.x.clamp(clip.left(), clip.right()),
-            p1.y.clamp(clip.top(), clip.bottom()),
-        );
-        painter.line_segment([p0c, p1c], egui::Stroke::new(0.5, stripe));
-        x += step;
-    }
-
-    let letter = name
-        .chars()
-        .next()
-        .unwrap_or('?')
-        .to_uppercase()
-        .next()
-        .unwrap_or('?');
-    painter.text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        letter.to_string(),
-        egui::FontId::new(14.0, egui::FontFamily::Monospace),
-        text_color,
-    );
 }

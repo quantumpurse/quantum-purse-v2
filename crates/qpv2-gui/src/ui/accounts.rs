@@ -1,282 +1,327 @@
-//! Accounts tab rendering — single-sig accounts only.
+//! Accounts tab rendering — single-sig account registry.
 
 use eframe::egui;
 use qpv2_core::types::AuthMethod;
 use qpv2_core::KeyVault;
 
-use super::utils::{paint_corner_accent, CardHover};
-use crate::types::Status;
-use crate::utils::format_ckb_balance;
+use super::utils::{
+    accent_button, badge, ckb_split, ghost_button, panel_frame, row_hover, section_header,
+};
+use crate::types::{display_font, label_font, AppColors, Status};
 use crate::App;
+
+/// Middle-truncate a long identifier so registry rows stay one line.
+/// Char-based so multi-byte text (e.g. filesystem paths) can't split a
+/// code point.
+pub(crate) fn truncate_middle(s: &str, head: usize, tail: usize) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    if chars.len() <= head + tail + 1 {
+        return s.to_string();
+    }
+    let head_s: String = chars[..head].iter().collect();
+    let tail_s: String = chars[chars.len() - tail..].iter().collect();
+    format!("{}…{}", head_s, tail_s)
+}
+
+/// Tiny uppercase column header cell. Shared by the registry tables in
+/// the Accounts / Multisig / Wallets tabs.
+pub(crate) fn header_cell(
+    ui: &mut egui::Ui,
+    colors: &AppColors,
+    w: f32,
+    text: &str,
+    right_align: bool,
+) {
+    let layout = if right_align {
+        egui::Layout::right_to_left(egui::Align::Center)
+    } else {
+        egui::Layout::left_to_right(egui::Align::Center)
+    };
+    ui.allocate_ui_with_layout(egui::vec2(w, 14.0), layout, |ui| {
+        // allocate_ui_with_layout advances the cursor by the *used*
+        // width, not the desired one — pin the cell to its column
+        // width or every trailing column drifts off the grid.
+        ui.set_min_width(w);
+        ui.label(
+            egui::RichText::new(text)
+                .font(label_font(9.0))
+                .color(colors.text_muted),
+        );
+    });
+}
+
+/// Full-width 1px hairline separating table rows.
+pub(crate) fn table_rule(ui: &mut egui::Ui, colors: &AppColors) {
+    let (line, _) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+    ui.painter().hline(
+        line.x_range(),
+        line.center().y,
+        egui::Stroke::new(1.0, colors.border),
+    );
+}
+
+const COL_IDX: f32 = 44.0;
+const COL_ADDR: f32 = 210.0;
+const COL_PUB: f32 = 210.0;
+const COL_BAL: f32 = 150.0;
+const ROW_H: f32 = 30.0;
+
+/// Per-row snapshot taken before rendering so the row closures don't
+/// hold a borrow of `self.accounts` while they mutate `self.status`.
+struct AccountRow {
+    index: usize,
+    address: String,
+    balance: Option<Option<u64>>,
+    variant: String,
+    pubkey_hex: String,
+}
 
 impl App {
     pub(crate) fn show_accounts_tab(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.add_space(30.0);
+            ui.add_space(24.0);
             ui.vertical(|ui| {
-                ui.set_width(ui.available_width() - 30.0);
+                ui.set_width(ui.available_width() - 24.0);
 
-                ui.heading(
-                    egui::RichText::new("Accounts")
-                        .size(26.0)
-                        .strong()
+                ui.label(
+                    egui::RichText::new("ACCOUNTS")
+                        .font(display_font(16.0))
                         .color(self.colors.text),
                 );
+                ui.add_space(2.0);
                 ui.label(
                     egui::RichText::new(
                         "Derive and manage single-sig accounts for the active wallet.",
                     )
-                    .size(13.0)
+                    .size(11.0)
                     .color(self.colors.text_muted),
                 );
+                ui.add_space(14.0);
 
-                ui.add_space(22.0);
-
-                // ── New Account card ──
-                let hover = CardHover::new(ui, "acct-single", &self.colors);
-
-                let single_card = egui::Frame::new()
-                    .fill(hover.fill)
-                    .corner_radius(18.0)
-                    .inner_margin(egui::Margin::symmetric(20, 24))
-                    .stroke(hover.stroke)
-                    .show(ui, |ui| {
-                        ui.vertical_centered(|ui| {
-                            hover.apply_lift(ui);
-                            ui.label(egui::RichText::new("\u{2726}").size(26.0));
-                            ui.add_space(6.0);
-                            ui.label(
-                                egui::RichText::new("Create Account")
-                                    .size(14.0)
-                                    .strong()
-                                    .color(self.colors.text),
-                            );
-                            ui.add_space(4.0);
-                            ui.label(
-                                egui::RichText::new("Derive a new account from your wallet seed.")
-                                    .size(11.0)
-                                    .color(self.colors.text_muted),
-                            );
-                        });
-                    })
-                    .response;
-
-                paint_corner_accent(ui.painter(), single_card.rect, 18.0, self.colors.accent);
-                hover.commit(&single_card);
-
-                if single_card.interact(egui::Sense::click()).clicked() {
-                    self.create_singlesig_account();
-                }
-
-                ui.add_space(20.0);
-
-                // ── Section title ──
-                let pill =
-                    |ui: &mut egui::Ui, fill: egui::Color32, text: String, color: egui::Color32| {
-                        egui::Frame::new()
-                            .fill(fill)
-                            .corner_radius(10.0)
-                            .inner_margin(egui::Margin::symmetric(8, 2))
-                            .show(ui, |ui| {
-                                ui.label(
-                                    egui::RichText::new(text)
-                                        .size(8.5)
-                                        .family(egui::FontFamily::Monospace)
-                                        .color(color),
-                                );
-                            });
-                    };
-
-                let single_sig_accounts: Vec<_> = self
+                let rows: Vec<AccountRow> = self
                     .accounts
                     .iter()
                     .enumerate()
                     .filter(|(_, a)| a.config.signers.len() == 1)
-                    .collect();
-
-                ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new("Single-sig Accounts")
-                            .size(15.0)
-                            .strong()
-                            .color(self.colors.text),
-                    );
-                    ui.add_space(10.0);
-                    pill(
-                        ui,
-                        self.colors.accent_tint,
-                        format!("{} total", single_sig_accounts.len()),
-                        self.colors.accent,
-                    );
-
-                    if let Ok(info) = KeyVault::read_wallet_info(self.wallet_id) {
-                        ui.add_space(6.0);
-                        pill(
-                            ui,
-                            self.colors.surface2,
-                            format!("SPHINCS+ {}", info.spx_variant),
-                            self.colors.text_muted,
-                        );
-                        ui.add_space(6.0);
-                        pill(
-                            ui,
-                            self.colors.accent2_tint,
-                            match info.auth_method {
-                                AuthMethod::Keychain => keychain::short_name().into(),
-                                AuthMethod::Password => "Password".into(),
-                                AuthMethod::Fido2 { .. } => "FIDO2 Key".into(),
-                            },
-                            self.colors.accent2,
-                        );
-                    }
-
-                    ui.add_space(10.0);
-                    self.show_status(ui);
-                });
-
-                ui.add_space(10.0);
-
-                // ── Account list (single-sig only) ──
-                if single_sig_accounts.is_empty() {
-                    ui.label(
-                        egui::RichText::new("No accounts yet. Create one to get started.")
-                            .color(self.colors.text_muted),
-                    );
-                } else {
-                    let avatar_colors = [
-                        (self.colors.accent, egui::Color32::from_rgb(5, 12, 10)),
-                        (self.colors.accent3, egui::Color32::WHITE),
-                        (self.colors.warn, egui::Color32::from_rgb(5, 12, 10)),
-                    ];
-
-                    for (i, account) in single_sig_accounts {
-                        let lock_args = &account.lock_args;
-                        let address_text = match crate::utils::lock_args_to_address(
-                            lock_args,
+                    .map(|(i, a)| {
+                        let address = match crate::utils::lock_args_to_address(
+                            &a.lock_args,
                             self.qp_client.is_mainnet(),
                         ) {
                             Ok(addr) => addr.to_string(),
-                            Err(_) => format!("0x{}", lock_args),
+                            Err(_) => format!("0x{}", a.lock_args),
                         };
+                        AccountRow {
+                            index: i,
+                            address,
+                            balance: self.spendable_balances.get(&a.lock_args).copied(),
+                            variant: format!("{}", a.config.signers[0].variant),
+                            pubkey_hex: hex::encode(&a.config.signers[0].pubkey),
+                        }
+                    })
+                    .collect();
 
-                        let balance_text = match self.spendable_balances.get(lock_args) {
-                            Some(Some(shannons)) => format_ckb_balance(*shannons),
-                            Some(None) => "Loading...".to_string(),
-                            None => "--".to_string(),
-                        };
-
-                        let (av_bg, av_fg) = avatar_colors[i % avatar_colors.len()];
-
-                        let hover = CardHover::new(ui, ("acct-row", i), &self.colors);
-
-                        let row_resp = egui::Frame::new()
-                            .fill(hover.fill)
-                            .corner_radius(9.0)
-                            .inner_margin(egui::Margin::symmetric(18, 14))
-                            .stroke(hover.stroke)
-                            .show(ui, |ui| {
-                                ui.horizontal(|ui| {
-                                    // Avatar
-                                    let (avatar_rect, _) = ui.allocate_exact_size(
-                                        egui::vec2(38.0, 38.0),
-                                        egui::Sense::hover(),
-                                    );
-                                    let center = avatar_rect.center();
-                                    let radius = 19.0;
-
-                                    ui.painter().circle_filled(center, radius, av_bg);
-                                    let letter = (b'A' + (i as u8 % 26)) as char;
-                                    ui.painter().text(
-                                        center,
-                                        egui::Align2::CENTER_CENTER,
-                                        letter.to_string(),
-                                        egui::FontId::proportional(15.0),
-                                        av_fg,
-                                    );
-
-                                    ui.add_space(10.0);
-
-                                    // Info
-                                    ui.vertical(|ui| {
-                                        ui.horizontal(|ui| {
-                                            ui.label(
-                                                egui::RichText::new(format!("Account #{}", i))
-                                                    .size(13.0),
-                                            );
-                                            ui.label(
-                                                egui::RichText::new(&balance_text)
-                                                    .size(13.0)
-                                                    .strong()
-                                                    .color(self.colors.text_muted)
-                                                    .family(egui::FontFamily::Monospace),
-                                            );
-                                        });
-                                        ui.label(
-                                            egui::RichText::new(address_text.clone())
-                                                .size(9.0)
-                                                .color(self.colors.text_muted)
-                                                .family(egui::FontFamily::Monospace),
-                                        );
-                                        let signer = &account.config.signers[0];
-                                        let pk_hex = hex::encode(&signer.pubkey);
-                                        let pk_short = if pk_hex.len() > 40 {
-                                            format!(
-                                                "{}...{}",
-                                                &pk_hex[..20],
-                                                &pk_hex[pk_hex.len() - 20..]
-                                            )
-                                        } else {
-                                            pk_hex
-                                        };
-                                        ui.label(
-                                            egui::RichText::new(format!(
-                                                "{} {}",
-                                                signer.variant, pk_short
-                                            ))
-                                            .size(9.0)
-                                            .color(self.colors.accent)
-                                            .family(egui::FontFamily::Monospace),
-                                        );
-                                    });
-
-                                    // Copy buttons (right-aligned)
-                                    ui.with_layout(
-                                        egui::Layout::right_to_left(egui::Align::Center),
-                                        |ui| {
-                                            if ui
-                                                .button("\u{1f4cb}")
-                                                .on_hover_text("Copy address")
-                                                .clicked()
-                                            {
-                                                ui.ctx().copy_text(address_text.clone());
-                                                self.status =
-                                                    Status::Info("Address copied!".to_string());
-                                            }
-
-                                            let signer = &account.config.signers[0];
-                                            let pubkey_text = hex::encode(&signer.pubkey);
-                                            if ui
-                                                .button("\u{1f511}")
-                                                .on_hover_text("Copy public key")
-                                                .clicked()
-                                            {
-                                                ui.ctx().copy_text(pubkey_text);
-                                                self.status =
-                                                    Status::Info("Public key copied!".to_string());
-                                            }
-                                        },
-                                    );
-                                });
-                            });
-
-                        hover.commit(&row_resp.response);
-
-                        ui.add_space(6.0);
+                // Auth method is wallet-wide, so resolve it once and
+                // repeat the badge on every row.
+                let auth_label = KeyVault::read_wallet_info(self.wallet_id).ok().map(|info| {
+                    match info.auth_method {
+                        AuthMethod::Keychain => keychain::short_name().to_string(),
+                        AuthMethod::Password => "PASSWORD".to_string(),
+                        AuthMethod::Fido2 { .. } => "FIDO2".to_string(),
                     }
-                }
+                });
+
+                panel_frame(&self.colors).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+
+                    ui.horizontal(|ui| {
+                        let btn_w = 130.0;
+                        let header_w = (ui.available_width() - btn_w - 10.0).max(0.0);
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(header_w, 24.0),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                section_header(
+                                    ui,
+                                    &self.colors,
+                                    "01",
+                                    &format!("Account Registry // {}", rows.len()),
+                                );
+                            },
+                        );
+                        let btn =
+                            accent_button(&self.colors, "NEW ACCOUNT", egui::vec2(btn_w, 24.0));
+                        if ui.add(btn).clicked() {
+                            self.create_singlesig_account();
+                        }
+                    });
+                    ui.add_space(10.0);
+
+                    if rows.is_empty() {
+                        ui.label(
+                            egui::RichText::new("NO ACCOUNTS REGISTERED — CREATE ONE TO BEGIN.")
+                                .font(label_font(9.5))
+                                .color(self.colors.text_muted),
+                        );
+                    } else {
+                        self.accounts_table(ui, &rows, auth_label.as_deref());
+                    }
+                });
 
                 ui.add_space(20.0);
-            }); // vertical
-        }); // horizontal
+            });
+        });
+    }
+
+    fn accounts_table(&mut self, ui: &mut egui::Ui, rows: &[AccountRow], auth_label: Option<&str>) {
+        ui.scope(|ui| {
+            // Rows must sit flush against their hairlines.
+            ui.spacing_mut().item_spacing.y = 0.0;
+
+            ui.horizontal(|ui| {
+                ui.add_space(6.0);
+                header_cell(ui, &self.colors, COL_IDX, "IDX", false);
+                header_cell(ui, &self.colors, COL_ADDR, "ADDRESS", false);
+                header_cell(ui, &self.colors, COL_PUB, "PUBKEY", false);
+                header_cell(ui, &self.colors, COL_BAL, "BALANCE (CKB)", false);
+                ui.add_space(14.0);
+                header_cell(ui, &self.colors, 120.0, "TYPE", false);
+            });
+            ui.add_space(4.0);
+            table_rule(ui, &self.colors);
+
+            for row in rows {
+                let full_w = ui.available_width();
+                let rect = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(full_w, ROW_H));
+                if ui.rect_contains_pointer(rect) {
+                    row_hover(ui.painter(), rect, &self.colors);
+                }
+
+                ui.allocate_ui_with_layout(
+                    egui::vec2(full_w, ROW_H),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        // Keep content clear of the 2px hover tick.
+                        ui.add_space(6.0);
+
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(COL_IDX, ROW_H),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                // Pin to the column width (see header_cell).
+                                ui.set_min_width(COL_IDX);
+                                ui.label(
+                                    egui::RichText::new(format!("{:02}", row.index))
+                                        .font(label_font(9.5))
+                                        .color(self.colors.text_muted),
+                                );
+                            },
+                        );
+
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(COL_ADDR, ROW_H),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.set_min_width(COL_ADDR);
+                                let label = egui::Label::new(
+                                    egui::RichText::new(truncate_middle(&row.address, 12, 10))
+                                        .size(11.0)
+                                        .color(self.colors.text_muted),
+                                )
+                                .sense(egui::Sense::click());
+                                let resp = ui
+                                    .add(label)
+                                    .on_hover_text(&row.address)
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                if resp.clicked() {
+                                    ui.ctx().copy_text(row.address.clone());
+                                    self.status = Status::Info("Address copied!".to_string());
+                                }
+                            },
+                        );
+
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(COL_PUB, ROW_H),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.set_min_width(COL_PUB);
+                                let label = egui::Label::new(
+                                    egui::RichText::new(truncate_middle(&row.pubkey_hex, 10, 8))
+                                        .size(11.0)
+                                        .color(self.colors.text_muted),
+                                )
+                                .sense(egui::Sense::click());
+                                let resp = ui
+                                    .add(label)
+                                    .on_hover_text(&row.pubkey_hex)
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                if resp.clicked() {
+                                    ui.ctx().copy_text(row.pubkey_hex.clone());
+                                    self.status = Status::Info("Public key copied!".to_string());
+                                }
+                            },
+                        );
+
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(COL_BAL, ROW_H),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.set_min_width(COL_BAL);
+                                ui.spacing_mut().item_spacing.x = 0.0;
+                                match row.balance {
+                                    Some(Some(shannons)) => {
+                                        let (int, frac) = ckb_split(shannons);
+                                        ui.label(
+                                            egui::RichText::new(int)
+                                                .size(11.5)
+                                                .color(self.colors.text),
+                                        );
+                                        ui.label(
+                                            egui::RichText::new(format!(".{}", frac))
+                                                .size(11.5)
+                                                .color(self.colors.text_muted),
+                                        );
+                                    }
+                                    Some(None) => {
+                                        ui.label(
+                                            egui::RichText::new("SYNC")
+                                                .font(label_font(9.0))
+                                                .color(self.colors.text_muted),
+                                        );
+                                    }
+                                    None => {
+                                        ui.label(
+                                            egui::RichText::new("--")
+                                                .size(11.5)
+                                                .color(self.colors.text_muted),
+                                        );
+                                    }
+                                }
+                            },
+                        );
+
+                        ui.add_space(14.0);
+                        badge(ui, &row.variant, self.colors.accent3);
+                        if let Some(auth) = auth_label {
+                            ui.add_space(4.0);
+                            badge(ui, auth, self.colors.text_muted);
+                        }
+
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.add_space(6.0);
+                            let copy_btn =
+                                ghost_button(&self.colors, "COPY", egui::vec2(52.0, 20.0));
+                            if ui.add(copy_btn).on_hover_text("Copy address").clicked() {
+                                ui.ctx().copy_text(row.address.clone());
+                                self.status = Status::Info("Address copied!".to_string());
+                            }
+                        });
+                    },
+                );
+
+                table_rule(ui, &self.colors);
+            }
+        });
     }
 }

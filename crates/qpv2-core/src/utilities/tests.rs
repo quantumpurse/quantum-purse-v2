@@ -70,3 +70,48 @@ fn test_derive_key_from_prf_deterministic() {
         "Same PRF output should derive same key"
     );
 }
+
+#[test]
+fn test_parse_ckb_to_shannons_exact() {
+    // The f64 path turned "0.00000003" into 2 shannons; integer parsing
+    // must be exact for every representable amount.
+    assert_eq!(parse_ckb_to_shannons("0.00000003"), Ok(3));
+    assert_eq!(parse_ckb_to_shannons("0"), Ok(0));
+    assert_eq!(parse_ckb_to_shannons("1"), Ok(100_000_000));
+    assert_eq!(parse_ckb_to_shannons("0.1"), Ok(10_000_000));
+    assert_eq!(parse_ckb_to_shannons("12.5"), Ok(1_250_000_000));
+    assert_eq!(
+        parse_ckb_to_shannons("37774.55673077"),
+        Ok(3_777_455_673_077)
+    );
+    // f64 rounded this one UP by a shannon; must be exact.
+    assert_eq!(
+        parse_ckb_to_shannons("90216076.29597175"),
+        Ok(9_021_607_629_597_175)
+    );
+}
+
+#[test]
+fn test_parse_ckb_to_shannons_forms() {
+    assert_eq!(parse_ckb_to_shannons(" 2.5 "), Ok(250_000_000));
+    assert_eq!(parse_ckb_to_shannons("12."), Ok(1_200_000_000));
+    assert_eq!(parse_ckb_to_shannons(".5"), Ok(50_000_000));
+    // Full u64 range survives.
+    assert_eq!(parse_ckb_to_shannons("184467440737.09551615"), Ok(u64::MAX));
+}
+
+#[test]
+fn test_parse_ckb_to_shannons_rejects() {
+    assert!(parse_ckb_to_shannons("").is_err());
+    assert!(parse_ckb_to_shannons(".").is_err());
+    assert!(parse_ckb_to_shannons("abc").is_err());
+    assert!(parse_ckb_to_shannons("-1").is_err());
+    assert!(parse_ckb_to_shannons("+1").is_err());
+    assert!(parse_ckb_to_shannons("1.2.3").is_err());
+    assert!(parse_ckb_to_shannons("1e8").is_err());
+    // More than 8 fraction digits must be rejected, not truncated.
+    assert!(parse_ckb_to_shannons("0.123456789").is_err());
+    // Overflow past u64::MAX shannons.
+    assert!(parse_ckb_to_shannons("184467440737.09551616").is_err());
+    assert!(parse_ckb_to_shannons("99999999999999999999").is_err());
+}

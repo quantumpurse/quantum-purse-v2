@@ -81,7 +81,7 @@ enum Commands {
         to: String,
         /// Amount in CKB (decimal, e.g. 100.5)
         #[arg(short, long)]
-        amount: f64,
+        amount: String,
         /// Fee rate (shannons per 1000 bytes)
         #[arg(short, long, default_value = "1000")]
         fee_rate: u64,
@@ -231,7 +231,7 @@ enum DaoCommands {
         lock_args: String,
         /// Amount in CKB (decimal, e.g. 100.5)
         #[arg(short, long)]
-        amount: f64,
+        amount: String,
         /// Fee rate (shannons per 1000 bytes)
         #[arg(short, long, default_value = "1000")]
         fee_rate: u64,
@@ -280,7 +280,7 @@ enum MsigCommands {
         to: String,
         /// Amount in CKB (decimal, e.g. 100.5)
         #[arg(short, long)]
-        amount: f64,
+        amount: String,
         /// Fee rate (shannons per 1000 bytes)
         #[arg(short, long, default_value = "1000")]
         fee_rate: u64,
@@ -295,7 +295,7 @@ enum MsigCommands {
         lock_args: String,
         /// Amount in CKB (decimal, e.g. 100.5)
         #[arg(short, long)]
-        amount: f64,
+        amount: String,
         /// Fee rate (shannons per 1000 bytes)
         #[arg(short, long, default_value = "1000")]
         fee_rate: u64,
@@ -667,7 +667,7 @@ fn handle_dao_list(
 fn handle_dao_deposit(
     wallet_id: u32,
     lock_args: &str,
-    amount: f64,
+    amount: &str,
     fee_rate: u64,
     network: &str,
     rpc_url: &Option<String>,
@@ -680,12 +680,11 @@ fn handle_dao_deposit(
                 .to_string(),
         );
     }
-    if !amount.is_finite() || amount <= 0.0 {
-        return Err("Amount must be a positive number.".to_string());
-    }
-    let capacity_sh = (amount * 1e8) as u64;
+    // Integer parsing — f64 mis-converts amounts by a shannon
+    // (see BACKLOG.md).
+    let capacity_sh = qpv2_core::utilities::parse_ckb_to_shannons(amount)?;
     if capacity_sh == 0 {
-        return Err("Amount too small.".to_string());
+        return Err("Amount must be greater than zero.".to_string());
     }
 
     let max_witness_lock_size = account.config.max_witness_lock_size();
@@ -826,7 +825,7 @@ fn handle_transfer(
     wallet_id: u32,
     lock_args: &str,
     to: &str,
-    amount: f64,
+    amount: &str,
     fee_rate: u64,
     network: &str,
     rpc_url: &Option<String>,
@@ -841,12 +840,11 @@ fn handle_transfer(
         );
     }
 
-    if !amount.is_finite() || amount <= 0.0 {
-        return Err("Amount must be a positive number.".to_string());
-    }
-    let capacity_sh = (amount * 1e8) as u64;
+    // Integer parsing — f64 mis-converts amounts by a shannon
+    // (see BACKLOG.md).
+    let capacity_sh = qpv2_core::utilities::parse_ckb_to_shannons(amount)?;
     if capacity_sh == 0 {
-        return Err("Amount too small.".to_string());
+        return Err("Amount must be greater than zero.".to_string());
     }
 
     let max_witness_lock_size = account.config.max_witness_lock_size();
@@ -902,7 +900,7 @@ fn handle_msig_build_dao(
     wallet_id: u32,
     lock_args: &str,
     op: &str,
-    amount: f64,
+    amount: &str,
     tx_hash: Option<&str>,
     index: u32,
     fee_rate: u64,
@@ -927,12 +925,11 @@ fn handle_msig_build_dao(
     println!("Building unsigned DAO {} transaction...", op);
     let unsigned_tx = match op {
         "deposit" => {
-            if !amount.is_finite() || amount <= 0.0 {
-                return Err("Amount must be a positive number.".to_string());
-            }
-            let capacity_sh = (amount * 1e8) as u64;
+            // Integer parsing — f64 mis-converts amounts by a
+            // shannon (see BACKLOG.md).
+            let capacity_sh = qpv2_core::utilities::parse_ckb_to_shannons(amount)?;
             if capacity_sh == 0 {
-                return Err("Amount too small.".to_string());
+                return Err("Amount must be greater than zero.".to_string());
             }
             ckb_node::QpDaoDepositBuilder::new(&qp_client, is_mainnet)
                 .with_placeholder_lock_size(max_witness_lock_size)
@@ -1002,7 +999,7 @@ fn handle_msig_build_transfer(
     wallet_id: u32,
     lock_args: &str,
     to: &str,
-    amount: f64,
+    amount: &str,
     fee_rate: u64,
     output: &str,
     network: &str,
@@ -1032,12 +1029,11 @@ fn handle_msig_build_transfer(
         return Err("Recipient address is for the wrong network.".to_string());
     }
 
-    if !amount.is_finite() || amount <= 0.0 {
-        return Err("Amount must be a positive number.".to_string());
-    }
-    let capacity_sh = (amount * 1e8) as u64;
+    // Integer parsing — f64 mis-converts amounts by a shannon
+    // (see BACKLOG.md).
+    let capacity_sh = qpv2_core::utilities::parse_ckb_to_shannons(amount)?;
     if capacity_sh == 0 {
-        return Err("Amount too small.".to_string());
+        return Err("Amount must be greater than zero.".to_string());
     }
 
     let builder = ckb_node::QpTransferBuilder::new(&qp_client, is_mainnet)
@@ -1556,7 +1552,7 @@ fn main() -> Result<(), String> {
         } => {
             let (wallet_id, _) = find_wallet(&cli.wallet)?;
             handle_transfer(
-                wallet_id, &lock_args, &to, amount, fee_rate, &network, &rpc_url,
+                wallet_id, &lock_args, &to, &amount, fee_rate, &network, &rpc_url,
             )?;
         }
 
@@ -1577,7 +1573,7 @@ fn main() -> Result<(), String> {
                     fee_rate,
                 } => {
                     handle_dao_deposit(
-                        wallet_id, &lock_args, amount, fee_rate, &network, &rpc_url,
+                        wallet_id, &lock_args, &amount, fee_rate, &network, &rpc_url,
                     )?;
                 }
                 DaoCommands::Prepare {
@@ -1619,7 +1615,7 @@ fn main() -> Result<(), String> {
                     output,
                 } => {
                     handle_msig_build_transfer(
-                        wallet_id, &lock_args, &to, amount, fee_rate, &output, &network, &rpc_url,
+                        wallet_id, &lock_args, &to, &amount, fee_rate, &output, &network, &rpc_url,
                     )?;
                 }
                 MsigCommands::BuildDeposit {
@@ -1629,7 +1625,7 @@ fn main() -> Result<(), String> {
                     output,
                 } => {
                     handle_msig_build_dao(
-                        wallet_id, &lock_args, "deposit", amount, None, 0, fee_rate, &output,
+                        wallet_id, &lock_args, "deposit", &amount, None, 0, fee_rate, &output,
                         &network, &rpc_url,
                     )?;
                 }
@@ -1644,7 +1640,7 @@ fn main() -> Result<(), String> {
                         wallet_id,
                         &lock_args,
                         "prepare",
-                        0.0,
+                        "0", // Unused: only the deposit op takes an amount.
                         Some(&tx_hash),
                         index,
                         fee_rate,
@@ -1664,7 +1660,7 @@ fn main() -> Result<(), String> {
                         wallet_id,
                         &lock_args,
                         "withdraw",
-                        0.0,
+                        "0", // Unused: only the deposit op takes an amount.
                         Some(&tx_hash),
                         index,
                         fee_rate,

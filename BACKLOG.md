@@ -80,11 +80,45 @@
 
 ## CKB amount parsed via f64 loses precision
 
-**Status:** Open
+**Status:** Fixed 2026-06-11 — `qpv2_core::utilities::parse_ckb_to_shannons`
+(integer split/pad/checked arithmetic, unit-tested) now backs all six
+sites; the CLI clap `amount` args changed from `f64` to `String` so the
+value is never a float anywhere between argv and shannons.
 
-**Problem:** Both CLI and GUI parse CKB amounts through `f64` then multiply by `1e8` and truncate with `as u64`. Decimal values like `0.29999999` CKB can't be represented exactly in binary floating point — `0.29999999 * 1e8 = 29999998.999...` truncates to `29999998`, losing 1 shannon. Affects `handle_transfer`, `handle_msig_build_transfer` in CLI and `transfer_async` in GUI.
+Reassessed 2026-06-11; confirmed and worse than first written:
 
-**Fix:** Parse the amount string directly into shannons using integer arithmetic (split on `.`, pad fraction to 8 digits, combine as `u64`). Same approach as CCC's `fixedPointFrom`.
+**Problem:** Both CLI and GUI parse CKB amounts through `f64`, multiply by
+`1e8`, and truncate with `as u64`. Empirical sweep: roughly 5–7% of all
+valid 8-decimal amounts convert off by one shannon. Minimal repro:
+`"0.00000003"` parses to 2 shannons (`0.00000003 * 1e8 = 2.999...`) — a
+33% relative error on that amount. (The example originally cited here,
+`0.29999999`, happens to round exactly and does NOT reproduce; the
+mechanism is right, the witness value was wrong.)
+
+Second failure mode: at amounts ≥ ~45M CKB (approaching 2^53 shannons)
+the f64 rounding can go **up** as well as down — e.g. `"90216076.29597175"`
+converts to one shannon MORE than typed, i.e. the wallet would silently
+send more than the user asked.
+
+Affected sites (all four CLI sites take `amount: f64` directly as a clap
+arg, so precision is lost at argument parsing — the fix there must also
+change the arg type to `String`):
+- CLI `crates/qpv2-cli/src/main.rs`: `handle_transfer`,
+  `handle_msig_build_transfer`, `handle_dao_deposit`,
+  `handle_msig_build_dao` (deposit arm).
+- GUI `crates/qpv2-gui/src/transactor.rs`: `transfer_async`,
+  `dao_deposit_async`.
+
+CLI list-output formatting (`capacity as f64 / 1e8`) is the same class
+but display-only; the GUI display path already uses integer `ckb_split`.
+
+**Fix:** Parse the amount string directly into shannons using integer
+arithmetic (split on `.`, pad fraction to 8 digits, combine with
+checked u64 arithmetic; reject more than 8 fraction digits instead of
+silently truncating). Same approach as CCC's `fixedPointFrom`. Put one
+shared `parse_ckb_to_shannons(&str) -> Result<u64, String>` in
+`qpv2-core` so CLI and GUI use identical parsing, and switch the CLI
+clap args from `f64` to `String`.
 
 ## Submitter does not verify signatures before broadcasting
 

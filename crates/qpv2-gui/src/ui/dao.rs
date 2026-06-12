@@ -1,35 +1,41 @@
-//! DAO Operations tab rendering.
+//! Nervos DAO module: position-summary readout, action row, and a
+//! hairline positions table in the Flight Deck instrument style.
 
-use ckb_types::prelude::Unpack;
 use eframe::egui;
 
-use super::utils::{extract_ar, format_duration_ms, paint_corner_accent, CardHover};
-use crate::types::{DaoView, TransactionStatus};
-use crate::utils::{format_ckb, format_ckb_balance, format_ckb_with_decimals};
+use super::utils::{
+    badge, ckb_split, extract_ar, format_duration_ms, ghost_button, panel_frame, row_hover,
+    section_header,
+};
+use crate::types::{display_font, label_font, AppColors, DaoView, TransactionStatus};
+use crate::utils::{format_ckb, format_ckb_balance};
 use crate::App;
+
+/// Uniform height for positions-table rows so hairlines stay aligned.
+const ROW_H: f32 = 30.0;
 
 impl App {
     pub(crate) fn show_dao_tab(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.add_space(30.0);
+            ui.add_space(24.0);
             ui.vertical(|ui| {
-                ui.set_width(ui.available_width() - 30.0);
+                ui.set_width(ui.available_width() - 24.0);
 
-                ui.heading(
-                    egui::RichText::new("Nervos DAO")
-                        .size(26.0)
-                        .strong()
+                ui.label(
+                    egui::RichText::new("NERVOS DAO")
+                        .font(display_font(16.0))
                         .color(self.colors.text),
                 );
+                ui.add_space(2.0);
                 ui.label(
-                    egui::RichText::new("Deposit, withdraw, and manage DAO positions")
-                        .size(13.0)
+                    egui::RichText::new("Deposit, withdraw, and manage DAO positions.")
+                        .size(11.0)
                         .color(self.colors.text_muted),
                 );
 
-                ui.add_space(22.0);
+                ui.add_space(16.0);
 
-                // ── Stats Row ──
+                // ── 01 // Position summary ──
                 let total_deposited: u64 = self
                     .dao_deposited_cells
                     .iter()
@@ -48,193 +54,124 @@ impl App {
                 let active_cells = self.dao_deposited_cells.len() + self.dao_prepared_cells.len();
                 let total_locked = total_deposited + total_prepared_principal;
 
-                ui.columns(4, |cols| {
-                    let stats = [
-                        (
-                            format_ckb(total_locked),
-                            "CKB Locked",
-                            Some(self.colors.accent),
-                        ),
-                        (
-                            format!("+{}", format_ckb(total_earned)),
-                            "CKB Earned",
-                            Some(self.colors.warn),
-                        ),
-                        (
-                            self.compute_dao_apc(),
-                            "Current APC",
-                            Some(self.colors.accent2),
-                        ),
-                        (
-                            active_cells.to_string(),
-                            "Active Deposits",
-                            Some(self.colors.accent3),
-                        ),
-                    ];
-
-                    for (i, (value, label, color)) in stats.iter().enumerate() {
-                        egui::Frame::new()
-                            .fill(self.colors.surface)
-                            .corner_radius(12.0)
-                            .inner_margin(egui::Margin::symmetric(16, 14))
-                            .stroke(egui::Stroke::new(1.0, self.colors.border))
-                            .show(&mut cols[i], |ui| {
-                                let text = egui::RichText::new(value).size(18.0).strong();
-                                let text = if let Some(c) = color {
-                                    text.color(*c)
-                                } else {
-                                    text
-                                };
-                                ui.label(text);
-                                ui.label(
-                                    egui::RichText::new(*label)
-                                        .size(11.0)
-                                        .color(self.colors.text_muted),
-                                );
-                            });
-                    }
+                panel_frame(&self.colors).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    section_header(ui, &self.colors, "01", "Position Summary");
+                    ui.add_space(12.0);
+                    self.draw_dao_stats(ui, total_locked, total_earned, active_cells);
                 });
 
-                ui.add_space(22.0);
+                ui.add_space(14.0);
 
-                // ── Action Cards ──
+                // ── Action row ──
                 let is_busy = !matches!(self.tx_status, TransactionStatus::Idle)
                     && !matches!(self.tx_status, TransactionStatus::Success(_))
                     && !matches!(self.tx_status, TransactionStatus::Error(_));
 
-                // 3-column action cards
-                ui.columns(3, |cols| {
-                    // Deposit card
-                    let hover = CardHover::new(&cols[0], "dao-deposit", &self.colors);
-
-                    let deposit_resp = egui::Frame::new()
-                        .fill(hover.fill)
-                        .corner_radius(18.0)
-                        .inner_margin(egui::Margin::symmetric(20, 22))
-                        .stroke(hover.stroke)
-                        .show(&mut cols[0], |ui| {
-                            hover.apply_lift(ui);
-                            ui.label(egui::RichText::new("\u{1f4e5}").size(26.0));
-                            ui.add_space(8.0);
-                            ui.label(
-                                egui::RichText::new("DAO Deposit")
-                                    .size(14.0)
-                                    .strong()
-                                    .color(self.colors.text),
-                            );
-                            ui.add_space(4.0);
-                            ui.label(
-                                egui::RichText::new(
-                                    "Lock CKB to earn compensation against secondary issuance inflation.",
-                                )
-                                .size(11.0)
-                                .color(self.colors.text_muted),
-                            );
-                        });
-
-                    paint_corner_accent(
-                        cols[0].painter(),
-                        deposit_resp.response.rect,
-                        18.0,
-                        self.colors.accent,
-                    );
-                    hover.commit(&deposit_resp.response);
-                    if deposit_resp
-                        .response
-                        .interact(egui::Sense::click())
+                ui.horizontal(|ui| {
+                    let size = egui::vec2(180.0, 32.0);
+                    // All three render as equal ghosts: a solid button
+                    // in a row of same-sized siblings reads as a
+                    // selected segment, not an action.
+                    if ui
+                        .add(ghost_button(&self.colors, "DEPOSIT", size))
                         .clicked()
                         && !is_busy
                     {
                         self.dao_view = DaoView::Deposit;
                         self.tx_status = TransactionStatus::Idle;
                     }
-
-                    // Request Withdrawal card
-                    let hover = CardHover::new(&cols[1], "dao-request", &self.colors);
-
-                    let request_resp = egui::Frame::new()
-                        .fill(hover.fill)
-                        .corner_radius(18.0)
-                        .inner_margin(egui::Margin::symmetric(20, 22))
-                        .stroke(hover.stroke)
-                        .show(&mut cols[1], |ui| {
-                            hover.apply_lift(ui);
-                            ui.label(egui::RichText::new("\u{23f3}").size(26.0));
-                            ui.add_space(8.0);
-                            ui.label(
-                                egui::RichText::new("Request Withdrawal")
-                                    .size(14.0)
-                                    .strong()
-                                    .color(self.colors.text),
-                            );
-                            ui.add_space(4.0);
-                            ui.label(
-                                egui::RichText::new(
-                                    "Begin the unlock process. Wait for an epoch boundary to complete.",
-                                )
-                                .size(11.0)
-                                .color(self.colors.text_muted),
-                            );
-                        });
-
-                    paint_corner_accent(
-                        cols[1].painter(),
-                        request_resp.response.rect,
-                        18.0,
-                        self.colors.warn,
-                    );
-                    hover.commit(&request_resp.response);
-
-                    // Withdraw card
-                    let hover = CardHover::new(&cols[2], "dao-withdraw", &self.colors);
-
-                    let withdraw_resp = egui::Frame::new()
-                        .fill(hover.fill)
-                        .corner_radius(18.0)
-                        .inner_margin(egui::Margin::symmetric(20, 22))
-                        .stroke(hover.stroke)
-                        .show(&mut cols[2], |ui| {
-                            hover.apply_lift(ui);
-                            ui.label(egui::RichText::new("\u{1f4e4}").size(26.0));
-                            ui.add_space(8.0);
-                            ui.label(
-                                egui::RichText::new("Withdraw")
-                                    .size(14.0)
-                                    .strong()
-                                    .color(self.colors.text),
-                            );
-                            ui.add_space(4.0);
-                            ui.label(
-                                egui::RichText::new(
-                                    "Claim CKB + compensation after the epoch boundary is reached.",
-                                )
-                                .size(11.0)
-                                .color(self.colors.text_muted),
-                            );
-                        });
-
-                    paint_corner_accent(
-                        cols[2].painter(),
-                        withdraw_resp.response.rect,
-                        18.0,
-                        self.colors.accent2,
-                    );
-                    hover.commit(&withdraw_resp.response);
+                    ui.add_space(6.0);
+                    // Like the cards they replace, these two are entry
+                    // points in name only: the working controls are the
+                    // per-row REQUEST / WITHDRAW actions in the table.
+                    let _ = ui.add(ghost_button(&self.colors, "REQUEST WITHDRAWAL", size));
+                    ui.add_space(6.0);
+                    let _ = ui.add(ghost_button(&self.colors, "WITHDRAW", size));
                 });
 
-                ui.add_space(22.0);
+                // The in-flight transaction status, and — when a multisig
+                // DAO operation pauses for co-signatures — the same
+                // coordination panel the transfer screen uses. Without
+                // this the flow is alive but invisible from this tab.
+                self.draw_tx_status_log(ui, true);
+                if matches!(
+                    &self.tx_status,
+                    TransactionStatus::AwaitingCoSigners { kind, .. } if kind.is_dao()
+                ) {
+                    self.show_cosigner_panel(ui);
+                }
 
-                // ── Active Deposits Table ──
-                self.show_dao_positions_table(ui);
+                ui.add_space(14.0);
+
+                // ── 02 // Positions ──
+                panel_frame(&self.colors).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    section_header(ui, &self.colors, "02", "Positions");
+                    ui.add_space(10.0);
+                    self.show_dao_positions_table(ui);
+                });
 
                 ui.add_space(20.0);
             }); // vertical
         }); // horizontal
     }
 
+    /// Four-column instrument readout separated by vertical hairlines.
+    fn draw_dao_stats(
+        &self,
+        ui: &mut egui::Ui,
+        total_locked: u64,
+        total_earned: u64,
+        active_cells: usize,
+    ) {
+        let c = &self.colors;
+        let pad = 14.0;
+        let col_w = ((ui.available_width() - 3.0 * (1.0 + 2.0 * pad)) / 4.0).max(80.0);
+
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+
+            stat_cell(ui, c, col_w, "CKB LOCKED", |ui| {
+                stat_ckb_value(ui, c, "", total_locked, c.text);
+            });
+            stat_divider(ui, c, pad);
+
+            stat_cell(ui, c, col_w, "CKB EARNED", |ui| {
+                stat_ckb_value(ui, c, "+", total_earned, c.accent2);
+            });
+            stat_divider(ui, c, pad);
+
+            stat_cell(ui, c, col_w, "CURRENT APC", |ui| {
+                ui.label(
+                    egui::RichText::new(self.compute_dao_apc())
+                        .font(display_font(18.0))
+                        .color(c.text),
+                );
+            });
+            stat_divider(ui, c, pad);
+
+            stat_cell(ui, c, col_w, "ACTIVE DEPOSITS", |ui| {
+                ui.label(
+                    egui::RichText::new(format!("{}", active_cells))
+                        .font(display_font(18.0))
+                        .color(c.text),
+                );
+            });
+        });
+    }
+
     /// Renders the DAO deposit form as a centered modal overlay.
     pub(crate) fn show_dao_deposit_modal(&mut self, ctx: &egui::Context) {
         if self.dao_view != DaoView::Deposit {
+            return;
+        }
+
+        // A multisig deposit pauses for co-signatures; the coordination
+        // panel lives on the DAO screen behind this modal, so close the
+        // modal to reveal it.
+        if matches!(self.tx_status, TransactionStatus::AwaitingCoSigners { .. }) {
+            self.dao_view = DaoView::Overview;
             return;
         }
 
@@ -273,29 +210,30 @@ impl App {
                 egui::Frame::new()
                     .fill(self.colors.surface)
                     .stroke(egui::Stroke::new(1.0, self.colors.border2))
-                    .corner_radius(18.0)
-                    .inner_margin(egui::Margin::symmetric(28, 24))
+                    .inner_margin(egui::Margin::symmetric(24, 20))
                     .show(ui, |ui| {
                         ui.set_width(modal_width);
 
                         ui.label(
-                            egui::RichText::new("DAO Deposit")
-                                .size(20.0)
-                                .strong()
+                            egui::RichText::new("DAO DEPOSIT")
+                                .font(display_font(16.0))
                                 .color(self.colors.text),
                         );
+                        ui.add_space(2.0);
                         ui.label(
-                            egui::RichText::new("Lock CKB to earn compensation against inflation")
-                                .size(12.0)
-                                .color(self.colors.text_muted),
+                            egui::RichText::new(
+                                "Lock CKB to earn compensation against inflation.",
+                            )
+                            .size(11.0)
+                            .color(self.colors.text_muted),
                         );
 
-                        ui.add_space(20.0);
+                        ui.add_space(16.0);
 
                         // ── From Account ──
                         ui.label(
-                            egui::RichText::new("From")
-                                .size(12.0)
+                            egui::RichText::new("FROM ACCOUNT")
+                                .font(label_font(9.5))
                                 .color(self.colors.text_muted),
                         );
                         ui.add_space(4.0);
@@ -349,13 +287,13 @@ impl App {
                             self.dao_deposit_amount.clear();
                         }
 
-                        ui.add_space(16.0);
+                        ui.add_space(14.0);
 
                         // ── Amount ──
                         ui.horizontal(|ui| {
                             ui.label(
-                                egui::RichText::new("Amount (CKB)")
-                                    .size(12.0)
+                                egui::RichText::new("AMOUNT (CKB)")
+                                    .font(label_font(9.5))
                                     .color(self.colors.text_muted),
                             );
                             ui.with_layout(
@@ -363,7 +301,13 @@ impl App {
                                 |ui| {
                                     if self.dao_deposit_all
                                         && !is_busy
-                                        && ui.small_button("\u{2715}").clicked()
+                                        && ui
+                                            .add(ghost_button(
+                                                &self.colors,
+                                                "CLEAR",
+                                                egui::vec2(52.0, 18.0),
+                                            ))
+                                            .clicked()
                                     {
                                         self.dao_deposit_all = false;
                                         self.dao_deposit_amount.clear();
@@ -373,7 +317,14 @@ impl App {
                                         && !self.dao_deposit_all
                                         && !self.accounts.is_empty();
                                     if ui
-                                        .add_enabled(can_max, egui::Button::new("MAX").small())
+                                        .add_enabled(
+                                            can_max,
+                                            ghost_button(
+                                                &self.colors,
+                                                "MAX",
+                                                egui::vec2(44.0, 18.0),
+                                            ),
+                                        )
                                         .clicked()
                                     {
                                         let idx = self
@@ -407,24 +358,24 @@ impl App {
                             ui.add_space(6.0);
                             ui.label(
                                 egui::RichText::new("Fee will be deducted at deposit time.")
-                                    .size(11.0)
+                                    .size(10.5)
                                     .color(self.colors.text_muted),
                             );
                         }
 
-                        ui.add_space(16.0);
+                        ui.add_space(14.0);
 
                         // ── Fee Rate (collapsible) ──
                         egui::CollapsingHeader::new(
-                            egui::RichText::new("Advanced")
-                                .size(12.0)
+                            egui::RichText::new("ADVANCED")
+                                .font(label_font(9.5))
                                 .color(self.colors.text_muted),
                         )
                         .default_open(false)
                         .show(ui, |ui| {
                             ui.label(
-                                egui::RichText::new("Fee rate (shannons/KB)")
-                                    .size(11.0)
+                                egui::RichText::new("FEE RATE (SHANNONS/KB)")
+                                    .font(label_font(9.0))
                                     .color(self.colors.text_muted),
                             );
                             ui.add_space(4.0);
@@ -441,20 +392,28 @@ impl App {
 
                         // ── Warning ──
                         egui::Frame::new()
-                            .fill(egui::Color32::from_rgba_premultiplied(255, 170, 0, 15))
-                            .corner_radius(8.0)
-                            .inner_margin(egui::Margin::symmetric(12, 10))
+                            .fill(self.colors.warn_tint)
+                            .stroke(egui::Stroke::new(
+                                1.0,
+                                egui::Color32::from_rgba_unmultiplied(
+                                    self.colors.warn.r(),
+                                    self.colors.warn.g(),
+                                    self.colors.warn.b(),
+                                    90,
+                                ),
+                            ))
+                            .inner_margin(egui::Margin::symmetric(10, 8))
                             .show(ui, |ui| {
                                 ui.label(
                                     egui::RichText::new(
                                         "Deposited CKB is locked until you request withdrawal and wait for an epoch boundary (~4 hours/epoch).",
                                     )
                                     .size(11.0)
-                                    .color(self.colors.bg),
+                                    .color(self.colors.warn),
                                 );
                             });
 
-                        ui.add_space(20.0);
+                        ui.add_space(16.0);
 
                         // ── Confirm button ──
                         let can_deposit = !is_busy
@@ -462,27 +421,30 @@ impl App {
                             && !self.dao_deposit_amount.is_empty();
 
                         let btn_text = match &self.tx_status {
-                            TransactionStatus::Building => "Building transaction...",
-                            TransactionStatus::AwaitingSignature => "Waiting for Touch ID...",
-                            TransactionStatus::Sending => "Broadcasting...",
-                            _ => "Confirm Deposit",
+                            TransactionStatus::Building => "BUILDING TRANSACTION...",
+                            TransactionStatus::AwaitingSignature => "WAITING FOR TOUCH ID...",
+                            TransactionStatus::Sending => "BROADCASTING...",
+                            _ => "CONFIRM DEPOSIT",
                         };
 
-                        let btn_fill = if can_deposit {
-                            self.colors.accent
+                        // egui keeps explicit fills on disabled widgets,
+                        // so the busy / not-ready states are dimmed here.
+                        let (btn_fill, btn_fg) = if can_deposit {
+                            (self.colors.accent, self.colors.bg)
                         } else if is_busy {
-                            self.colors.accent.linear_multiply(0.5)
+                            (self.colors.accent.linear_multiply(0.5), self.colors.bg)
                         } else {
-                            self.colors.surface2
+                            (self.colors.surface2, self.colors.text_muted)
                         };
                         let deposit_btn = egui::Button::new(
                             egui::RichText::new(btn_text)
-                                .size(15.0)
-                                .strong()
-                                .color(self.colors.bg),
+                                .font(label_font(11.0))
+                                .color(btn_fg),
                         )
                         .fill(btn_fill)
-                        .min_size(egui::vec2(ui.available_width(), 44.0));
+                        .stroke(egui::Stroke::NONE)
+                        .corner_radius(0.0)
+                        .min_size(egui::vec2(ui.available_width(), 40.0));
 
                         if ui.add_enabled(can_deposit, deposit_btn).clicked() {
                             self.dao_deposit_async();
@@ -494,60 +456,65 @@ impl App {
                                 ui.add_space(8.0);
                                 ui.horizontal(|ui| {
                                     ui.label(
-                                        egui::RichText::new("Sent:")
-                                            .size(11.0)
-                                            .color(self.colors.accent),
+                                        egui::RichText::new("[ OK ]")
+                                            .font(label_font(10.0))
+                                            .color(self.colors.accent2),
                                     );
                                     ui.label(
                                         egui::RichText::new(format!(
-                                            "0x{}..{}",
+                                            "SENT 0x{}…{}",
                                             &tx_hash[..8],
                                             &tx_hash[tx_hash.len() - 8..]
                                         ))
                                         .size(11.0)
-                                        .color(self.colors.text_muted)
-                                        .family(egui::FontFamily::Monospace),
+                                        .color(self.colors.text_muted),
                                     );
-                                    if ui.small_button("Copy").clicked() {
+                                    if ui
+                                        .add(ghost_button(
+                                            &self.colors,
+                                            "COPY",
+                                            egui::vec2(48.0, 18.0),
+                                        ))
+                                        .clicked()
+                                    {
                                         ui.ctx().copy_text(format!("0x{}", tx_hash));
                                     }
                                 });
                             }
                             TransactionStatus::Error(e) => {
                                 ui.add_space(8.0);
-                                ui.label(
-                                    egui::RichText::new(e)
-                                        .size(12.0)
-                                        .color(self.colors.danger),
-                                );
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        egui::RichText::new("[ERR ]")
+                                            .font(label_font(10.0))
+                                            .color(self.colors.danger),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(e)
+                                            .size(11.5)
+                                            .color(self.colors.danger),
+                                    );
+                                });
                             }
                             _ => {}
                         }
 
-                        ui.add_space(14.0);
+                        ui.add_space(12.0);
 
                         // ── Cancel button ──
                         let avail = ui.available_width();
                         let cancel_clicked = ui
-                            .vertical_centered(|ui| {
-                                let cancel = egui::Button::new(
-                                    egui::RichText::new("Cancel")
-                                        .size(13.0)
-                                        .color(self.colors.text_muted),
-                                )
-                                .fill(egui::Color32::TRANSPARENT)
-                                .stroke(egui::Stroke::new(1.0, self.colors.border2))
-                                .corner_radius(8.0)
-                                .min_size(egui::vec2(avail, 36.0));
-                                ui.add(cancel).clicked()
-                            })
-                            .inner;
+                            .add(ghost_button(
+                                &self.colors,
+                                "CANCEL",
+                                egui::vec2(avail, 32.0),
+                            ))
+                            .clicked();
 
                         if cancel_clicked && !is_busy {
                             self.dao_view = DaoView::Overview;
                         }
                     });
-
             });
 
         if backdrop_clicked && !is_busy {
@@ -555,74 +522,30 @@ impl App {
         }
     }
 
-    /// Renders the Active Deposits table.
+    /// Hairline table of deposited and prepared DAO cells.
+    /// Transaction results are reported by `draw_tx_status_log` above
+    /// the panel, not here.
     pub(crate) fn show_dao_positions_table(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new("Active Deposits")
-                    .size(16.0)
-                    .strong()
-                    .color(self.colors.text_muted),
-            );
-
-            match &self.tx_status {
-                TransactionStatus::Success(tx_hash) => {
-                    ui.add_space(10.0);
-                    ui.label(
-                        egui::RichText::new("Sent:")
-                            .size(11.0)
-                            .color(self.colors.accent),
-                    );
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "0x{}..{}",
-                            &tx_hash[..8],
-                            &tx_hash[tx_hash.len() - 8..]
-                        ))
-                        .size(11.0)
-                        .color(self.colors.text_muted)
-                        .family(egui::FontFamily::Monospace),
-                    );
-                    if ui.small_button("Copy").clicked() {
-                        ui.ctx().copy_text(format!("0x{}", tx_hash));
-                    }
-                }
-                TransactionStatus::Error(msg) => {
-                    ui.add_space(10.0);
-                    ui.label(
-                        egui::RichText::new(msg)
-                            .size(11.0)
-                            .color(self.colors.danger),
-                    );
-                }
-                _ => {}
-            }
-        });
-        ui.add_space(12.0);
-
         let is_busy = !matches!(self.tx_status, TransactionStatus::Idle)
             && !matches!(self.tx_status, TransactionStatus::Success(_))
             && !matches!(self.tx_status, TransactionStatus::Error(_));
 
         if self.dao_deposited_cells.is_empty() && self.dao_prepared_cells.is_empty() {
-            if self.dao_cells_query_rx.is_some() {
-                ui.label(
-                    egui::RichText::new("Loading DAO cells...")
-                        .size(12.0)
-                        .color(self.colors.text_muted),
-                );
+            let text = if self.dao_cells_query_rx.is_some() {
+                "Loading DAO cells..."
             } else {
-                ui.label(
-                    egui::RichText::new("No active DAO positions.")
-                        .size(12.0)
-                        .color(self.colors.text_muted),
-                );
-            }
-
+                "No active DAO positions."
+            };
+            ui.label(
+                egui::RichText::new(text)
+                    .size(11.5)
+                    .color(self.colors.text_muted),
+            );
             return;
         }
 
-        // Collect actions to perform after the table is rendered (avoid borrow conflicts).
+        // Collect actions to perform after the table is rendered
+        // (avoid borrow conflicts).
         let mut prepare_action: Option<(ckb_types::packed::OutPoint, String)> = None;
         let mut withdraw_action: Option<(ckb_types::packed::OutPoint, String)> = None;
 
@@ -635,315 +558,194 @@ impl App {
                     .unwrap_or(0)
             };
 
-        let wide = ui.available_width() > 1100.0;
-        let table_avail = ui.available_width();
-        let frame_overhead = 26.0;
-        let inner_avail = table_avail - frame_overhead;
-        let data_width = ui
-            .ctx()
-            .data(|d| d.get_temp::<f32>(egui::Id::new("dao_data_cols_width")))
-            .unwrap_or(if wide { 950.0 } else { 750.0 });
-        let filler_step = 72.0;
-        let num_fillers = ((inner_avail - data_width) / filler_step).floor().max(0.0) as usize;
+        let full_w = ui.available_width();
+        let gap = 10.0;
+        let w_acct = 64.0;
+        let w_age = 96.0;
+        let w_state = 96.0;
+        let w_action = 104.0;
+        let flex = ((full_w - w_acct - w_age - w_state - w_action - 5.0 * gap) / 2.0).max(110.0);
+        let widths = [w_acct, flex, flex, w_age, w_state, w_action];
+        let titles = [
+            "ACCOUNT",
+            "AMOUNT",
+            "EARNED",
+            "AGE/EPOCH",
+            "STATE",
+            "ACTION",
+        ];
 
-        let table_fill = egui::Color32::from_rgba_unmultiplied(
-            self.colors.accent.r(),
-            self.colors.accent.g(),
-            self.colors.accent.b(),
-            10,
-        );
-        egui::Frame::new()
-            .fill(table_fill)
-            .corner_radius(12.0)
-            .stroke(egui::Stroke::new(1.0, self.colors.border))
-            .inner_margin(egui::Margin::symmetric(12, 8))
-            .show(ui, |ui| {
-                ui.set_min_width(ui.available_width());
-                let num_cols = (if wide { 8 } else { 7 }) + num_fillers;
-                let grid_resp = egui::Grid::new("dao_positions")
-                    .num_columns(num_cols)
-                    .spacing(egui::vec2(12.0, 8.0))
-                    .striped(true)
-                    .show(ui, |ui| {
-                        // Header
-                        let header = |ui: &mut egui::Ui, text: &str| {
-                            ui.label(
-                                egui::RichText::new(text)
-                                    .size(10.5)
-                                    .strong()
-                                    .color(self.colors.text_muted),
-                            );
-                        };
-                        header(ui, "Account");
-                        if wide {
-                            header(ui, "Tx Hash");
-                            header(ui, "Index");
-                        } else {
-                            header(ui, "Cell");
-                        }
-                        header(ui, "Amount");
-                        header(ui, "Earned");
-                        header(ui, if wide { "Lock Duration" } else { "Duration" });
-                        header(ui, "Status");
-                        header(ui, "Action");
-                        for _ in 0..num_fillers {
-                            ui.add_sized(
-                                [60.0, 14.0],
-                                egui::Label::new(
-                                    egui::RichText::new("--")
-                                        .size(10.5)
-                                        .strong()
-                                        .color(self.colors.text_muted),
-                                ),
-                            );
-                        }
-                        ui.end_row();
+        // Header row.
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            for (w, title) in widths.iter().zip(titles) {
+                cell_ui(ui, *w, 16.0, |ui| {
+                    ui.label(
+                        egui::RichText::new(title)
+                            .font(label_font(9.0))
+                            .color(self.colors.text_muted),
+                    );
+                });
+            }
+        });
+        hairline(ui, full_w, self.colors.border);
 
-                        // Deposited cells
-                        for (lock_args, cell) in &self.dao_deposited_cells {
-                            let acct_idx = account_index(lock_args, &self.accounts);
-                            ui.label(
-                                egui::RichText::new(format!("#{}", acct_idx))
-                                    .size(10.5)
-                                    .color(self.colors.accent2)
-                                    .family(egui::FontFamily::Monospace),
-                            );
+        let mut row_index = 0usize;
 
-                            let idx: u32 = cell.out_point.index().unpack();
-                            if wide {
-                                let tx_hash = format!("{:#x}", cell.out_point.tx_hash());
-                                ui.label(
-                                    egui::RichText::new(&tx_hash)
-                                        .size(10.5)
-                                        .color(self.colors.text_muted)
-                                        .font(egui::FontId::monospace(10.0)),
-                                );
-                                ui.label(
-                                    egui::RichText::new(format!("{}", idx))
-                                        .size(10.5)
-                                        .color(self.colors.text_muted)
-                                        .font(egui::FontId::monospace(10.0)),
-                                );
-                            } else {
-                                let cell_id = format!("{:#x}/{}", cell.out_point.tx_hash(), idx);
-                                ui.label(
-                                    egui::RichText::new(&cell_id)
-                                        .size(10.5)
-                                        .color(self.colors.text_muted)
-                                        .font(egui::FontId::monospace(10.0)),
-                                );
-                            }
+        // Deposited cells: earning, awaiting a withdrawal request.
+        for (lock_args, cell) in &self.dao_deposited_cells {
+            if row_index > 0 {
+                hairline(ui, full_w, self.colors.border);
+            }
+            row_index += 1;
 
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "{} CKB",
-                                    if wide {
-                                        format_ckb_with_decimals(cell.capacity, 8)
-                                    } else {
-                                        format_ckb(cell.capacity)
-                                    }
-                                ))
-                                .size(12.0)
-                                .color(self.colors.text_muted)
-                                .strong(),
-                            );
+            let row_rect = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(full_w, ROW_H));
+            if ui.rect_contains_pointer(row_rect) {
+                row_hover(ui.painter(), row_rect, &self.colors);
+            }
 
-                            // Estimated earned from cached deposit header + tip.
-                            let estimated = self
-                                .deposit_headers
-                                .get(&cell.block_number)
-                                .zip(self.node_status.tip_header.as_ref())
-                                .map(|(dep_h, tip_h)| {
-                                    let ar_dep = extract_ar(dep_h);
-                                    let ar_tip = extract_ar(tip_h);
-                                    let growth = ar_tip / ar_dep;
-                                    ((cell.capacity as f64 * (growth - 1.0)) as u64, true)
-                                });
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = gap;
 
-                            match estimated {
-                                Some((earned, _)) => {
-                                    let earned_str = if wide {
-                                        format_ckb_with_decimals(earned, 8)
-                                    } else {
-                                        format_ckb(earned)
-                                    };
-                                    ui.label(
-                                        egui::RichText::new(format!("~+{} CKB", earned_str))
-                                            .size(11.0)
-                                            .color(self.colors.warn),
-                                    );
-                                }
-                                None => {
-                                    ui.label(
-                                        egui::RichText::new("--")
-                                            .size(11.0)
-                                            .color(self.colors.text_muted),
-                                    );
-                                }
-                            }
+                let acct_idx = account_index(lock_args, &self.accounts);
+                cell_ui(ui, widths[0], ROW_H, |ui| {
+                    ui.label(
+                        egui::RichText::new(format!("#{}", acct_idx))
+                            .size(11.5)
+                            .color(self.colors.text),
+                    );
+                });
 
-                            // Lock duration from deposit header timestamp to tip.
-                            let duration_str = self
-                                .deposit_headers
-                                .get(&cell.block_number)
-                                .zip(self.node_status.tip_header.as_ref())
-                                .map(|(dep_h, tip_h)| {
-                                    let ms = tip_h.timestamp().saturating_sub(dep_h.timestamp());
-                                    format_duration_ms(ms, wide)
-                                })
-                                .unwrap_or_else(|| "--".to_string());
-                            ui.label(
-                                egui::RichText::new(duration_str)
-                                    .size(10.5)
-                                    .color(self.colors.text_muted),
-                            );
+                cell_ui(ui, widths[1], ROW_H, |ui| {
+                    ckb_amount(ui, &self.colors, "", cell.capacity, self.colors.text);
+                });
 
-                            ui.label(
-                                egui::RichText::new("Earning")
-                                    .size(10.5)
-                                    .color(self.colors.accent),
-                            );
-
-                            if ui
-                                .add_enabled(
-                                    !is_busy,
-                                    egui::Button::new(
-                                        egui::RichText::new("Request")
-                                            .size(10.5)
-                                            .color(self.colors.text_muted),
-                                    )
-                                    .fill(self.colors.surface2),
-                                )
-                                .clicked()
-                            {
-                                prepare_action = Some((cell.out_point.clone(), lock_args.clone()));
-                            }
-
-                            for _ in 0..num_fillers {
-                                ui.add_sized(
-                                    [60.0, 14.0],
-                                    egui::Label::new(
-                                        egui::RichText::new("--")
-                                            .size(10.5)
-                                            .color(self.colors.text_muted),
-                                    ),
-                                );
-                            }
-                            ui.end_row();
-                        }
-
-                        // Prepared cells
-                        for (lock_args, cell) in &self.dao_prepared_cells {
-                            let acct_idx = account_index(lock_args, &self.accounts);
-                            ui.label(
-                                egui::RichText::new(format!("#{}", acct_idx))
-                                    .size(10.5)
-                                    .color(self.colors.accent2)
-                                    .family(egui::FontFamily::Monospace),
-                            );
-
-                            let idx: u32 = cell.out_point.index().unpack();
-                            if wide {
-                                let tx_hash = format!("{:#x}", cell.out_point.tx_hash());
-                                ui.label(
-                                    egui::RichText::new(&tx_hash)
-                                        .size(10.5)
-                                        .color(self.colors.text_muted)
-                                        .font(egui::FontId::monospace(10.0)),
-                                );
-                                ui.label(
-                                    egui::RichText::new(format!("{}", idx))
-                                        .size(10.5)
-                                        .color(self.colors.text_muted)
-                                        .font(egui::FontId::monospace(10.0)),
-                                );
-                            } else {
-                                let cell_id = format!("{:#x}/{}", cell.out_point.tx_hash(), idx);
-                                ui.label(
-                                    egui::RichText::new(&cell_id)
-                                        .size(10.5)
-                                        .color(self.colors.text_muted)
-                                        .font(egui::FontId::monospace(10.0)),
-                                );
-                            }
-
-                            ui.label(
-                                egui::RichText::new(format!("{} CKB", format_ckb(cell.capacity)))
-                                    .size(12.0)
-                                    .color(self.colors.text_muted)
-                                    .strong(),
-                            );
-
-                            let earned = cell.maximum_withdraw.saturating_sub(cell.capacity);
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "+{} CKB",
-                                    if wide {
-                                        format_ckb_with_decimals(earned, 8)
-                                    } else {
-                                        format_ckb(earned)
-                                    }
-                                ))
-                                .size(11.0)
-                                .strong()
-                                .color(self.colors.warn),
-                            );
-
-                            // Lock duration from deposit to prepare.
-                            let ms = cell
-                                .prepare_header
-                                .timestamp()
-                                .saturating_sub(cell.deposit_header.timestamp());
-                            ui.label(
-                                egui::RichText::new(format_duration_ms(ms, wide))
-                                    .size(10.5)
-                                    .color(self.colors.text_muted),
-                            );
-
-                            ui.label(
-                                egui::RichText::new("Redeemed")
-                                    .size(10.5)
-                                    .color(self.colors.warn),
-                            );
-
-                            if ui
-                                .add_enabled(
-                                    !is_busy,
-                                    egui::Button::new(
-                                        egui::RichText::new("Withdraw")
-                                            .size(10.5)
-                                            .color(self.colors.accent2),
-                                    )
-                                    .fill(self.colors.surface2),
-                                )
-                                .clicked()
-                            {
-                                withdraw_action = Some((cell.out_point.clone(), lock_args.clone()));
-                            }
-
-                            for _ in 0..num_fillers {
-                                ui.add_sized(
-                                    [60.0, 14.0],
-                                    egui::Label::new(
-                                        egui::RichText::new("--")
-                                            .size(10.5)
-                                            .color(self.colors.text_muted),
-                                    ),
-                                );
-                            }
-                            ui.end_row();
-                        }
+                // Estimated earned from cached deposit header + tip.
+                let estimated = self
+                    .deposit_headers
+                    .get(&cell.block_number)
+                    .zip(self.node_status.tip_header.as_ref())
+                    .map(|(dep_h, tip_h)| {
+                        let ar_dep = extract_ar(dep_h);
+                        let ar_tip = extract_ar(tip_h);
+                        let growth = ar_tip / ar_dep;
+                        (cell.capacity as f64 * (growth - 1.0)) as u64
                     });
-                let grid_w = grid_resp.response.rect.width();
-                let data_w = grid_w - num_fillers as f32 * filler_step;
-                if data_w > 100.0 {
-                    ui.ctx().data_mut(|d| {
-                        d.insert_temp(egui::Id::new("dao_data_cols_width"), data_w);
-                    });
-                }
+                cell_ui(ui, widths[2], ROW_H, |ui| match estimated {
+                    Some(earned) => {
+                        ckb_amount(ui, &self.colors, "~+", earned, self.colors.accent2);
+                    }
+                    None => {
+                        ui.label(
+                            egui::RichText::new("--")
+                                .size(11.5)
+                                .color(self.colors.text_muted),
+                        );
+                    }
+                });
+
+                // Lock duration from deposit header timestamp to tip.
+                let duration_str = self
+                    .deposit_headers
+                    .get(&cell.block_number)
+                    .zip(self.node_status.tip_header.as_ref())
+                    .map(|(dep_h, tip_h)| {
+                        let ms = tip_h.timestamp().saturating_sub(dep_h.timestamp());
+                        format_duration_ms(ms, false)
+                    })
+                    .unwrap_or_else(|| "--".to_string());
+                cell_ui(ui, widths[3], ROW_H, |ui| {
+                    ui.label(
+                        egui::RichText::new(duration_str)
+                            .size(11.0)
+                            .color(self.colors.text_muted),
+                    );
+                });
+
+                cell_ui(ui, widths[4], ROW_H, |ui| {
+                    badge(ui, "DEPOSITED", self.colors.accent);
+                });
+
+                cell_ui(ui, widths[5], ROW_H, |ui| {
+                    if ui
+                        .add_enabled(
+                            !is_busy,
+                            ghost_button(&self.colors, "REQUEST", egui::vec2(96.0, 20.0)),
+                        )
+                        .clicked()
+                    {
+                        prepare_action = Some((cell.out_point.clone(), lock_args.clone()));
+                    }
+                });
             });
+        }
 
-        // Handle deferred actions
+        // Prepared cells: withdrawal requested, claimable after the
+        // epoch boundary.
+        for (lock_args, cell) in &self.dao_prepared_cells {
+            if row_index > 0 {
+                hairline(ui, full_w, self.colors.border);
+            }
+            row_index += 1;
+
+            let row_rect = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(full_w, ROW_H));
+            if ui.rect_contains_pointer(row_rect) {
+                row_hover(ui.painter(), row_rect, &self.colors);
+            }
+
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = gap;
+
+                let acct_idx = account_index(lock_args, &self.accounts);
+                cell_ui(ui, widths[0], ROW_H, |ui| {
+                    ui.label(
+                        egui::RichText::new(format!("#{}", acct_idx))
+                            .size(11.5)
+                            .color(self.colors.text),
+                    );
+                });
+
+                cell_ui(ui, widths[1], ROW_H, |ui| {
+                    ckb_amount(ui, &self.colors, "", cell.capacity, self.colors.text);
+                });
+
+                let earned = cell.maximum_withdraw.saturating_sub(cell.capacity);
+                cell_ui(ui, widths[2], ROW_H, |ui| {
+                    ckb_amount(ui, &self.colors, "+", earned, self.colors.accent2);
+                });
+
+                // Lock duration from deposit to prepare.
+                let ms = cell
+                    .prepare_header
+                    .timestamp()
+                    .saturating_sub(cell.deposit_header.timestamp());
+                cell_ui(ui, widths[3], ROW_H, |ui| {
+                    ui.label(
+                        egui::RichText::new(format_duration_ms(ms, false))
+                            .size(11.0)
+                            .color(self.colors.text_muted),
+                    );
+                });
+
+                cell_ui(ui, widths[4], ROW_H, |ui| {
+                    badge(ui, "PREPARED", self.colors.warn);
+                });
+
+                cell_ui(ui, widths[5], ROW_H, |ui| {
+                    if ui
+                        .add_enabled(
+                            !is_busy,
+                            ghost_button(&self.colors, "WITHDRAW", egui::vec2(96.0, 20.0)),
+                        )
+                        .clicked()
+                    {
+                        withdraw_action = Some((cell.out_point.clone(), lock_args.clone()));
+                    }
+                });
+            });
+        }
+
+        // Handle deferred actions.
         if let Some((out_point, lock_args)) = prepare_action {
             self.dao_withdraw_request_async(out_point, lock_args);
         }
@@ -951,4 +753,110 @@ impl App {
             self.dao_withdraw_async(out_point, lock_args);
         }
     }
+}
+
+/// One readout column: tiny uppercase label above the value.
+fn stat_cell(
+    ui: &mut egui::Ui,
+    colors: &AppColors,
+    w: f32,
+    label: &str,
+    value: impl FnOnce(&mut egui::Ui),
+) {
+    ui.allocate_ui_with_layout(
+        egui::vec2(w, 44.0),
+        egui::Layout::top_down(egui::Align::Min),
+        |ui| {
+            ui.label(
+                egui::RichText::new(label)
+                    .font(label_font(9.0))
+                    .color(colors.text_muted),
+            );
+            ui.add_space(5.0);
+            value(ui);
+        },
+    );
+}
+
+/// Vertical hairline between readout columns.
+fn stat_divider(ui: &mut egui::Ui, colors: &AppColors, pad: f32) {
+    ui.add_space(pad);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(1.0, 44.0), egui::Sense::hover());
+    ui.painter().vline(
+        rect.center().x,
+        rect.y_range(),
+        egui::Stroke::new(1.0, colors.border),
+    );
+    ui.add_space(pad);
+}
+
+/// Big readout value: bright integer part, dim 8-digit fraction.
+fn stat_ckb_value(
+    ui: &mut egui::Ui,
+    colors: &AppColors,
+    prefix: &str,
+    shannons: u64,
+    int_color: egui::Color32,
+) {
+    let (int, frac) = ckb_split(shannons);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        ui.label(
+            egui::RichText::new(format!("{}{}", prefix, int))
+                .font(display_font(18.0))
+                .color(int_color),
+        );
+        ui.label(
+            egui::RichText::new(format!(".{}", frac))
+                .size(10.0)
+                .color(colors.text_muted),
+        );
+    });
+}
+
+/// Table amount: body-size integer part with a dim fraction.
+fn ckb_amount(
+    ui: &mut egui::Ui,
+    colors: &AppColors,
+    prefix: &str,
+    shannons: u64,
+    int_color: egui::Color32,
+) {
+    let (int, frac) = ckb_split(shannons);
+    ui.spacing_mut().item_spacing.x = 0.0;
+    ui.label(
+        egui::RichText::new(format!("{}{}", prefix, int))
+            .size(11.5)
+            .color(int_color),
+    );
+    ui.label(
+        egui::RichText::new(format!(".{}", frac))
+            .size(11.5)
+            .color(colors.text_muted),
+    );
+}
+
+/// Fixed-size table cell with vertically centered content.
+fn cell_ui(ui: &mut egui::Ui, w: f32, h: f32, add: impl FnOnce(&mut egui::Ui)) {
+    ui.allocate_ui_with_layout(
+        egui::vec2(w, h),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            // allocate_ui_with_layout advances the cursor by the *used*
+            // width, not the desired one — pin the cell to its column
+            // width so header and row cells share one grid.
+            ui.set_min_width(w);
+            add(ui);
+        },
+    );
+}
+
+/// Full-width 1px horizontal rule.
+fn hairline(ui: &mut egui::Ui, width: f32, color: egui::Color32) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 1.0), egui::Sense::hover());
+    ui.painter().hline(
+        rect.x_range(),
+        rect.center().y,
+        egui::Stroke::new(1.0, color),
+    );
 }

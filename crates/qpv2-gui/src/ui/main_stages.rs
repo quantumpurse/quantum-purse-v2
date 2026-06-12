@@ -1,602 +1,73 @@
-//! Setup and Locked screen rendering.
+//! App chrome (telemetry strip, module rail, status line) and the
+//! Setup / Locked terminal screens.
 
-use crate::types::Tab;
+use crate::types::{display_font, label_font, Status, Tab};
+use crate::ui::utils::{
+    accent_button, blinking_cursor, breathing_dot, ghost_button, panel_frame, section_header,
+    value_flash,
+};
 use crate::App;
 use ckb_node::NodeType;
 use eframe::egui;
 use qpv2_core::types::{AuthMethod, SpxVariant};
 
+/// Height of the top telemetry strip.
+const TELEMETRY_H: f32 = 38.0;
+/// Height of the bottom status line.
+const STATUSLINE_H: f32 = 26.0;
+/// Width of the left module rail.
+const RAIL_W: f32 = 138.0;
+
 impl App {
-    pub(crate) fn show_welcome(&mut self, ui: &mut egui::Ui) {
-        let variants = [
-            SpxVariant::Sha2128S,
-            SpxVariant::Sha2128F,
-            SpxVariant::Shake128S,
-            SpxVariant::Shake128F,
-            SpxVariant::Sha2192S,
-            SpxVariant::Sha2192F,
-            SpxVariant::Shake192S,
-            SpxVariant::Shake192F,
-            SpxVariant::Sha2256S,
-            SpxVariant::Sha2256F,
-            SpxVariant::Shake256S,
-            SpxVariant::Shake256F,
-        ];
+    // ────────────────────────────────────────────────────────────────
+    // Unlocked chrome
+    // ────────────────────────────────────────────────────────────────
 
-        let row_h = 22.0;
-        let group_gap = 14.0;
-        let group_h = 4.0 * row_h;
-        let thread_h = 3.0 * group_h + 2.0 * group_gap;
-        let btn_h = 40.0;
-        let btn_gap = 8.0;
-        let btn_w = 190.0;
-        let center_w = 170.0;
-        let buttons_h = 3.0 * btn_h + 2.0 * btn_gap;
-        let btn_top_pad = (thread_h - buttons_h) / 2.0;
+    pub(crate) fn show_unlocked(&mut self, ctx: &egui::Context) {
+        self.handle_module_shortcuts(ctx);
 
-        ui.vertical_centered(|ui| {
-            ui.add_space(60.0);
-
-            ui.label(
-                egui::RichText::new("QUANTUM PURSE")
-                    .size(24.0)
-                    .color(self.colors.accent)
-                    .strong(),
-            );
-            ui.add_space(4.0);
-            ui.label(
-                egui::RichText::new("Post-quantum secure wallet for Nervos Network.")
-                    .size(13.0)
-                    .color(self.colors.text_muted),
-            );
-
-            ui.add_space(32.0);
-
-            let spacing_x = ui.spacing().item_spacing.x;
-            let total_w = btn_w * 2.0 + center_w + spacing_x * 2.0;
-            let left_pad = (ui.available_width() - total_w) / 2.0;
-
-            ui.horizontal(|ui| {
-                ui.add_space(left_pad.max(0.0));
-                // ── Left column: CREATE ──
-                ui.allocate_ui_with_layout(
-                    egui::vec2(btn_w, thread_h),
-                    egui::Layout::top_down(egui::Align::Center),
-                    |ui| {
-                        ui.add_space(btn_top_pad);
-
-                        for group_idx in 0..3u8 {
-                            let label = match group_idx {
-                                0 => format!("Create with {}", keychain::short_name()),
-                                1 => "Create with Security Key".to_string(),
-                                _ => "Create with Password".to_string(),
-                            };
-                            let (fill, text_color, stroke) = self.auth_button_style(group_idx);
-
-                            let btn = egui::Button::new(
-                                egui::RichText::new(&label).size(12.0).color(text_color),
-                            )
-                            .fill(fill)
-                            .stroke(stroke)
-                            .corner_radius(8.0)
-                            .min_size(egui::vec2(btn_w, btn_h));
-
-                            if ui.add(btn).clicked() {
-                                let v = self.selected_variant;
-                                match group_idx {
-                                    0 => self.create_wallet_with_keychain(v),
-                                    1 => self.create_wallet_with_fido2(v),
-                                    _ => self.create_wallet_with_password(v),
-                                }
-                            }
-
-                            if group_idx < 2 {
-                                ui.add_space(btn_gap);
-                            }
-                        }
-                    },
-                );
-
-                // ── Center column: Variant thread ──
-                ui.allocate_ui_with_layout(
-                    egui::vec2(center_w, thread_h),
-                    egui::Layout::top_down(egui::Align::Center),
-                    |ui| {
-                        let (response, painter) = ui
-                            .allocate_painter(egui::vec2(center_w, thread_h), egui::Sense::click());
-                        let rect = response.rect;
-                        let line_x = rect.center().x;
-
-                        let first_y = rect.top();
-                        let last_y = rect.bottom();
-
-                        painter.line_segment(
-                            [egui::pos2(line_x, first_y), egui::pos2(line_x, last_y)],
-                            egui::Stroke::new(1.0, self.colors.border),
-                        );
-
-                        for (i, variant) in variants.iter().enumerate() {
-                            let group = i / 4;
-                            let in_group = i % 4;
-                            let y = rect.top()
-                                + group as f32 * (group_h + group_gap)
-                                + in_group as f32 * row_h
-                                + row_h / 2.0;
-
-                            let is_selected = *variant == self.selected_variant;
-                            let (dot_color, dot_r, text_color) = if is_selected {
-                                (self.colors.accent, 5.0, self.colors.text)
-                            } else {
-                                (self.colors.border2, 3.0, self.colors.text_muted)
-                            };
-
-                            let (hash, param) = variant_parts(*variant);
-
-                            painter.circle_filled(egui::pos2(line_x, y), dot_r, dot_color);
-                            painter.text(
-                                egui::pos2(line_x - 12.0, y),
-                                egui::Align2::RIGHT_CENTER,
-                                hash,
-                                egui::FontId::proportional(11.0),
-                                text_color,
-                            );
-                            painter.text(
-                                egui::pos2(line_x + 12.0, y),
-                                egui::Align2::LEFT_CENTER,
-                                param,
-                                egui::FontId::proportional(11.0),
-                                text_color,
-                            );
-                        }
-
-                        if response.clicked() {
-                            if let Some(pos) = response.interact_pointer_pos() {
-                                for (i, variant) in variants.iter().enumerate() {
-                                    let group = i / 4;
-                                    let in_group = i % 4;
-                                    let y = rect.top()
-                                        + group as f32 * (group_h + group_gap)
-                                        + in_group as f32 * row_h
-                                        + row_h / 2.0;
-                                    if (pos.y - y).abs() < row_h / 2.0 {
-                                        self.selected_variant = *variant;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-
-                        if response.hovered() {
-                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                        }
-                    },
-                );
-
-                // ── Right column: IMPORT ──
-                ui.allocate_ui_with_layout(
-                    egui::vec2(btn_w, thread_h),
-                    egui::Layout::top_down(egui::Align::Center),
-                    |ui| {
-                        ui.add_space(btn_top_pad);
-
-                        for group_idx in 0..3u8 {
-                            let label = match group_idx {
-                                0 => format!("Import with {}", keychain::short_name()),
-                                1 => "Import with Security Key".to_string(),
-                                _ => "Import with Password".to_string(),
-                            };
-                            let (fill, text_color, stroke) = self.auth_button_style(group_idx);
-
-                            let btn = egui::Button::new(
-                                egui::RichText::new(&label).size(12.0).color(text_color),
-                            )
-                            .fill(fill)
-                            .stroke(stroke)
-                            .corner_radius(8.0)
-                            .min_size(egui::vec2(btn_w, btn_h));
-
-                            if ui.add(btn).clicked() {
-                                let v = self.selected_variant;
-                                match group_idx {
-                                    0 => self.import_seed_phrase_with_keychain(v),
-                                    1 => self.import_seed_phrase_with_fido2(v),
-                                    _ => self.import_seed_phrase_with_password(v),
-                                }
-                            }
-
-                            if group_idx < 2 {
-                                ui.add_space(btn_gap);
-                            }
-                        }
-                    },
+        // ── Top telemetry strip ──
+        egui::TopBottomPanel::top("telemetry")
+            .exact_height(TELEMETRY_H)
+            .show_separator_line(false)
+            .frame(egui::Frame::new().fill(self.colors.surface))
+            .show(ctx, |ui| {
+                self.draw_telemetry_strip(ui);
+                let r = ui.clip_rect();
+                ui.painter().hline(
+                    r.x_range(),
+                    r.bottom() - 0.5,
+                    egui::Stroke::new(1.0, self.colors.border),
                 );
             });
 
-            ui.add_space(24.0);
-            ui.vertical_centered(|ui| self.show_status(ui));
-        });
-    }
-
-    pub(crate) fn show_unlocked(&mut self, ctx: &egui::Context) {
-        // Left sidebar matching the mockup layout.
-        // The SidePanel's built-in right-edge separator is disabled
-        // (`show_separator_line(false)`) — its sub-pixel anti-aliasing
-        // makes a 1 px low-alpha stroke read as bright white against
-        // the dark bg. We paint our own vline at the bottom of the
-        // closure using the same `Stroke::new(1.0, colors.border)`
-        // every in-sidebar divider uses, so they all look identical.
-        egui::SidePanel::left("sidebar")
-            .resizable(false)
+        // ── Bottom status line ──
+        egui::TopBottomPanel::bottom("statusline")
+            .exact_height(STATUSLINE_H)
             .show_separator_line(false)
-            .exact_width(236.0)
             .frame(egui::Frame::new().fill(self.colors.surface))
             .show(ctx, |ui| {
-                // ── Logo section ──
-                ui.add_space(20.0);
-                ui.horizontal(|ui| {
-                    ui.add_space(16.0);
+                self.draw_status_line(ui);
+                let r = ui.clip_rect();
+                ui.painter().hline(
+                    r.x_range(),
+                    r.top() + 0.5,
+                    egui::Stroke::new(1.0, self.colors.border),
+                );
+            });
 
-                    // Logo icon with gradient-like background
-                    let (icon_rect, _) =
-                        ui.allocate_exact_size(egui::vec2(34.0, 34.0), egui::Sense::hover());
-                    ui.painter()
-                        .rect_filled(icon_rect, 10.0, self.colors.accent);
-                    ui.painter().text(
-                        icon_rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        "Q",
-                        egui::FontId::proportional(17.0),
-                        egui::Color32::from_rgb(5, 12, 10),
-                    );
-
-                    ui.add_space(8.0);
-                    ui.vertical(|ui| {
-                        ui.label(
-                            egui::RichText::new("Quantum Purse")
-                                .size(21.0)
-                                .color(self.colors.accent)
-                                .strong(),
-                        );
-                        ui.label(
-                            egui::RichText::new("NERVOS NETWORK")
-                                .size(8.0)
-                                .color(self.colors.text_muted),
-                        );
-                    });
-                });
-
-                ui.add_space(6.0);
-                // Divider below logo
-                ui.horizontal(|ui| {
-                    let rect = ui.available_rect_before_wrap();
-                    ui.painter().line_segment(
-                        [rect.left_top(), egui::pos2(rect.right(), rect.top())],
-                        egui::Stroke::new(1.0, self.colors.border),
-                    );
-                    ui.add_space(1.0);
-                });
-
-                // ── Node selector ──
-                ui.add_space(6.0);
-                ui.horizontal(|ui| {
-                    ui.add_space(14.0);
-
-                    // Make it interactive
-                    let (response, painter) =
-                        ui.allocate_painter(egui::vec2(208.0, 42.0), egui::Sense::click());
-
-                    let rect = response.rect;
-                    let is_hovered = response.hovered();
-
-                    // Store rect for dropdown positioning
-                    self.node_selector_rect = Some(rect);
-
-                    // Draw background
-                    let bg_color = if is_hovered {
-                        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 10)
-                    } else {
-                        self.colors.surface2
-                    };
-
-                    painter.rect_filled(rect, 9.0, bg_color);
-                    painter.rect_stroke(
-                        rect,
-                        9.0,
-                        egui::Stroke::new(1.0, self.colors.border),
-                        egui::StrokeKind::Inside,
-                    );
-
-                    // Content layout
-                    let inner = rect.shrink2(egui::vec2(12.0, 5.0));
-
-                    // "ACTIVE NODE" label
-                    painter.text(
-                        inner.left_top() + egui::vec2(0.0, 0.0),
-                        egui::Align2::LEFT_TOP,
-                        "ACTIVE NODE",
-                        egui::FontId::proportional(8.0),
-                        self.colors.text,
-                    );
-
-                    // Node info row
-                    let row_y = inner.top() + 14.0;
-
-                    let t = ui.input(|i| i.time);
-                    let blink_alpha = ((t * std::f64::consts::TAU).sin() * 0.5 + 0.5) as f32;
-                    let dot_color = if self.node_status.online {
-                        if self.node_status_reconnected_at.is_some() {
-                            self.colors.accent.linear_multiply(0.3 + 0.7 * blink_alpha)
-                        } else {
-                            self.colors.accent
-                        }
-                    } else {
-                        self.colors.danger.linear_multiply(0.3 + 0.7 * blink_alpha)
-                    };
-                    painter.circle_filled(
-                        egui::pos2(inner.left() + 4.0, row_y + 7.0),
-                        3.0,
-                        dot_color,
-                    );
-                    if !self.node_status.online || self.node_status_reconnected_at.is_some() {
-                        ctx.request_repaint();
-                    }
-
-                    // Node type
-                    let node_name = match self.qp_client.config().node_type {
-                        NodeType::PublicRpc => "Remote RPC",
-                        NodeType::LightClient => "Light Client",
-                        NodeType::FullNode => "Full Node",
-                    };
-                    painter.text(
-                        egui::pos2(inner.left() + 14.0, row_y),
-                        egui::Align2::LEFT_TOP,
-                        node_name,
-                        egui::FontId::proportional(13.0),
-                        self.colors.text,
-                    );
-
-                    // Dropdown arrow. The network badge's right edge is at `inner.right() - 5.0`
-                    // and "MAIN"/"TEST" at 8pt is ~24px wide, so its left edge sits ~-29.
-                    // Anchor the arrow's RIGHT edge at -36 to leave ~7px clear of the badge.
-                    painter.text(
-                        egui::pos2(inner.right() - 28.0, row_y - 13.0),
-                        egui::Align2::RIGHT_TOP,
-                        "\u{25bc}",
-                        egui::FontId::proportional(9.0),
-                        self.colors.text_muted,
-                    );
-
-                    // Network badge
-                    let network = match self.qp_client.network() {
-                        ckb_node::NetworkType::Mainnet => "MAIN",
-                        ckb_node::NetworkType::Testnet => "TEST",
-                    };
-                    let network_color = if self.qp_client.is_mainnet() {
-                        self.colors.accent
-                    } else {
-                        self.colors.warn
-                    };
-                    painter.text(
-                        egui::pos2(inner.right() - 5.0, row_y - 13.0),
-                        egui::Align2::RIGHT_TOP,
-                        network,
-                        egui::FontId::proportional(8.0),
-                        network_color,
-                    );
-
-                    // Handle click
-                    if response.clicked() {
-                        self.node_selector_open = !self.node_selector_open;
-                        self.wallet_selector_open = false;
-                        // Seed the popup draft from the committed config
-                        // each time it opens so stale selections from a
-                        // previous (un-applied) session don't leak through.
-                        if self.node_selector_open {
-                            let cfg = self.qp_client.config();
-                            self.network = cfg.network;
-                            self.node_type = cfg.node_type;
-                        }
-                    }
-
-                    // Change cursor on hover
-                    if is_hovered {
-                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                    }
-                });
-
-                // ── Wallet selector ──
-                ui.add_space(10.0);
-                ui.horizontal(|ui| {
-                    ui.add_space(14.0);
-
-                    let (response, painter) =
-                        ui.allocate_painter(egui::vec2(208.0, 42.0), egui::Sense::click());
-
-                    let rect = response.rect;
-                    let is_hovered = response.hovered();
-
-                    self.wallet_selector_rect = Some(rect);
-
-                    let bg_color = if is_hovered {
-                        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 10)
-                    } else {
-                        self.colors.surface2
-                    };
-
-                    painter.rect_filled(rect, 9.0, bg_color);
-                    painter.rect_stroke(
-                        rect,
-                        9.0,
-                        egui::Stroke::new(1.0, self.colors.border),
-                        egui::StrokeKind::Inside,
-                    );
-
-                    let inner = rect.shrink2(egui::vec2(12.0, 5.0));
-
-                    painter.text(
-                        inner.left_top(),
-                        egui::Align2::LEFT_TOP,
-                        "ACTIVE WALLET",
-                        egui::FontId::proportional(8.0),
-                        self.colors.text,
-                    );
-
-                    let row_y = inner.top() + 14.0;
-
-                    painter.circle_filled(
-                        egui::pos2(inner.left() + 4.0, row_y + 7.0),
-                        3.0,
-                        self.colors.accent,
-                    );
-
-                    painter.text(
-                        egui::pos2(inner.left() + 14.0, row_y),
-                        egui::Align2::LEFT_TOP,
-                        &self.wallet_name,
-                        egui::FontId::proportional(13.0),
-                        self.colors.text,
-                    );
-
-                    painter.text(
-                        egui::pos2(inner.right() - 45.0, row_y - 13.0),
-                        egui::Align2::RIGHT_TOP,
-                        "\u{25bc}",
-                        egui::FontId::proportional(9.0),
-                        self.colors.text_muted,
-                    );
-
-                    // Variant badge (from cache — no disk I/O).
-                    if let Some(cw) = self.wallet_cache.iter().find(|w| w.id == self.wallet_id) {
-                        painter.text(
-                            egui::pos2(inner.right() - 5.0, row_y - 13.0),
-                            egui::Align2::RIGHT_TOP,
-                            format!("{}", cw.spx_variant),
-                            egui::FontId::proportional(8.0),
-                            self.colors.accent2,
-                        );
-                    }
-
-                    if response.clicked() {
-                        self.wallet_selector_open = !self.wallet_selector_open;
-                        self.node_selector_open = false;
-                    }
-
-                    if is_hovered {
-                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                    }
-                });
-
-                // ── Navigation ──
-                ui.add_space(14.0);
-
-                // Section: Wallet
-                ui.horizontal(|ui| {
-                    ui.add_space(20.0);
-                    ui.label(
-                        egui::RichText::new("WALLET")
-                            .size(8.0)
-                            .strong()
-                            .color(self.colors.text),
-                    );
-                });
-                ui.add_space(4.0);
-                self.draw_nav_item(ui, Tab::Dashboard, "\u{25c8}", "Dashboard");
-                self.draw_nav_item(ui, Tab::Transfer, "\u{2191}\u{2193}", "Transfer");
-
-                ui.add_space(10.0);
-
-                // Section: NervosDAO
-                ui.horizontal(|ui| {
-                    ui.add_space(20.0);
-                    ui.label(
-                        egui::RichText::new("DAO")
-                            .size(8.0)
-                            .strong()
-                            .color(self.colors.text),
-                    );
-                });
-                ui.add_space(4.0);
-                self.draw_nav_item(ui, Tab::DaoOperations, "\u{2b21}", "Nervos DAO");
-
-                ui.add_space(10.0);
-
-                // Section: Setting
-                ui.horizontal(|ui| {
-                    ui.add_space(20.0);
-                    ui.label(
-                        egui::RichText::new("SETTING")
-                            .size(8.0)
-                            .strong()
-                            .color(self.colors.text),
-                    );
-                });
-                ui.add_space(4.0);
-                self.draw_nav_item(ui, Tab::NodeManager, "\u{25c9}", "Networks");
-                self.draw_nav_item(ui, Tab::Wallets, "\u{25EB}", "Wallets");
-                self.draw_nav_item(ui, Tab::Accounts, "\u{25ce}", "Accounts");
-                self.draw_nav_item(ui, Tab::Multisig, "\u{1f512}", "Multisig");
-
-                // ── Bottom: Lock Wallet ──
-                ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                    ui.add_space(30.0);
-
-                    if matches!(
-                        self.auth_method,
-                        Some(AuthMethod::Keychain) | Some(AuthMethod::Fido2 { .. })
-                    ) {
-                        ui.horizontal(|ui| {
-                            ui.add_space(14.0);
-                            let lock_btn = egui::Button::new(
-                                egui::RichText::new("\u{1f512} Lock Wallet")
-                                    .size(12.0)
-                                    .color(self.colors.accent3),
-                            )
-                            .fill(egui::Color32::from_rgba_unmultiplied(
-                                self.colors.accent3.r(),
-                                self.colors.accent3.g(),
-                                self.colors.accent3.b(),
-                                12,
-                            ))
-                            .stroke(egui::Stroke::new(
-                                1.0,
-                                egui::Color32::from_rgba_unmultiplied(
-                                    self.colors.accent3.r(),
-                                    self.colors.accent3.g(),
-                                    self.colors.accent3.b(),
-                                    40,
-                                ),
-                            ))
-                            .corner_radius(8.0)
-                            .min_size(egui::vec2(208.0, 34.0));
-
-                            if ui.add(lock_btn).clicked() {
-                                self.lock_wallet();
-                            }
-                        });
-                    }
-
-                    ui.add_space(4.0);
-
-                    // Divider
-                    ui.horizontal(|ui| {
-                        let rect = ui.available_rect_before_wrap();
-                        ui.painter().line_segment(
-                            [rect.left_top(), egui::pos2(rect.right(), rect.top())],
-                            egui::Stroke::new(1.0, self.colors.border),
-                        );
-                        ui.add_space(1.0);
-                    });
-                });
-
-                // Hand-painted right-edge separator. Same stroke as
-                // every in-sidebar divider so the boundary tone
-                // matches the "QPV2 / NERVOS NETWORK" line. See the
-                // top of this fn for why the SidePanel's auto
-                // separator is disabled.
-                let panel_rect = ui.clip_rect();
+        // ── Left module rail ──
+        egui::SidePanel::left("rail")
+            .resizable(false)
+            .show_separator_line(false)
+            .exact_width(RAIL_W)
+            .frame(egui::Frame::new().fill(self.colors.surface))
+            .show(ctx, |ui| {
+                self.draw_module_rail(ui);
+                let r = ui.clip_rect();
                 ui.painter().vline(
-                    panel_rect.right() - 0.5,
-                    panel_rect.y_range(),
+                    r.right() - 0.5,
+                    r.y_range(),
                     egui::Stroke::new(1.0, self.colors.border),
                 );
             });
@@ -610,7 +81,7 @@ impl App {
                 egui::ScrollArea::vertical()
                     .auto_shrink(false)
                     .show(ui, |ui| {
-                        ui.add_space(24.0);
+                        ui.add_space(18.0);
 
                         match self.active_tab {
                             Tab::Dashboard => self.show_dashboard_tab(ui),
@@ -625,79 +96,731 @@ impl App {
             });
     }
 
-    pub(crate) fn show_locked(&mut self, ui: &mut egui::Ui) {
-        ui.vertical_centered(|ui| {
-            ui.add_space(80.0);
+    /// Number keys 1–7 switch modules when no text field is focused.
+    fn handle_module_shortcuts(&mut self, ctx: &egui::Context) {
+        if ctx.memory(|m| m.focused().is_some()) {
+            return;
+        }
+        const KEYS: [egui::Key; 7] = [
+            egui::Key::Num1,
+            egui::Key::Num2,
+            egui::Key::Num3,
+            egui::Key::Num4,
+            egui::Key::Num5,
+            egui::Key::Num6,
+            egui::Key::Num7,
+        ];
+        for (key, tab) in KEYS.iter().zip(Tab::ALL) {
+            if ctx.input(|i| i.key_pressed(*key)) && self.active_tab != tab {
+                self.reset_finished_tx_status();
+                self.active_tab = tab;
+            }
+        }
+    }
 
-            // Lock icon
-            ui.label(egui::RichText::new("\u{1f512}").size(64.0));
+    /// Full-width strip: ident, node telemetry, tip block, network,
+    /// then wallet identity and lock on the right.
+    fn draw_telemetry_strip(&mut self, ui: &mut egui::Ui) {
+        let c_accent = self.colors.accent;
+        let c_bg = self.colors.bg;
+        let c_text = self.colors.text;
+        let c_muted = self.colors.text_muted;
+        let t = ui.input(|i| i.time) as f32;
 
-            ui.add_space(24.0);
+        ui.horizontal_centered(|ui| {
+            ui.add_space(12.0);
 
-            ui.heading(
-                egui::RichText::new("Wallet Locked")
-                    .size(28.0)
-                    .color(self.colors.text),
+            // Ident block.
+            let (logo, _) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
+            ui.painter().rect_filled(logo, 0.0, c_accent);
+            ui.painter().text(
+                logo.center(),
+                egui::Align2::CENTER_CENTER,
+                "Q",
+                display_font(12.0),
+                c_bg,
+            );
+            ui.add_space(8.0);
+            ui.label(
+                egui::RichText::new("QUANTUM PURSE")
+                    .font(display_font(12.0))
+                    .color(c_text),
+            );
+            ui.label(
+                egui::RichText::new("V2")
+                    .font(label_font(9.0))
+                    .color(c_muted),
             );
 
-            ui.add_space(8.0);
+            self.strip_divider(ui);
+
+            // ── Node segment (clickable → node selector) ──
+            let node_name = match self.qp_client.config().node_type {
+                NodeType::PublicRpc => "REMOTE RPC",
+                NodeType::LightClient => "LIGHT CLIENT",
+                NodeType::FullNode => "FULL NODE",
+            };
+            let network = match self.qp_client.network() {
+                ckb_node::NetworkType::Mainnet => "MAIN",
+                ckb_node::NetworkType::Testnet => "TEST",
+            };
+            let network_color = if self.qp_client.is_mainnet() {
+                self.colors.accent
+            } else {
+                self.colors.warn
+            };
+            let online = self.node_status.online;
+            let dot_color = if online {
+                self.colors.accent2
+            } else {
+                self.colors.danger
+            };
+
+            // Sync percentage rides along for local backends — this is
+            // its home; the Networks tab's backend cards show state only.
+            // Green once fully synced, accent while catching up.
+            let node_type = self.qp_client.config().node_type;
+            let sync_suffix = if online && node_type != NodeType::PublicRpc {
+                let pct = self.sync_pct(node_type);
+                let color = if pct >= 0.999 {
+                    self.colors.accent2
+                } else {
+                    self.colors.accent
+                };
+                Some((format!("{:.1}%", pct * 100.0), color))
+            } else {
+                None
+            };
+            let node_text = format!("{} / {}", node_name, network);
+            let seg = self.strip_segment(
+                ui,
+                "NODE",
+                &node_text,
+                sync_suffix.as_ref().map(|(s, c)| (s.as_str(), *c)),
+                Some((dot_color, !online)),
+                t,
+            );
+            ui.painter().text(
+                seg.rect.right_center() + egui::vec2(2.0, 1.0),
+                egui::Align2::LEFT_CENTER,
+                "▾",
+                egui::FontId::proportional(8.0),
+                c_muted,
+            );
+            ui.add_space(10.0);
+            self.node_selector_rect = Some(seg.rect);
+            if seg.clicked() {
+                self.node_selector_open = !self.node_selector_open;
+                self.wallet_selector_open = false;
+                if self.node_selector_open {
+                    let cfg = self.qp_client.config();
+                    self.network = cfg.network;
+                    self.node_type = cfg.node_type;
+                }
+            }
+            // Recolor of the network half happens via badge color below
+            // the generic segment; repaint while offline so the dot
+            // breathes.
+            if !online {
+                ui.ctx().request_repaint();
+            }
+            let _ = network_color;
+
+            self.strip_divider(ui);
+
+            // ── Tip block (flashes on change) ──
+            let tip = self.node_status.tip_block();
+            let tip_text = tip
+                .map(crate::ui::utils::group_thousands)
+                .unwrap_or_else(|| "------".into());
+            ui.label(
+                egui::RichText::new("TIP")
+                    .font(label_font(9.0))
+                    .color(c_muted),
+            );
+            ui.add_space(2.0);
+            // Tip lives in the accent; a new block flashes it bright.
+            let flash = value_flash(ui, egui::Id::new("tip-flash"), tip.unwrap_or(0));
+            let tip_color = crate::ui::utils::lerp_color(c_accent, c_text, flash);
+            ui.label(egui::RichText::new(tip_text).size(11.5).color(tip_color));
+
+            // Peer count, when the backend reports peers.
+            if !self.node_status.peers.is_empty() {
+                self.strip_divider(ui);
+                ui.label(
+                    egui::RichText::new("PEERS")
+                        .font(label_font(9.0))
+                        .color(c_muted),
+                );
+                ui.add_space(2.0);
+                // Green: peers present means healthy connectivity (the
+                // segment is hidden entirely at zero peers).
+                ui.label(
+                    egui::RichText::new(format!("{}", self.node_status.peers.len()))
+                        .size(11.5)
+                        .color(self.colors.accent2),
+                );
+            }
+
+            // ── Right side: lock + wallet ──
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.add_space(12.0);
+
+                if matches!(
+                    self.auth_method,
+                    Some(AuthMethod::Keychain) | Some(AuthMethod::Fido2 { .. })
+                ) {
+                    let lock = ghost_button(&self.colors, "LOCK", egui::vec2(56.0, 22.0));
+                    if ui.add(lock).clicked() {
+                        self.lock_wallet();
+                    }
+                    ui.add_space(10.0);
+                }
+
+                let variant = self
+                    .wallet_cache
+                    .iter()
+                    .find(|w| w.id == self.wallet_id)
+                    .map(|cw| format!("{}", cw.spx_variant));
+                let wallet_text = match &variant {
+                    Some(v) => format!("{} / {}", self.wallet_name.to_uppercase(), v),
+                    None => self.wallet_name.to_uppercase(),
+                };
+                let seg = self.strip_segment(ui, "VAULT", &wallet_text, None, None, t);
+                self.wallet_selector_rect = Some(seg.rect);
+                if seg.clicked() {
+                    self.wallet_selector_open = !self.wallet_selector_open;
+                    self.node_selector_open = false;
+                }
+            });
+        });
+    }
+
+    /// One clickable label/value segment in the telemetry strip.
+    /// `dot` paints a breathing status dot before the value:
+    /// `(color, urgent)`.
+    fn strip_segment(
+        &self,
+        ui: &mut egui::Ui,
+        label: &str,
+        value: &str,
+        suffix: Option<(&str, egui::Color32)>,
+        dot: Option<(egui::Color32, bool)>,
+        t: f32,
+    ) -> egui::Response {
+        let label_w = label.len() as f32 * 6.0;
+        let value_w = value.len() as f32 * 7.2;
+        let suffix_w = suffix.map_or(0.0, |(s, _)| s.len() as f32 * 7.2 + 6.0);
+        let dot_w = if dot.is_some() { 12.0 } else { 0.0 };
+        let w = label_w + dot_w + value_w + suffix_w + 10.0;
+        let (rect, response) =
+            ui.allocate_exact_size(egui::vec2(w, TELEMETRY_H - 10.0), egui::Sense::click());
+        let painter = ui.painter();
+
+        if response.hovered() {
+            painter.rect_filled(rect, 0.0, self.colors.accent_tint);
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+
+        let mut x = rect.left() + 2.0;
+        painter.text(
+            egui::pos2(x, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            label,
+            label_font(9.0),
+            self.colors.text_muted,
+        );
+        x += label_w + 4.0;
+        if let Some((color, urgent)) = dot {
+            breathing_dot(
+                painter,
+                egui::pos2(x + 3.0, rect.center().y),
+                color,
+                t,
+                urgent,
+            );
+            x += dot_w;
+        }
+        let value_rect = painter.text(
+            egui::pos2(x, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            value,
+            egui::FontId::proportional(11.5),
+            self.colors.text,
+        );
+        if let Some((text, color)) = suffix {
+            painter.text(
+                egui::pos2(value_rect.right() + 6.0, rect.center().y),
+                egui::Align2::LEFT_CENTER,
+                text,
+                egui::FontId::proportional(11.5),
+                color,
+            );
+        }
+
+        response
+    }
+
+    fn strip_divider(&self, ui: &mut egui::Ui) {
+        ui.add_space(12.0);
+        let (rect, _) =
+            ui.allocate_exact_size(egui::vec2(1.0, TELEMETRY_H - 14.0), egui::Sense::hover());
+        ui.painter().vline(
+            rect.center().x,
+            rect.y_range(),
+            egui::Stroke::new(1.0, self.colors.border),
+        );
+        ui.add_space(12.0);
+    }
+
+    /// Persistent one-line event log + key hints and UTC clock.
+    fn draw_status_line(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal_centered(|ui| {
+            ui.add_space(12.0);
+            match &self.status {
+                Status::None => {
+                    ui.label(
+                        egui::RichText::new("READY")
+                            .font(label_font(9.5))
+                            .color(self.colors.text_muted),
+                    );
+                    let t = ui.input(|i| i.time) as f32;
+                    let (r, _) =
+                        ui.allocate_exact_size(egui::vec2(8.0, 12.0), egui::Sense::hover());
+                    blinking_cursor(
+                        ui.painter(),
+                        egui::pos2(r.left() + 1.0, r.center().y),
+                        10.0,
+                        self.colors.text_muted,
+                        t,
+                    );
+                    ui.ctx()
+                        .request_repaint_after(std::time::Duration::from_millis(120));
+                }
+                _ => self.show_status(ui),
+            }
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.add_space(12.0);
+                ui.label(
+                    egui::RichText::new(chrono::Utc::now().format("%H:%M:%S UTC").to_string())
+                        .font(label_font(9.5))
+                        .color(self.colors.text_muted),
+                );
+                ui.add_space(14.0);
+                ui.label(
+                    egui::RichText::new("KEYS 1-7 · MODULES")
+                        .font(label_font(9.0))
+                        .color(self.colors.text_muted),
+                );
+            });
+        });
+    }
+
+    /// Slim left rail: numbered module codes, accent active state with
+    /// a blinking cursor.
+    fn draw_module_rail(&mut self, ui: &mut egui::Ui) {
+        let t = ui.input(|i| i.time) as f32;
+        ui.add_space(10.0);
+
+        for (i, tab) in Tab::ALL.into_iter().enumerate() {
+            let is_active = self.active_tab == tab;
+            let response =
+                ui.allocate_response(egui::vec2(ui.available_width(), 40.0), egui::Sense::click());
+            if response.clicked() && self.active_tab != tab {
+                self.reset_finished_tx_status();
+                self.active_tab = tab;
+            }
+
+            let rect = response.rect;
+            let painter = ui.painter();
+
+            if is_active {
+                painter.rect_filled(rect, 0.0, self.colors.accent_tint);
+                painter.rect_filled(
+                    egui::Rect::from_min_size(rect.left_top(), egui::vec2(2.0, rect.height())),
+                    0.0,
+                    self.colors.accent,
+                );
+            } else if response.hovered() {
+                painter.rect_filled(rect, 0.0, self.colors.surface2);
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+
+            let code_color = if is_active {
+                self.colors.accent
+            } else if response.hovered() {
+                self.colors.text
+            } else {
+                self.colors.text_muted
+            };
+
+            // Index number.
+            painter.text(
+                egui::pos2(rect.left() + 14.0, rect.top() + 13.0),
+                egui::Align2::LEFT_CENTER,
+                format!("{:02}", i + 1),
+                label_font(8.0),
+                self.colors.text_muted,
+            );
+            // Module code.
+            let code_pos = egui::pos2(rect.left() + 34.0, rect.top() + 13.0);
+            painter.text(
+                code_pos,
+                egui::Align2::LEFT_CENTER,
+                tab.code(),
+                label_font(12.0),
+                code_color,
+            );
+            if is_active {
+                let code_w = tab.code().len() as f32 * 9.0;
+                blinking_cursor(
+                    painter,
+                    egui::pos2(code_pos.x + code_w + 5.0, code_pos.y),
+                    11.0,
+                    self.colors.accent,
+                    t,
+                );
+                ui.ctx()
+                    .request_repaint_after(std::time::Duration::from_millis(120));
+            }
+            // Module name.
+            painter.text(
+                egui::pos2(rect.left() + 34.0, rect.top() + 28.0),
+                egui::Align2::LEFT_CENTER,
+                tab.name(),
+                egui::FontId::proportional(9.5),
+                if is_active {
+                    self.colors.text
+                } else {
+                    self.colors.text_muted
+                },
+            );
+        }
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // Setup — vault bootstrap terminal
+    // ────────────────────────────────────────────────────────────────
+
+    pub(crate) fn show_welcome(&mut self, ui: &mut egui::Ui) {
+        let panel_w = 680.0;
+
+        ui.vertical_centered(|ui| {
+            ui.add_space(40.0);
 
             ui.label(
-                egui::RichText::new("Authenticate to access your wallet")
+                egui::RichText::new("QUANTUM PURSE")
+                    .font(display_font(28.0))
+                    .color(self.colors.accent),
+            );
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new("POST-QUANTUM VAULT // NERVOS CKB")
+                    .font(label_font(10.0))
                     .color(self.colors.text_muted),
             );
 
-            ui.add_space(40.0);
+            ui.add_space(20.0);
 
-            match &self.auth_method {
-                Some(AuthMethod::Fido2 { credential_id }) => {
-                    let cred_id = credential_id.clone();
-                    let button = egui::Button::new(
-                        egui::RichText::new("Unlock with FIDO2")
-                            .size(16.0)
-                            .color(self.colors.bg),
-                    )
-                    .fill(self.colors.accent2)
-                    .min_size(egui::vec2(280.0, 48.0));
+            ui.allocate_ui_with_layout(
+                egui::vec2(panel_w, 0.0),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    panel_frame(&self.colors).show(ui, |ui| {
+                        ui.set_width(panel_w - 30.0);
 
-                    if ui.add(button).clicked() {
-                        self.unlock_with_fido2(&cred_id);
-                    }
-                }
-                Some(AuthMethod::Keychain) => {
-                    let label = format!("Unlock with {}", keychain::short_name());
-                    let button = egui::Button::new(
-                        egui::RichText::new(label).size(16.0).color(self.colors.bg),
-                    )
-                    .fill(self.colors.accent2)
-                    .min_size(egui::vec2(280.0, 48.0));
+                        boot_lines(
+                            ui,
+                            "setup-boot",
+                            "> SPHINCS+ SIGNATURE SUITE ............ READY\n\
+                             > SCANNING FOR LOCAL VAULT ............ NONE FOUND\n\
+                             > SELECT PARAMETER SET AND INITIALIZE",
+                            90.0,
+                            11.0,
+                            self.colors.text_muted,
+                        );
+                        ui.add_space(14.0);
 
-                    if ui.add(button).clicked() {
-                        self.unlock_with_keychain();
-                    }
-                }
-                _ => {}
-            }
+                        section_header(ui, &self.colors, "01", "Parameter Set");
+                        ui.add_space(8.0);
+                        self.draw_variant_grid(ui, panel_w - 30.0);
 
-            ui.add_space(24.0);
+                        ui.add_space(16.0);
+                        section_header(ui, &self.colors, "02", "Initialize New Vault");
+                        ui.add_space(8.0);
+                        self.draw_auth_row(ui, panel_w - 30.0, false);
+
+                        ui.add_space(16.0);
+                        section_header(ui, &self.colors, "03", "Restore From Seed Phrase");
+                        ui.add_space(8.0);
+                        self.draw_auth_row(ui, panel_w - 30.0, true);
+                    });
+                },
+            );
+
+            ui.add_space(16.0);
             ui.vertical_centered(|ui| self.show_status(ui));
         });
     }
 
-    fn auth_button_style(&self, idx: u8) -> (egui::Color32, egui::Color32, egui::Stroke) {
-        match idx {
-            0 => (self.colors.accent, self.colors.bg, egui::Stroke::NONE),
-            1 => (
-                self.colors.surface,
-                self.colors.text,
-                egui::Stroke::new(1.0, self.colors.accent2),
-            ),
-            _ => (
-                egui::Color32::TRANSPARENT,
-                self.colors.text_muted,
-                egui::Stroke::new(1.0, self.colors.border2),
-            ),
+    /// 4×3 grid of SPHINCS+ parameter-set cells.
+    fn draw_variant_grid(&mut self, ui: &mut egui::Ui, width: f32) {
+        const VARIANTS: [SpxVariant; 12] = [
+            SpxVariant::Sha2128S,
+            SpxVariant::Sha2128F,
+            SpxVariant::Shake128S,
+            SpxVariant::Shake128F,
+            SpxVariant::Sha2192S,
+            SpxVariant::Sha2192F,
+            SpxVariant::Shake192S,
+            SpxVariant::Shake192F,
+            SpxVariant::Sha2256S,
+            SpxVariant::Sha2256F,
+            SpxVariant::Shake256S,
+            SpxVariant::Shake256F,
+        ];
+
+        let gap = 6.0;
+        let cell_w = (width - 3.0 * gap) / 4.0;
+        let cell_h = 30.0;
+
+        for row in 0..3 {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = gap;
+                for col in 0..4 {
+                    let variant = VARIANTS[row * 4 + col];
+                    let selected = self.selected_variant == variant;
+                    let (rect, response) =
+                        ui.allocate_exact_size(egui::vec2(cell_w, cell_h), egui::Sense::click());
+                    if response.clicked() {
+                        self.selected_variant = variant;
+                    }
+
+                    let painter = ui.painter();
+                    let (hash, param) = variant_parts(variant);
+
+                    if selected {
+                        painter.rect_filled(rect, 0.0, self.colors.accent_tint);
+                        painter.rect_stroke(
+                            rect,
+                            0.0,
+                            egui::Stroke::new(1.0, self.colors.accent),
+                            egui::StrokeKind::Inside,
+                        );
+                    } else {
+                        painter.rect_stroke(
+                            rect,
+                            0.0,
+                            egui::Stroke::new(
+                                1.0,
+                                if response.hovered() {
+                                    self.colors.border2
+                                } else {
+                                    self.colors.border
+                                },
+                            ),
+                            egui::StrokeKind::Inside,
+                        );
+                    }
+                    if response.hovered() {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                    }
+
+                    let text_color = if selected {
+                        self.colors.accent
+                    } else if response.hovered() {
+                        self.colors.text
+                    } else {
+                        self.colors.text_muted
+                    };
+                    painter.text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        format!("{}-{}", hash, param),
+                        label_font(10.0),
+                        text_color,
+                    );
+                }
+            });
+            if row < 2 {
+                ui.add_space(gap);
+            }
         }
+    }
+
+    /// One row of three auth-method buttons (create or import).
+    fn draw_auth_row(&mut self, ui: &mut egui::Ui, width: f32, import: bool) {
+        let gap = 6.0;
+        let btn_w = (width - 2.0 * gap) / 3.0;
+        let size = egui::vec2(btn_w, 34.0);
+        let labels = [
+            keychain::short_name().to_string(),
+            "Security Key".to_string(),
+            "Password".to_string(),
+        ];
+
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            for (idx, label) in labels.iter().enumerate() {
+                // Uniform ghost buttons: a solid one would read as a
+                // selected state next to the parameter grid above,
+                // and these are actions, not options.
+                let btn = ghost_button(&self.colors, label, size);
+                if ui.add(btn).clicked() {
+                    let v = self.selected_variant;
+                    match (import, idx) {
+                        (false, 0) => self.create_wallet_with_keychain(v),
+                        (false, 1) => self.create_wallet_with_fido2(v),
+                        (false, _) => self.create_wallet_with_password(v),
+                        (true, 0) => self.import_seed_phrase_with_keychain(v),
+                        (true, 1) => self.import_seed_phrase_with_fido2(v),
+                        (true, _) => self.import_seed_phrase_with_password(v),
+                    }
+                }
+            }
+        });
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // Locked — secure terminal login
+    // ────────────────────────────────────────────────────────────────
+
+    pub(crate) fn show_locked(&mut self, ui: &mut egui::Ui) {
+        let t = ui.input(|i| i.time) as f32;
+        let panel_w = 520.0;
+
+        let variant = self
+            .wallet_cache
+            .iter()
+            .find(|w| w.id == self.wallet_id)
+            .map(|cw| format!("SPHINCS+ {}", cw.spx_variant))
+            .unwrap_or_else(|| "SPHINCS+".to_string());
+
+        ui.vertical_centered(|ui| {
+            ui.add_space(90.0);
+
+            ui.label(
+                egui::RichText::new("POST QUANTUM HARDENED, POWERED BY CKB")
+                    .font(label_font(10.0))
+                    .color(self.colors.text_muted),
+            );
+            ui.add_space(14.0);
+
+            ui.allocate_ui_with_layout(
+                egui::vec2(panel_w, 0.0),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    panel_frame(&self.colors).show(ui, |ui| {
+                        ui.set_width(panel_w - 30.0);
+
+                        boot_lines(
+                            ui,
+                            "locked-boot",
+                            &format!(
+                                "> VAULT .......... {}\n\
+                                 > SCHEME ......... {}\n\
+                                 > STATUS ......... SEALED",
+                                self.wallet_name.to_uppercase(),
+                                variant,
+                            ),
+                            90.0,
+                            11.5,
+                            self.colors.text_muted,
+                        );
+
+                        ui.add_space(18.0);
+
+                        // The prompt: > AUTHENTICATE ▮
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new("> AUTHENTICATE")
+                                    .font(display_font(22.0))
+                                    .color(self.colors.accent),
+                            );
+                            let (r, _) = ui
+                                .allocate_exact_size(egui::vec2(16.0, 24.0), egui::Sense::hover());
+                            blinking_cursor(
+                                ui.painter(),
+                                egui::pos2(r.left() + 4.0, r.center().y + 1.0),
+                                18.0,
+                                self.colors.accent,
+                                t,
+                            );
+                            ui.ctx()
+                                .request_repaint_after(std::time::Duration::from_millis(120));
+                        });
+
+                        ui.add_space(18.0);
+
+                        let full_w = panel_w - 30.0;
+                        match &self.auth_method {
+                            Some(AuthMethod::Fido2 { credential_id }) => {
+                                let cred_id = credential_id.clone();
+                                let btn = accent_button(
+                                    &self.colors,
+                                    "Unlock // Security Key",
+                                    egui::vec2(full_w, 42.0),
+                                );
+                                if ui.add(btn).clicked() {
+                                    self.unlock_with_fido2(&cred_id);
+                                }
+                            }
+                            Some(AuthMethod::Keychain) => {
+                                let label = format!("Unlock // {}", keychain::short_name());
+                                let btn =
+                                    accent_button(&self.colors, &label, egui::vec2(full_w, 42.0));
+                                if ui.add(btn).clicked() {
+                                    self.unlock_with_keychain();
+                                }
+                            }
+                            _ => {}
+                        }
+                    });
+                },
+            );
+
+            ui.add_space(16.0);
+            ui.vertical_centered(|ui| self.show_status(ui));
+        });
+    }
+}
+
+/// Type-on boot lines in a fixed-size slot: the full text is measured
+/// up front and its rect allocated immediately, so the reveal animation
+/// never reflows the content below it.
+fn boot_lines(
+    ui: &mut egui::Ui,
+    id: impl std::hash::Hash,
+    text: &str,
+    cps: f64,
+    size: f32,
+    color: egui::Color32,
+) {
+    let typed = type_on(ui, id, text, cps);
+    let font = egui::FontId::proportional(size);
+    let full = ui
+        .painter()
+        .layout_no_wrap(text.to_string(), font.clone(), color);
+    let (rect, _) = ui.allocate_exact_size(full.size(), egui::Sense::hover());
+    ui.painter()
+        .text(rect.left_top(), egui::Align2::LEFT_TOP, typed, font, color);
+}
+
+/// Reveal `text` progressively at `cps` characters per second from the
+/// first frame this id is seen — the terminal type-on effect.
+fn type_on(ui: &mut egui::Ui, id: impl std::hash::Hash, text: &str, cps: f64) -> String {
+    let id = egui::Id::new(id);
+    let now = ui.input(|i| i.time);
+    let start = ui
+        .ctx()
+        .memory_mut(|m| *m.data.get_temp_mut_or_insert_with(id, || now));
+    let shown = ((now - start) * cps).max(0.0) as usize;
+    if shown < text.chars().count() {
+        ui.ctx().request_repaint();
+        text.chars().take(shown).collect()
+    } else {
+        text.to_string()
     }
 }
 

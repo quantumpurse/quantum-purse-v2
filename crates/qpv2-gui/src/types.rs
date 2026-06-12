@@ -11,11 +11,32 @@ use serde::{Deserialize, Serialize};
 /// nor overwrite the last good cached value with a fake zero.
 pub(crate) type BalanceResult = (String, Result<u64, String>, Result<u64, String>);
 
-/// Identifies which transaction flow owns a shared background operation.
+/// Identifies which transaction flow owns a shared background operation,
+/// down to the specific DAO operation so mid-flight UI (e.g. the
+/// multisig co-signer panel) can say what is being signed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TransactionKind {
     Transfer,
-    Dao,
+    DaoDeposit,
+    DaoPrepare,
+    DaoWithdraw,
+}
+
+impl TransactionKind {
+    /// True for any Nervos DAO operation.
+    pub(crate) fn is_dao(self) -> bool {
+        !matches!(self, TransactionKind::Transfer)
+    }
+
+    /// Human-readable operation name for signing requests and logs.
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            TransactionKind::Transfer => "TRANSFER",
+            TransactionKind::DaoDeposit => "DAO DEPOSIT",
+            TransactionKind::DaoPrepare => "DAO WITHDRAWAL REQUEST",
+            TransactionKind::DaoWithdraw => "DAO WITHDRAW",
+        }
+    }
 }
 
 /// Result type for transaction building (unsigned tx, input cells, lock_args).
@@ -91,7 +112,8 @@ pub(crate) struct CurrentWallet {
     pub path: String,
 }
 
-/// Sidebar navigation tabs matching the mockup layout.
+/// Navigation modules listed in the left rail. Order here is the rail
+/// order and the 1–7 keyboard shortcut order.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum Tab {
     Dashboard,
@@ -101,6 +123,45 @@ pub(crate) enum Tab {
     Accounts,
     Multisig,
     Wallets,
+}
+
+impl Tab {
+    /// All modules in rail / shortcut order.
+    pub(crate) const ALL: [Tab; 7] = [
+        Tab::Dashboard,
+        Tab::Transfer,
+        Tab::DaoOperations,
+        Tab::NodeManager,
+        Tab::Accounts,
+        Tab::Multisig,
+        Tab::Wallets,
+    ];
+
+    /// Four-letter module code shown in the rail.
+    pub(crate) fn code(&self) -> &'static str {
+        match self {
+            Tab::Dashboard => "DASH",
+            Tab::Transfer => "XFER",
+            Tab::DaoOperations => "DAO",
+            Tab::NodeManager => "NODE",
+            Tab::Accounts => "ACCT",
+            Tab::Multisig => "MSIG",
+            Tab::Wallets => "WLLT",
+        }
+    }
+
+    /// Full module name shown next to the code.
+    pub(crate) fn name(&self) -> &'static str {
+        match self {
+            Tab::Dashboard => "Dashboard",
+            Tab::Transfer => "Transfer",
+            Tab::DaoOperations => "Nervos DAO",
+            Tab::NodeManager => "Networks",
+            Tab::Accounts => "Accounts",
+            Tab::Multisig => "Multisig",
+            Tab::Wallets => "Wallets",
+        }
+    }
 }
 
 /// Snapshot of the currently-active backend's live status, cached on `App`
@@ -217,44 +278,73 @@ pub(crate) enum DaoView {
 /// CKB uses 8 decimal places: 1 CKB = 100,000,000 shannons.
 pub(crate) const CKB_DECIMAL_PLACES: u64 = 100_000_000;
 
-/// Custom color scheme matching the quantum aesthetic mockup.
+/// "Flight Deck" color scheme: the wallet styled as a precision
+/// instrument. Cool near-black canvas, neutral hairline separators,
+/// one dominant cryo-cyan signal color, and green/red reserved for
+/// strictly semantic meaning (online/positive vs offline/negative).
+/// Cyan was chosen over amber, which reads as a caution color.
 pub(crate) struct AppColors {
+    /// Main canvas — cool near-black.
     pub(crate) bg: egui::Color32,
+    /// Panel fill, one step above the canvas.
     pub(crate) surface: egui::Color32,
+    /// Elevated fill for hover states and input fields.
     pub(crate) surface2: egui::Color32,
+    /// 1px hairline separator. Solid (not alpha) so anti-aliasing
+    /// doesn't brighten it against the dark bg.
     pub(crate) border: egui::Color32,
+    /// Stronger hairline for hovered/active outlines.
     pub(crate) border2: egui::Color32,
+    /// Cryo cyan — the single signal color for everything
+    /// interactive or important.
     pub(crate) accent: egui::Color32,
+    /// Semantic green: online, confirmed, incoming.
     pub(crate) accent2: egui::Color32,
+    /// Dimmed cyan for secondary emphasis (inactive accents).
     pub(crate) accent3: egui::Color32,
+    /// Low-alpha cyan fill for active rows and selected items.
     pub(crate) accent_tint: egui::Color32,
-    pub(crate) accent2_tint: egui::Color32,
     /// Low-alpha warn fill used for pill/badge backgrounds.
     pub(crate) warn_tint: egui::Color32,
+    /// Semantic red: offline, errors, outgoing warnings.
     pub(crate) danger: egui::Color32,
+    /// Caution yellow.
     pub(crate) warn: egui::Color32,
+    /// Primary text — cool off-white, phosphor-adjacent.
     pub(crate) text: egui::Color32,
+    /// Secondary text — cool gray.
     pub(crate) text_muted: egui::Color32,
 }
 
 impl Default for AppColors {
     fn default() -> Self {
         Self {
-            bg: egui::Color32::from_rgb(8, 12, 16),        // #080c10
-            surface: egui::Color32::from_rgb(13, 19, 24),  // #0d1318
-            surface2: egui::Color32::from_rgb(17, 25, 32), // #111920
-            border: egui::Color32::from_rgba_unmultiplied(0, 255, 180, 26), // rgba(0,255,180,0.10)
-            border2: egui::Color32::from_rgba_unmultiplied(0, 255, 180, 56), // rgba(0,255,180,0.22)
-            accent: egui::Color32::from_rgb(0, 255, 180),  // #00ffb4
-            accent2: egui::Color32::from_rgb(0, 200, 255), // #00c8ff
-            accent3: egui::Color32::from_rgb(155, 127, 212), // #9b7fd4
-            accent_tint: egui::Color32::from_rgba_unmultiplied(0, 255, 180, 20), // rgba(0,255,180,0.08)
-            accent2_tint: egui::Color32::from_rgba_unmultiplied(0, 200, 255, 20), // rgba(0,200,255,0.08)
-            warn_tint: egui::Color32::from_rgba_unmultiplied(255, 209, 102, 26), // rgba(255,209,102,0.10)
-            danger: egui::Color32::from_rgb(255, 77, 109),                       // #ff4d6d
-            warn: egui::Color32::from_rgb(255, 209, 102),                        // #ffd166
-            text: egui::Color32::from_rgb(232, 244, 240),                        // #e8f4f0
-            text_muted: egui::Color32::from_rgb(90, 122, 112),                   // #5a7a70
+            bg: egui::Color32::from_rgb(10, 12, 13),        // #0a0c0d
+            surface: egui::Color32::from_rgb(15, 18, 20),   // #0f1214
+            surface2: egui::Color32::from_rgb(22, 27, 30),  // #161b1e
+            border: egui::Color32::from_rgb(35, 42, 45),    // #232a2d
+            border2: egui::Color32::from_rgb(60, 71, 76),   // #3c474c
+            accent: egui::Color32::from_rgb(34, 211, 238),  // #22d3ee
+            accent2: egui::Color32::from_rgb(61, 214, 124), // #3dd67c
+            accent3: egui::Color32::from_rgb(14, 116, 144), // #0e7490
+            accent_tint: egui::Color32::from_rgba_unmultiplied(34, 211, 238, 22),
+            warn_tint: egui::Color32::from_rgba_unmultiplied(255, 209, 102, 26),
+            danger: egui::Color32::from_rgb(255, 84, 62), // #ff543e
+            warn: egui::Color32::from_rgb(255, 209, 102), // #ffd166
+            text: egui::Color32::from_rgb(221, 232, 234), // #dde8ea
+            text_muted: egui::Color32::from_rgb(109, 125, 130), // #6d7d82
         }
     }
+}
+
+/// Font for big display numerals and screen titles (Martian Mono
+/// Condensed Bold).
+pub(crate) fn display_font(size: f32) -> egui::FontId {
+    egui::FontId::new(size, egui::FontFamily::Name("display".into()))
+}
+
+/// Font for tiny uppercase labels, badges, and module codes (Martian
+/// Mono Condensed Regular).
+pub(crate) fn label_font(size: f32) -> egui::FontId {
+    egui::FontId::new(size, egui::FontFamily::Name("label".into()))
 }

@@ -81,7 +81,9 @@ impl App {
                         self.transfer_amount.clear();
                         self.transfer_all = false;
                     }
-                    TransactionKind::Dao => {
+                    TransactionKind::DaoDeposit
+                    | TransactionKind::DaoPrepare
+                    | TransactionKind::DaoWithdraw => {
                         self.dao_deposit_amount.clear();
                         self.dao_deposit_all = false;
                     }

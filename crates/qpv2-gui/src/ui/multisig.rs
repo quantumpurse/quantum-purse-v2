@@ -1,347 +1,319 @@
-//! Multisig tab rendering — multisig accounts only.
+//! Multisig tab rendering — M-of-N multisig account registry.
 
 use eframe::egui;
 
-use super::utils::{paint_corner_accent, CardHover};
-use crate::types::Status;
-use crate::utils::format_ckb_balance;
+use super::accounts::{header_cell, table_rule, truncate_middle};
+use super::utils::{
+    accent_button, badge, ckb_split, ghost_button, panel_frame, row_hover, section_header,
+};
+use crate::types::{display_font, label_font, Status};
 use crate::App;
+
+const COL_IDX: f32 = 44.0;
+const COL_CFG: f32 = 64.0;
+/// Wide enough that the signer detail lines hanging under it
+/// ("S0 SHA2128S <20…20 hex> // YOU", ~9.5pt mono) never run beneath
+/// the BALANCE column.
+const COL_ADDR: f32 = 360.0;
+const COL_BAL: f32 = 180.0;
+const ROW_H: f32 = 30.0;
+/// Height of one signer detail line under the main row.
+const SIGNER_H: f32 = 15.0;
+/// How far the signer lines tuck up under the main row — its vertical
+/// centering otherwise leaves what reads as a blank line.
+const SIGNER_PULL_UP: f32 = 7.0;
+
+/// One signer detail line rendered under the account's main row.
+struct SignerLine {
+    text: String,
+    /// True when this signer's key lives in the local wallet.
+    is_local: bool,
+}
+
+/// Per-row snapshot taken before rendering so the row closures don't
+/// hold a borrow of `self.accounts` while they mutate `self.status`.
+struct MultisigRow {
+    index: usize,
+    config: String,
+    address: String,
+    balance: Option<Option<u64>>,
+    signers: Vec<SignerLine>,
+}
 
 impl App {
     pub(crate) fn show_multisig_tab(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.add_space(30.0);
+            ui.add_space(24.0);
             ui.vertical(|ui| {
-                ui.set_width(ui.available_width() - 30.0);
+                ui.set_width(ui.available_width() - 24.0);
 
-                ui.heading(
-                    egui::RichText::new("Multisig")
-                        .size(26.0)
-                        .strong()
+                ui.label(
+                    egui::RichText::new("MULTISIG")
+                        .font(display_font(16.0))
                         .color(self.colors.text),
                 );
+                ui.add_space(2.0);
                 ui.label(
-                    egui::RichText::new("Create and manage multi-signature accounts.")
-                        .size(13.0)
+                    egui::RichText::new("Create and manage M-of-N multi-signature accounts.")
+                        .size(11.0)
                         .color(self.colors.text_muted),
                 );
+                ui.add_space(14.0);
 
-                ui.add_space(22.0);
-
-                // ── New Multisig card ──
-                let hover = CardHover::new(ui, "acct-multisig", &self.colors);
-
-                let multisig_card = egui::Frame::new()
-                    .fill(hover.fill)
-                    .corner_radius(18.0)
-                    .inner_margin(egui::Margin::symmetric(20, 24))
-                    .stroke(hover.stroke)
-                    .show(ui, |ui| {
-                        ui.vertical_centered(|ui| {
-                            hover.apply_lift(ui);
-                            ui.label(egui::RichText::new("\u{1f512}").size(26.0));
-                            ui.add_space(6.0);
-                            ui.label(
-                                egui::RichText::new("Create Multi-sig Account")
-                                    .size(14.0)
-                                    .strong()
-                                    .color(self.colors.text),
-                            );
-                            ui.add_space(4.0);
-                            ui.label(
-                                egui::RichText::new("Set up an M-of-N multisig address.")
-                                    .size(11.0)
-                                    .color(self.colors.text_muted),
-                            );
-                        });
-                    })
-                    .response;
-
-                paint_corner_accent(ui.painter(), multisig_card.rect, 18.0, self.colors.accent2);
-                hover.commit(&multisig_card);
-
-                if multisig_card.interact(egui::Sense::click()).clicked() {
-                    self.multisig_local_signer_idx = 0;
-                    self.multisig_threshold = 2;
-                    self.multisig_required_first_n = 0;
-                    self.multisig_co_signers = vec![];
-                    self.multisig_modal_open = true;
-                }
-
-                ui.add_space(20.0);
-
-                // ── Section title ──
-                let pill =
-                    |ui: &mut egui::Ui, fill: egui::Color32, text: String, color: egui::Color32| {
-                        egui::Frame::new()
-                            .fill(fill)
-                            .corner_radius(10.0)
-                            .inner_margin(egui::Margin::symmetric(8, 2))
-                            .show(ui, |ui| {
-                                ui.label(
-                                    egui::RichText::new(text)
-                                        .size(8.5)
-                                        .family(egui::FontFamily::Monospace)
-                                        .color(color),
-                                );
-                            });
-                    };
-
-                let multisig_accounts: Vec<_> = self
+                let rows: Vec<MultisigRow> = self
                     .accounts
                     .iter()
                     .enumerate()
                     .filter(|(_, a)| a.config.signers.len() > 1)
-                    .collect();
-
-                ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new("Multisig Accounts")
-                            .size(15.0)
-                            .strong()
-                            .color(self.colors.text),
-                    );
-                    ui.add_space(10.0);
-                    pill(
-                        ui,
-                        self.colors.accent2_tint,
-                        format!("{} total", multisig_accounts.len()),
-                        self.colors.accent2,
-                    );
-
-                    ui.add_space(10.0);
-                    self.show_status(ui);
-                });
-
-                ui.add_space(10.0);
-
-                // ── Account list (multisig only) ──
-                if multisig_accounts.is_empty() {
-                    ui.label(
-                        egui::RichText::new("No multisig accounts yet. Create one to get started.")
-                            .color(self.colors.text_muted),
-                    );
-                } else {
-                    for (i, account) in multisig_accounts {
-                        let lock_args = &account.lock_args;
-                        let address_text = match crate::utils::lock_args_to_address(
-                            lock_args,
+                    .map(|(i, a)| {
+                        let address = match crate::utils::lock_args_to_address(
+                            &a.lock_args,
                             self.qp_client.is_mainnet(),
                         ) {
                             Ok(addr) => addr.to_string(),
-                            Err(_) => format!("0x{}", lock_args),
+                            Err(_) => format!("0x{}", a.lock_args),
                         };
+                        // A signer is "local" when the account's initiating
+                        // single-sig key in this wallet carries the same pubkey.
+                        let local_pubkey = a
+                            .initiating_signer_lock_args
+                            .as_ref()
+                            .and_then(|la| {
+                                self.accounts
+                                    .iter()
+                                    .find(|x| x.lock_args == *la && x.config.is_single_sig())
+                            })
+                            .map(|x| &x.config.signers[0].pubkey);
+                        let signers = a
+                            .config
+                            .signers
+                            .iter()
+                            .enumerate()
+                            .map(|(si, s)| {
+                                let pk_hex = hex::encode(&s.pubkey);
+                                let is_local = local_pubkey == Some(&s.pubkey);
+                                SignerLine {
+                                    text: format!(
+                                        "S{} {} {}",
+                                        si,
+                                        s.variant,
+                                        truncate_middle(&pk_hex, 20, 20)
+                                    ),
+                                    is_local,
+                                }
+                            })
+                            .collect();
+                        MultisigRow {
+                            index: i,
+                            config: format!("{}/{}", a.config.threshold, a.config.signers.len()),
+                            address,
+                            balance: self.spendable_balances.get(&a.lock_args).copied(),
+                            signers,
+                        }
+                    })
+                    .collect();
 
-                        let balance_text = match self.spendable_balances.get(lock_args) {
-                            Some(Some(shannons)) => format_ckb_balance(*shannons),
-                            Some(None) => "Loading...".to_string(),
-                            None => "--".to_string(),
-                        };
+                panel_frame(&self.colors).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
 
-                        let n_signers = account.config.signers.len();
+                    ui.horizontal(|ui| {
+                        let btn_w = 140.0;
+                        let header_w = (ui.available_width() - btn_w - 10.0).max(0.0);
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(header_w, 24.0),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                section_header(
+                                    ui,
+                                    &self.colors,
+                                    "01",
+                                    &format!("Multisig Registry // {}", rows.len()),
+                                );
+                            },
+                        );
+                        let btn =
+                            accent_button(&self.colors, "NEW MULTISIG", egui::vec2(btn_w, 24.0));
+                        if ui.add(btn).clicked() {
+                            self.multisig_local_signer_idx = 0;
+                            self.multisig_threshold = 2;
+                            self.multisig_required_first_n = 0;
+                            self.multisig_co_signers = vec![];
+                            self.multisig_modal_open = true;
+                        }
+                    });
+                    ui.add_space(10.0);
 
-                        let hover = CardHover::new(ui, ("msig-row", i), &self.colors);
-
-                        let row_resp = egui::Frame::new()
-                            .fill(hover.fill)
-                            .corner_radius(9.0)
-                            .inner_margin(egui::Margin::symmetric(18, 14))
-                            .stroke(hover.stroke)
-                            .show(ui, |ui| {
-                                ui.horizontal(|ui| {
-                                    // Avatar: wedge per signer
-                                    let (avatar_rect, _) = ui.allocate_exact_size(
-                                        egui::vec2(38.0, 38.0),
-                                        egui::Sense::hover(),
-                                    );
-                                    let center = avatar_rect.center();
-                                    let radius = 19.0;
-
-                                    let wedge_colors = [
-                                        self.colors.accent,
-                                        self.colors.accent2,
-                                        self.colors.accent3,
-                                        self.colors.warn,
-                                    ];
-                                    let wedge_fg = [
-                                        egui::Color32::from_rgb(5, 12, 10),
-                                        egui::Color32::from_rgb(5, 12, 10),
-                                        egui::Color32::WHITE,
-                                        egui::Color32::from_rgb(5, 12, 10),
-                                    ];
-                                    let n = n_signers.min(wedge_colors.len());
-                                    let angle_step = std::f32::consts::TAU / n as f32;
-                                    let start_offset = -std::f32::consts::FRAC_PI_2;
-
-                                    for s in 0..n {
-                                        let a0 = start_offset + s as f32 * angle_step;
-                                        let a1 = a0 + angle_step;
-                                        let color = wedge_colors[s % wedge_colors.len()];
-
-                                        let segments = 16;
-                                        let mut points = vec![center];
-                                        for seg in 0..=segments {
-                                            let a = a0 + (a1 - a0) * seg as f32 / segments as f32;
-                                            points.push(
-                                                center
-                                                    + egui::vec2(
-                                                        a.cos() * radius,
-                                                        a.sin() * radius,
-                                                    ),
-                                            );
-                                        }
-                                        ui.painter().add(egui::Shape::convex_polygon(
-                                            points,
-                                            color,
-                                            egui::Stroke::NONE,
-                                        ));
-
-                                        let letter = if let Some(signer) =
-                                            account.config.signers.get(s)
-                                        {
-                                            let byte = signer.pubkey.first().copied().unwrap_or(0);
-                                            (b'A' + (byte % 26)) as char
-                                        } else {
-                                            '?'
-                                        };
-                                        let mid_angle = (a0 + a1) / 2.0;
-                                        let text_r = radius * 0.55;
-                                        let text_pos = center
-                                            + egui::vec2(
-                                                mid_angle.cos() * text_r,
-                                                mid_angle.sin() * text_r,
-                                            );
-                                        ui.painter().text(
-                                            text_pos,
-                                            egui::Align2::CENTER_CENTER,
-                                            letter.to_string(),
-                                            egui::FontId::proportional(10.0),
-                                            wedge_fg[s % wedge_fg.len()],
-                                        );
-                                    }
-
-                                    ui.painter().circle_stroke(
-                                        center,
-                                        radius,
-                                        egui::Stroke::new(1.0, self.colors.border2),
-                                    );
-
-                                    ui.add_space(10.0);
-
-                                    // Info
-                                    ui.vertical(|ui| {
-                                        ui.horizontal(|ui| {
-                                            ui.label(
-                                                egui::RichText::new(format!("Account #{}", i))
-                                                    .size(13.0),
-                                            );
-                                            egui::Frame::new()
-                                                .fill(self.colors.accent2_tint)
-                                                .corner_radius(8.0)
-                                                .inner_margin(egui::Margin::symmetric(6, 1))
-                                                .show(ui, |ui| {
-                                                    ui.label(
-                                                        egui::RichText::new(format!(
-                                                            "{}-of-{}",
-                                                            account.config.threshold, n_signers
-                                                        ))
-                                                        .size(9.0)
-                                                        .color(self.colors.accent2)
-                                                        .family(egui::FontFamily::Monospace),
-                                                    );
-                                                });
-                                            ui.label(
-                                                egui::RichText::new(&balance_text)
-                                                    .size(13.0)
-                                                    .strong()
-                                                    .color(self.colors.text_muted)
-                                                    .family(egui::FontFamily::Monospace),
-                                            );
-                                        });
-                                        ui.label(
-                                            egui::RichText::new(address_text.clone())
-                                                .size(9.0)
-                                                .color(self.colors.text_muted)
-                                                .family(egui::FontFamily::Monospace),
-                                        );
-
-                                        // Signer list
-                                        ui.add_space(4.0);
-                                        for (si, signer) in
-                                            account.config.signers.iter().enumerate()
-                                        {
-                                            let pk_hex = hex::encode(&signer.pubkey);
-                                            let pk_short = if pk_hex.len() > 40 {
-                                                format!(
-                                                    "{}...{}",
-                                                    &pk_hex[..20],
-                                                    &pk_hex[pk_hex.len() - 20..]
-                                                )
-                                            } else {
-                                                pk_hex
-                                            };
-                                            let is_local = account
-                                                .initiating_signer_lock_args
-                                                .as_ref()
-                                                .and_then(|la| {
-                                                    self.accounts.iter().find(|a| {
-                                                        a.lock_args == *la
-                                                            && a.config.is_single_sig()
-                                                    })
-                                                })
-                                                .is_some_and(|a| {
-                                                    a.config.signers[0].pubkey == signer.pubkey
-                                                });
-                                            let label = if is_local {
-                                                format!(
-                                                    "  {} {} {} (you)",
-                                                    si, signer.variant, pk_short
-                                                )
-                                            } else {
-                                                format!("  {} {} {}", si, signer.variant, pk_short)
-                                            };
-                                            ui.label(
-                                                egui::RichText::new(label)
-                                                    .size(9.0)
-                                                    .color(if is_local {
-                                                        self.colors.accent
-                                                    } else {
-                                                        self.colors.text_muted
-                                                    })
-                                                    .family(egui::FontFamily::Monospace),
-                                            );
-                                        }
-                                    });
-
-                                    // Copy address button (right-aligned)
-                                    ui.with_layout(
-                                        egui::Layout::right_to_left(egui::Align::Center),
-                                        |ui| {
-                                            if ui
-                                                .button("\u{1f4cb}")
-                                                .on_hover_text("Copy address")
-                                                .clicked()
-                                            {
-                                                ui.ctx().copy_text(address_text.clone());
-                                                self.status =
-                                                    Status::Info("Address copied!".to_string());
-                                            }
-                                        },
-                                    );
-                                });
-                            });
-
-                        hover.commit(&row_resp.response);
-
-                        ui.add_space(6.0);
+                    if rows.is_empty() {
+                        ui.label(
+                            egui::RichText::new(
+                                "NO MULTISIG ACCOUNTS REGISTERED — CREATE ONE TO BEGIN.",
+                            )
+                            .font(label_font(9.5))
+                            .color(self.colors.text_muted),
+                        );
+                    } else {
+                        self.multisig_table(ui, &rows);
                     }
-                }
+                });
 
-                // ── Co-signer signing flow ──
+                // Co-signer signing flow: paste / verify / sign panels.
                 self.show_sign_request_ui(ui);
 
                 ui.add_space(20.0);
-            }); // vertical
-        }); // horizontal
+            });
+        });
+    }
+
+    fn multisig_table(&mut self, ui: &mut egui::Ui, rows: &[MultisigRow]) {
+        ui.scope(|ui| {
+            // Rows must sit flush against their hairlines.
+            ui.spacing_mut().item_spacing.y = 0.0;
+
+            ui.horizontal(|ui| {
+                ui.add_space(6.0);
+                header_cell(ui, &self.colors, COL_IDX, "IDX", false);
+                header_cell(ui, &self.colors, COL_CFG, "CFG", false);
+                header_cell(ui, &self.colors, COL_ADDR, "ADDRESS", false);
+                header_cell(ui, &self.colors, COL_BAL, "BALANCE (CKB)", false);
+            });
+            ui.add_space(4.0);
+            table_rule(ui, &self.colors);
+
+            for row in rows {
+                let full_w = ui.available_width();
+                // The hover treatment spans the main line plus the
+                // signer detail lines so the block reads as one row.
+                let block_h = ROW_H - SIGNER_PULL_UP + row.signers.len() as f32 * SIGNER_H + 6.0;
+                let rect = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(full_w, block_h));
+                if ui.rect_contains_pointer(rect) {
+                    row_hover(ui.painter(), rect, &self.colors);
+                }
+
+                ui.allocate_ui_with_layout(
+                    egui::vec2(full_w, ROW_H),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        // Keep content clear of the 2px hover tick.
+                        ui.add_space(6.0);
+
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(COL_IDX, ROW_H),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                // Pin to the column width (see header_cell).
+                                ui.set_min_width(COL_IDX);
+                                ui.label(
+                                    egui::RichText::new(format!("{:02}", row.index))
+                                        .font(label_font(9.5))
+                                        .color(self.colors.text_muted),
+                                );
+                            },
+                        );
+
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(COL_CFG, ROW_H),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.set_min_width(COL_CFG);
+                                badge(ui, &row.config, self.colors.accent3);
+                            },
+                        );
+
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(COL_ADDR, ROW_H),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.set_min_width(COL_ADDR);
+                                let label = egui::Label::new(
+                                    egui::RichText::new(truncate_middle(&row.address, 12, 10))
+                                        .size(11.0)
+                                        .color(self.colors.text_muted),
+                                )
+                                .sense(egui::Sense::click());
+                                let resp = ui
+                                    .add(label)
+                                    .on_hover_text(&row.address)
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                if resp.clicked() {
+                                    ui.ctx().copy_text(row.address.clone());
+                                    self.status = Status::Info("Address copied!".to_string());
+                                }
+                            },
+                        );
+
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(COL_BAL, ROW_H),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.set_min_width(COL_BAL);
+                                ui.spacing_mut().item_spacing.x = 0.0;
+                                match row.balance {
+                                    Some(Some(shannons)) => {
+                                        let (int, frac) = ckb_split(shannons);
+                                        ui.label(
+                                            egui::RichText::new(int)
+                                                .size(11.5)
+                                                .color(self.colors.text),
+                                        );
+                                        ui.label(
+                                            egui::RichText::new(format!(".{}", frac))
+                                                .size(11.5)
+                                                .color(self.colors.text_muted),
+                                        );
+                                    }
+                                    Some(None) => {
+                                        ui.label(
+                                            egui::RichText::new("SYNC")
+                                                .font(label_font(9.0))
+                                                .color(self.colors.text_muted),
+                                        );
+                                    }
+                                    None => {
+                                        ui.label(
+                                            egui::RichText::new("--")
+                                                .size(11.5)
+                                                .color(self.colors.text_muted),
+                                        );
+                                    }
+                                }
+                            },
+                        );
+
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.add_space(6.0);
+                            let copy_btn =
+                                ghost_button(&self.colors, "COPY", egui::vec2(52.0, 20.0));
+                            if ui.add(copy_btn).on_hover_text("Copy address").clicked() {
+                                ui.ctx().copy_text(row.address.clone());
+                                self.status = Status::Info("Address copied!".to_string());
+                            }
+                        });
+                    },
+                );
+
+                ui.add_space(-SIGNER_PULL_UP);
+                for line in &row.signers {
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(full_w, SIGNER_H),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            // Bulleted detail lines hang under the
+                            // ADDRESS column, nudged right of it.
+                            let s = ui.spacing().item_spacing.x;
+                            ui.add_space(6.0 + COL_IDX + COL_CFG + 2.0 * s + 12.0);
+                            let (text, color) = if line.is_local {
+                                (format!("• {} // YOU", line.text), self.colors.accent)
+                            } else {
+                                (format!("• {}", line.text), self.colors.text_muted)
+                            };
+                            ui.label(egui::RichText::new(text).size(9.5).color(color));
+                        },
+                    );
+                }
+                ui.add_space(6.0);
+
+                table_rule(ui, &self.colors);
+            }
+        });
     }
 }

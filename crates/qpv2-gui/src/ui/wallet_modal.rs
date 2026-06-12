@@ -1,10 +1,16 @@
-//! Centered modal for Create Wallet / Import Wallet flows.
+//! Centered modal for Create Wallet / Import Wallet flows, in the
+//! Flight Deck idiom: sharp hairline-framed surface, indexed sections.
+//! Seed phrase entry/reveal happens in the external pinentry prompt,
+//! so the modal only collects name, parameter set, and auth method.
 
 use eframe::egui;
 use qpv2_core::types::SpxVariant;
 
-use crate::types::WalletModal;
+use crate::types::{label_font, WalletModal};
+use crate::ui::utils::{accent_button, ghost_button, section_header};
 use crate::App;
+
+const MODAL_W: f32 = 440.0;
 
 impl App {
     pub(crate) fn show_wallet_modal(&mut self, ctx: &egui::Context) {
@@ -13,11 +19,6 @@ impl App {
         }
 
         let is_import = self.wallet_modal == WalletModal::Import;
-        let title = if is_import {
-            "Import Wallet"
-        } else {
-            "Create Wallet"
-        };
 
         // Semi-transparent backdrop that consumes clicks.
         let screen_rect = ctx.input(|i| i.viewport_rect());
@@ -36,10 +37,9 @@ impl App {
             })
             .inner;
 
-        let modal_width = 420.0;
         let modal_pos = egui::pos2(
-            (screen_rect.width() - modal_width) / 2.0,
-            screen_rect.height() * 0.22,
+            (screen_rect.width() - MODAL_W) / 2.0,
+            screen_rect.height() * 0.18,
         );
 
         egui::Area::new(egui::Id::new("wallet_modal_area"))
@@ -49,161 +49,174 @@ impl App {
                 egui::Frame::new()
                     .fill(self.colors.surface)
                     .stroke(egui::Stroke::new(1.0, self.colors.border2))
-                    .corner_radius(18.0)
-                    .inner_margin(egui::Margin::symmetric(28, 24))
+                    .inner_margin(egui::Margin::symmetric(20, 18))
                     .show(ui, |ui| {
-                        ui.set_width(modal_width);
-
-                        // Title
-                        ui.label(
-                            egui::RichText::new(title)
-                                .size(20.0)
-                                .strong()
-                                .color(self.colors.text),
-                        );
-                        ui.add_space(16.0);
-
-                        // Variant selector
-                        ui.label(
-                            egui::RichText::new("SPHINCS+ Variant")
-                                .size(11.0)
-                                .color(self.colors.text_muted),
-                        );
-                        ui.add_space(2.0);
-                        egui::ComboBox::from_id_salt("wallet_modal_variant")
-                            .selected_text(format!("{}", self.new_wallet_variant))
-                            .width(modal_width)
-                            .show_ui(ui, |ui| {
-                                for variant in &[
-                                    SpxVariant::Sha2128S,
-                                    SpxVariant::Sha2128F,
-                                    SpxVariant::Shake128S,
-                                    SpxVariant::Shake128F,
-                                    SpxVariant::Sha2192S,
-                                    SpxVariant::Sha2192F,
-                                    SpxVariant::Shake192S,
-                                    SpxVariant::Shake192F,
-                                    SpxVariant::Sha2256S,
-                                    SpxVariant::Sha2256F,
-                                    SpxVariant::Shake256S,
-                                    SpxVariant::Shake256F,
-                                ] {
-                                    ui.selectable_value(
-                                        &mut self.new_wallet_variant,
-                                        *variant,
-                                        format!("{}", variant),
-                                    );
-                                }
-                            });
-
-                        ui.add_space(20.0);
-
-                        // Auth method section
-                        ui.label(
-                            egui::RichText::new("Authentication Method")
-                                .size(11.0)
-                                .color(self.colors.text_muted),
-                        );
-                        ui.add_space(8.0);
-
-                        let verb = if is_import { "Import" } else { "Create" };
-
-                        // Keychain button (primary)
-                        let kc_btn = egui::Button::new(
-                            egui::RichText::new(format!(
-                                "{} with {}",
-                                verb,
-                                keychain::short_name()
-                            ))
-                            .size(13.0)
-                            .color(self.colors.bg),
-                        )
-                        .fill(self.colors.accent)
-                        .corner_radius(8.0)
-                        .min_size(egui::vec2(modal_width, 36.0));
-
-                        if ui.add(kc_btn).clicked() {
-                            let v = self.new_wallet_variant;
-                            if is_import {
-                                self.import_seed_phrase_with_keychain(v);
-                            } else {
-                                self.create_wallet_with_keychain(v);
-                            }
-                            self.wallet_modal = WalletModal::None;
-                        }
-
-                        ui.add_space(6.0);
-
-                        // FIDO2 button (secondary)
-                        let fido_btn = egui::Button::new(
-                            egui::RichText::new(format!("{} with Security Key", verb))
-                                .size(13.0)
-                                .color(self.colors.text),
-                        )
-                        .fill(self.colors.surface2)
-                        .stroke(egui::Stroke::new(1.0, self.colors.accent2))
-                        .corner_radius(8.0)
-                        .min_size(egui::vec2(modal_width, 36.0));
-
-                        if ui.add(fido_btn).clicked() {
-                            let v = self.new_wallet_variant;
-                            if is_import {
-                                self.import_seed_phrase_with_fido2(v);
-                            } else {
-                                self.create_wallet_with_fido2(v);
-                            }
-                            self.wallet_modal = WalletModal::None;
-                        }
-
-                        ui.add_space(6.0);
-
-                        // Password button (tertiary)
-                        let pw_btn = egui::Button::new(
-                            egui::RichText::new(format!("{} with Password", verb))
-                                .size(13.0)
-                                .color(self.colors.text_muted),
-                        )
-                        .fill(egui::Color32::TRANSPARENT)
-                        .stroke(egui::Stroke::new(1.0, self.colors.border2))
-                        .corner_radius(8.0)
-                        .min_size(egui::vec2(modal_width, 36.0));
-
-                        if ui.add(pw_btn).clicked() {
-                            let v = self.new_wallet_variant;
-                            if is_import {
-                                self.import_seed_phrase_with_password(v);
-                            } else {
-                                self.create_wallet_with_password(v);
-                            }
-                            self.wallet_modal = WalletModal::None;
-                        }
-
-                        ui.add_space(14.0);
-
-                        // Cancel button
-                        let cancel_clicked = ui
-                            .vertical_centered(|ui| {
-                                let cancel = egui::Button::new(
-                                    egui::RichText::new("Cancel")
-                                        .size(13.0)
-                                        .color(self.colors.text_muted),
-                                )
-                                .fill(egui::Color32::TRANSPARENT)
-                                .stroke(egui::Stroke::new(1.0, self.colors.border2))
-                                .corner_radius(8.0)
-                                .min_size(egui::vec2(modal_width, 36.0));
-                                ui.add(cancel).clicked()
-                            })
-                            .inner;
-
-                        if cancel_clicked {
-                            self.wallet_modal = WalletModal::None;
-                            self.new_wallet_name.clear();
-                        }
+                        ui.set_width(MODAL_W);
+                        self.wallet_modal_contents(ui, is_import);
                     });
             });
 
         if backdrop_clicked {
+            self.wallet_modal = WalletModal::None;
+            self.new_wallet_name.clear();
+        }
+    }
+
+    fn wallet_modal_contents(&mut self, ui: &mut egui::Ui, is_import: bool) {
+        let c_accent = self.colors.accent;
+        let c_muted = self.colors.text_muted;
+        let c_border = self.colors.border;
+
+        // ── Title row + hairline ──
+        let (code, subtitle) = if is_import {
+            ("RESTORE VAULT", "// IMPORT SEED")
+        } else {
+            ("NEW VAULT", "// INITIALIZE")
+        };
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new(code)
+                    .font(label_font(11.0))
+                    .color(c_accent),
+            );
+            ui.label(
+                egui::RichText::new(subtitle)
+                    .font(label_font(11.0))
+                    .color(c_muted),
+            );
+        });
+        ui.add_space(8.0);
+        let (rule, _) =
+            ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+        ui.painter().hline(
+            rule.x_range(),
+            rule.center().y,
+            egui::Stroke::new(1.0, c_border),
+        );
+        ui.add_space(14.0);
+
+        // ── 01 / Name ──
+        section_header(ui, &self.colors, "01", "Name");
+        ui.add_space(6.0);
+        egui::Frame::new()
+            .fill(self.colors.surface2)
+            .stroke(egui::Stroke::new(1.0, c_border))
+            .inner_margin(egui::Margin::symmetric(8, 6))
+            .show(ui, |ui| {
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.new_wallet_name)
+                        .hint_text("auto-generated if empty")
+                        .desired_width(ui.available_width())
+                        .font(egui::FontId::monospace(12.5))
+                        .frame(false),
+                );
+            });
+
+        ui.add_space(14.0);
+
+        // ── 02 / Parameter Set ──
+        section_header(ui, &self.colors, "02", "Parameter Set");
+        ui.add_space(6.0);
+        egui::ComboBox::from_id_salt("wallet_modal_variant")
+            .selected_text(
+                egui::RichText::new(format!("SPHINCS+ {}", self.new_wallet_variant))
+                    .size(12.0)
+                    .color(c_accent),
+            )
+            .width(ui.available_width())
+            .show_ui(ui, |ui| {
+                for variant in &[
+                    SpxVariant::Sha2128S,
+                    SpxVariant::Sha2128F,
+                    SpxVariant::Shake128S,
+                    SpxVariant::Shake128F,
+                    SpxVariant::Sha2192S,
+                    SpxVariant::Sha2192F,
+                    SpxVariant::Shake192S,
+                    SpxVariant::Shake192F,
+                    SpxVariant::Sha2256S,
+                    SpxVariant::Sha2256F,
+                    SpxVariant::Shake256S,
+                    SpxVariant::Shake256F,
+                ] {
+                    let selected = self.new_wallet_variant == *variant;
+                    let text = egui::RichText::new(format!("{}", variant))
+                        .size(12.0)
+                        .color(if selected { c_accent } else { self.colors.text });
+                    ui.selectable_value(&mut self.new_wallet_variant, *variant, text);
+                }
+            });
+
+        ui.add_space(14.0);
+
+        // ── 03 / Authentication ──
+        section_header(ui, &self.colors, "03", "Authentication");
+        ui.add_space(8.0);
+
+        let verb = if is_import { "Import" } else { "Create" };
+        let full_w = ui.available_width();
+        let btn_size = egui::vec2(full_w, 34.0);
+
+        // Platform keychain is the recommended path — the one solid
+        // solid-accent action in this modal.
+        let kc_label = format!("{} // {}", verb, keychain::short_name());
+        if ui
+            .add(accent_button(&self.colors, &kc_label, btn_size))
+            .clicked()
+        {
+            let v = self.new_wallet_variant;
+            if is_import {
+                self.import_seed_phrase_with_keychain(v);
+            } else {
+                self.create_wallet_with_keychain(v);
+            }
+            self.wallet_modal = WalletModal::None;
+        }
+
+        ui.add_space(6.0);
+        let fido_label = format!("{} // Security Key", verb);
+        if ui
+            .add(ghost_button(&self.colors, &fido_label, btn_size))
+            .clicked()
+        {
+            let v = self.new_wallet_variant;
+            if is_import {
+                self.import_seed_phrase_with_fido2(v);
+            } else {
+                self.create_wallet_with_fido2(v);
+            }
+            self.wallet_modal = WalletModal::None;
+        }
+
+        ui.add_space(6.0);
+        let pw_label = format!("{} // Password", verb);
+        if ui
+            .add(ghost_button(&self.colors, &pw_label, btn_size))
+            .clicked()
+        {
+            let v = self.new_wallet_variant;
+            if is_import {
+                self.import_seed_phrase_with_password(v);
+            } else {
+                self.create_wallet_with_password(v);
+            }
+            self.wallet_modal = WalletModal::None;
+        }
+
+        ui.add_space(14.0);
+        let (rule, _) =
+            ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+        ui.painter().hline(
+            rule.x_range(),
+            rule.center().y,
+            egui::Stroke::new(1.0, c_border),
+        );
+        ui.add_space(10.0);
+
+        if ui
+            .add(ghost_button(&self.colors, "Cancel", btn_size))
+            .clicked()
+        {
             self.wallet_modal = WalletModal::None;
             self.new_wallet_name.clear();
         }

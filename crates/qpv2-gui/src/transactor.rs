@@ -1,6 +1,6 @@
 //! Transaction building, signing, and sending.
 
-use crate::types::{Status, TransactionKind, TransactionStatus, CKB_DECIMAL_PLACES};
+use crate::types::{Status, TransactionKind, TransactionStatus};
 use crate::App;
 use ckb_node::{NodeType, QpClient};
 use qpv2_core::{types::AuthKey, KeyVault};
@@ -32,6 +32,11 @@ fn check_qr_lock_dep_ready(qp_client: &QpClient, node_type: NodeType) -> Result<
 impl App {
     /// Kick off a transfer: validate inputs, then build the unsigned tx in a background thread.
     pub(crate) fn transfer_async(&mut self) {
+        // Claim the tx slot for this screen BEFORE any validation:
+        // pre-flight errors must display under the flow that caused
+        // them, and the status log is gated on this kind.
+        self.active_tx_kind = Some(TransactionKind::Transfer);
+
         // Validate inputs
         if self.accounts.is_empty() {
             tracing::error!("No accounts available.");
@@ -112,19 +117,24 @@ impl App {
 
         let send_all = self.transfer_all;
 
-        // Parse amount only when not sending all.
+        // Parse amount only when not sending all. Integer parsing —
+        // f64 mis-converts amounts by a shannon (see BACKLOG.md).
         let capacity_sh = if send_all {
             0 // Unused; build_unsigned_transfer_all computes the amount internally.
         } else {
-            let amount_ckb: f64 = match self.transfer_amount.trim().parse() {
-                Ok(v) if v > 0.0 => v,
-                _ => {
-                    tracing::error!("Invalid amount.");
-                    self.tx_status = TransactionStatus::Error("Invalid amount.".to_string());
+            match qpv2_core::utilities::parse_ckb_to_shannons(&self.transfer_amount) {
+                Ok(sh) if sh > 0 => sh,
+                Ok(_) => {
+                    self.tx_status =
+                        TransactionStatus::Error("Amount must be greater than zero.".to_string());
                     return;
                 }
-            };
-            (amount_ckb * CKB_DECIMAL_PLACES as f64) as u64
+                Err(e) => {
+                    tracing::error!("Invalid amount: {}", e);
+                    self.tx_status = TransactionStatus::Error(e);
+                    return;
+                }
+            }
         };
 
         tracing::info!(
@@ -191,6 +201,11 @@ impl App {
 
     /// Start building a DAO deposit transaction in a background thread.
     pub(crate) fn dao_deposit_async(&mut self) {
+        // Claim the tx slot for this screen BEFORE any validation:
+        // pre-flight errors must display under the flow that caused
+        // them, and the status log is gated on this kind.
+        self.active_tx_kind = Some(TransactionKind::DaoDeposit);
+
         if self.accounts.is_empty() {
             tracing::error!("No accounts available.");
             self.tx_status = TransactionStatus::Error("No accounts available.".to_string());
@@ -225,19 +240,24 @@ impl App {
 
         let deposit_all = self.dao_deposit_all;
 
-        // Parse amount only when not depositing all.
+        // Parse amount only when not depositing all. Integer parsing —
+        // f64 mis-converts amounts by a shannon (see BACKLOG.md).
         let capacity_sh = if deposit_all {
             0 // Unused; build_unsigned_deposit_all computes the amount internally.
         } else {
-            let amount_ckb: f64 = match self.dao_deposit_amount.trim().parse() {
-                Ok(v) if v > 0.0 => v,
-                _ => {
-                    tracing::error!("Invalid amount.");
-                    self.tx_status = TransactionStatus::Error("Invalid amount.".to_string());
+            match qpv2_core::utilities::parse_ckb_to_shannons(&self.dao_deposit_amount) {
+                Ok(sh) if sh > 0 => sh,
+                Ok(_) => {
+                    self.tx_status =
+                        TransactionStatus::Error("Amount must be greater than zero.".to_string());
                     return;
                 }
-            };
-            (amount_ckb * CKB_DECIMAL_PLACES as f64) as u64
+                Err(e) => {
+                    tracing::error!("Invalid amount: {}", e);
+                    self.tx_status = TransactionStatus::Error(e);
+                    return;
+                }
+            }
         };
 
         tracing::info!(
@@ -277,7 +297,12 @@ impl App {
                 )
                 .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
-                Ok((TransactionKind::Dao, unsigned_tx, input_cells, lock_args))
+                Ok((
+                    TransactionKind::DaoDeposit,
+                    unsigned_tx,
+                    input_cells,
+                    lock_args,
+                ))
             })();
 
             let _ = tx.send(result);
@@ -290,6 +315,11 @@ impl App {
         deposit_out_point: ckb_types::packed::OutPoint,
         lock_args: String,
     ) {
+        // Claim the tx slot for this screen BEFORE any validation:
+        // pre-flight errors must display under the flow that caused
+        // them, and the status log is gated on this kind.
+        self.active_tx_kind = Some(TransactionKind::DaoPrepare);
+
         let is_mainnet = self.qp_client.is_mainnet();
         let from_address = match crate::utils::lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
@@ -340,7 +370,12 @@ impl App {
                 )
                 .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
-                Ok((TransactionKind::Dao, unsigned_tx, input_cells, lock_args))
+                Ok((
+                    TransactionKind::DaoPrepare,
+                    unsigned_tx,
+                    input_cells,
+                    lock_args,
+                ))
             })();
 
             let _ = tx.send(result);
@@ -353,6 +388,11 @@ impl App {
         prepared_out_point: ckb_types::packed::OutPoint,
         lock_args: String,
     ) {
+        // Claim the tx slot for this screen BEFORE any validation:
+        // pre-flight errors must display under the flow that caused
+        // them, and the status log is gated on this kind.
+        self.active_tx_kind = Some(TransactionKind::DaoWithdraw);
+
         let is_mainnet = self.qp_client.is_mainnet();
         let from_address = match crate::utils::lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
@@ -399,7 +439,12 @@ impl App {
                 )
                 .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
-                Ok((TransactionKind::Dao, unsigned_tx, input_cells, lock_args))
+                Ok((
+                    TransactionKind::DaoWithdraw,
+                    unsigned_tx,
+                    input_cells,
+                    lock_args,
+                ))
             })();
 
             let _ = tx.send(result);
@@ -664,7 +709,7 @@ impl App {
                     from_address: from_addr,
                     to_address: None,
                     amount_ckb: None,
-                    tx_type: format!("{:?}", kind),
+                    tx_type: kind.label().to_string(),
                 },
             ) {
                 Ok(r) => r,
