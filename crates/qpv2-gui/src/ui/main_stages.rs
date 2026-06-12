@@ -194,10 +194,10 @@ impl App {
                 t,
             );
             ui.painter().text(
-                seg.rect.right_center() + egui::vec2(2.0, 1.0),
+                seg.rect.right_center() + egui::vec2(2.0, 0.0),
                 egui::Align2::LEFT_CENTER,
                 "▾",
-                egui::FontId::proportional(8.0),
+                egui::FontId::proportional(16.0),
                 c_muted,
             );
             ui.add_space(10.0);
@@ -279,9 +279,23 @@ impl App {
                     Some(v) => format!("{} / {}", self.wallet_name.to_uppercase(), v),
                     None => self.wallet_name.to_uppercase(),
                 };
+                // Dropdown arrow, mirroring the node selector's. RTL
+                // flow: allocated before the segment so it renders to
+                // the segment's right, clear of the LOCK button.
+                let (arrow, arrow_resp) = ui.allocate_exact_size(
+                    egui::vec2(14.0, TELEMETRY_H - 10.0),
+                    egui::Sense::click(),
+                );
+                ui.painter().text(
+                    arrow.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "▾",
+                    egui::FontId::proportional(16.0),
+                    c_muted,
+                );
                 let seg = self.strip_segment(ui, "VAULT", &wallet_text, None, None, t);
                 self.wallet_selector_rect = Some(seg.rect);
-                if seg.clicked() {
+                if seg.clicked() || arrow_resp.clicked() {
                     self.wallet_selector_open = !self.wallet_selector_open;
                     self.node_selector_open = false;
                 }
