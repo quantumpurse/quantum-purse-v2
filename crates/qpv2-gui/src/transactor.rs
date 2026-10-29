@@ -4,7 +4,7 @@ use crate::types::{SignedTx, Status, TransactionKind, TransactionStatus};
 use crate::wallet::{get_fido2_dek, spawn_fido2_job};
 use crate::App;
 use ckb_node::{NodeType, QpClient};
-use qpv2_core::types::{AuthKey, SphincsPlusAccount};
+use qpv2_core::types::{AuthKey, MsigSignature, SphincsPlusAccount};
 use qpv2_core::KeyVault;
 use std::sync::mpsc;
 
@@ -31,13 +31,13 @@ fn check_qr_lock_dep_ready(qp_client: &QpClient) -> Result<(), String> {
     }
 }
 
-/// Signs `unsigned_tx` for `account` with the wallet key `auth`. A single-sig
-/// transaction comes back ready to broadcast; a multisig one comes back with
-/// this wallet's signature and the request to send its co-signers. Touches no
-/// UI state, so it can run on a worker.
+/// Signs `unsigned_tx` for `account`, unlocking the wallet with `unlock` for
+/// each signature. A single-sig transaction comes back ready to broadcast; a
+/// multisig one comes back with this wallet's signatures and the request to
+/// send its co-signers. Touches no UI state, so it can run on a worker.
 fn sign_transaction(
     vault: &KeyVault,
-    auth: AuthKey,
+    mut unlock: impl FnMut(&str) -> Result<AuthKey, String>,
     account: &SphincsPlusAccount,
     kind: TransactionKind,
     unsigned_tx: ckb_types::core::TransactionView,
@@ -55,6 +55,7 @@ fn sign_transaction(
 
     if account.config.is_single_sig() {
         // ── Single-sig: sign and fill the witness ──
+        let auth = unlock("sign and send the TX")?;
         let signature = vault
             .ckb_sign(auth, account.lock_args.clone(), message.to_vec())
             .map_err(|e| format!("Signing failed: {}", e))?;
@@ -63,20 +64,29 @@ fn sign_transaction(
         return Ok(SignedTx::SingleSig(signed_tx));
     }
 
-    // ── Multisig: sign locally (one of M), then build the co-signer request ──
-    let local_lock_args = account
-        .initiating_signer_lock_args
-        .clone()
-        .ok_or_else(|| "Multisig account has no local signer recorded.".to_string())?;
-    let (raw_sig, pubkey) = vault
-        .raw_sign(auth, local_lock_args, message.to_vec())
-        .map_err(|e| format!("Signing failed: {}", e))?;
-    let signer_index = account
-        .config
-        .signers()
-        .iter()
-        .position(|s| s.pubkey() == pubkey && s.variant() == vault.variant)
-        .ok_or_else(|| "Local signer pubkey not found in multisig config.".to_string())?;
+    // ── Multisig: sign with each of this wallet's keys in it, up to the
+    // threshold, one unlock per key so each signature is approved on its
+    // own, then build the co-signer request ──
+    let mut keys = KeyVault::find_local_signers(vault.wallet_id, &account.config)?;
+    keys.truncate(account.config.threshold() as usize);
+    let total = keys.len();
+    let mut signatures = Vec::with_capacity(total);
+    for (k, (signer_index, lock_args)) in keys.into_iter().enumerate() {
+        // The unlock dialog names the key, so signing twice isn't a surprise.
+        let purpose = if total == 1 {
+            "sign and send the TX".to_string()
+        } else {
+            format!("sign and send the TX (key {} of {})", k + 1, total)
+        };
+        let auth = unlock(&purpose)?;
+        let (signature, _pubkey) = vault
+            .raw_sign(auth, lock_args, message.to_vec())
+            .map_err(|e| format!("Signing failed: {}", e))?;
+        signatures.push(MsigSignature {
+            signer_index,
+            signature,
+        });
+    }
 
     let from_addr = crate::utils::lock_args_to_address(&account.lock_args, is_mainnet)
         .map(|a| a.to_string())
@@ -97,14 +107,14 @@ fn sign_transaction(
     .map_err(|e| format!("Failed to build signing request: {}", e))?;
 
     tracing::info!(
-        "Multisig: local signer {} signed, awaiting {} more signature(s).",
-        signer_index,
-        account.config.threshold() as usize - 1
+        "Multisig: this wallet made {} of {} signatures.",
+        signatures.len(),
+        account.config.threshold()
     );
     Ok(SignedTx::Multisig {
         request: Box::new(request),
         unsigned_tx,
-        signature: (signer_index, raw_sig),
+        signatures,
     })
 }
 
@@ -610,7 +620,8 @@ impl App {
     }
 
     /// Signs and sends a transaction on a password or Touch ID wallet: asks
-    /// for the key now, signs, then acts on the signed transaction.
+    /// for the key as it signs, once per signature, then acts on the signed
+    /// transaction.
     pub(crate) fn sign_and_broadcast(
         &mut self,
         kind: TransactionKind,
@@ -618,19 +629,6 @@ impl App {
         input_cells: Vec<(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)>,
         lock_args: String,
     ) {
-        // The caller sets AwaitingSignature before calling in, so this
-        // must return to Idle: cancelling the pinentry dialog is an
-        // ordinary outcome and would otherwise leave the UI reporting
-        // that it is still waiting for a signature.
-        let auth = match self.resolve_auth_key("sign and send the TX") {
-            Ok(a) => a,
-            Err(e) => {
-                tracing::error!("{}", e);
-                self.tx_status = TransactionStatus::Idle;
-                self.status = Status::Error(e);
-                return;
-            }
-        };
         let (account, vault) = match self.find_signing_account(&lock_args) {
             Ok(found) => found,
             Err(e) => {
@@ -640,16 +638,26 @@ impl App {
             }
         };
         let is_mainnet = self.qp_client.is_mainnet();
-        match sign_transaction(
+        let mut auth_failed = false;
+        let signed = sign_transaction(
             &vault,
-            auth,
+            |purpose| {
+                self.resolve_auth_key(purpose)
+                    .inspect_err(|_| auth_failed = true)
+            },
             &account,
             kind,
             unsigned_tx,
             &input_cells,
             is_mainnet,
-        ) {
+        );
+        match signed {
             Ok(signed) => self.forward_signed_tx(kind, signed),
+            Err(e) if auth_failed => {
+                tracing::error!("{}", e);
+                self.tx_status = TransactionStatus::Idle;
+                self.status = Status::Error(e);
+            }
             Err(e) => {
                 tracing::error!("{}", e);
                 self.tx_status = TransactionStatus::Error(e);
@@ -686,17 +694,15 @@ impl App {
         };
         let is_mainnet = self.qp_client.is_mainnet();
         let job = move || {
-            let signed = get_fido2_dek(&credential_id, "sign and send the TX").and_then(|auth| {
-                sign_transaction(
-                    &vault,
-                    auth,
-                    &account,
-                    kind,
-                    unsigned_tx,
-                    &input_cells,
-                    is_mainnet,
-                )
-            });
+            let signed = sign_transaction(
+                &vault,
+                |purpose| get_fido2_dek(&credential_id, purpose),
+                &account,
+                kind,
+                unsigned_tx,
+                &input_cells,
+                is_mainnet,
+            );
             (kind, signed)
         };
         match spawn_fido2_job(job) {
@@ -747,13 +753,13 @@ impl App {
             SignedTx::Multisig {
                 request,
                 unsigned_tx,
-                signature,
+                signatures,
             } => {
                 self.tx_status = TransactionStatus::AwaitingCoSigners {
                     kind,
                     request,
                     unsigned_tx,
-                    signatures: vec![signature],
+                    signatures,
                     import_response_json: String::new(),
                     step1_done: false,
                 };

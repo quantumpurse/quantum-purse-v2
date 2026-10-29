@@ -357,7 +357,9 @@ enum MsigCommands {
         /// Path to the signing request JSON file
         #[arg(short, long)]
         request: String,
-        /// Output file for the signing response JSON
+        /// Output file for the signing response JSON. A wallet holding several
+        /// of the request's keys signs with each; all the signatures go in
+        /// this one file
         #[arg(short, long, default_value = "signing_response.json")]
         output: String,
     },
@@ -1285,29 +1287,45 @@ fn handle_msig_sign(wallet_id: u32, request_path: &str, output: &str) -> Result<
     );
 
     let variant = KeyVault::get_spx_variant(wallet_id)?;
-    let (signer_index, singlesig_lock_args) =
-        KeyVault::find_local_signer(wallet_id, &request.multisig_config)?;
-
-    println!("Matched local account as signer index {}.", signer_index);
+    let signers = KeyVault::find_local_signers(wallet_id, &request.multisig_config)?;
 
     let message_bytes = hex::decode(&request.signing_message)
         .map_err(|e| format!("Invalid signing message hex: {}", e))?;
-
-    let auth = resolve_auth_key(wallet_id, "co-sign a multisig transaction")?;
     let vault = KeyVault::new(variant, wallet_id);
 
-    let (signature, _pubkey) = vault.raw_sign(auth, singlesig_lock_args, message_bytes)?;
+    // One unlock per key this wallet holds in the request, so every
+    // signature is approved on its own; all of them go in one response.
+    let total = signers.len();
+    let mut signed = Vec::with_capacity(total);
+    for (k, (signer_index, singlesig_lock_args)) in signers.into_iter().enumerate() {
+        let key = if total == 1 {
+            String::new()
+        } else {
+            format!(" (key {} of {})", k + 1, total)
+        };
+        println!(
+            "Matched local account as signer index {}{}.",
+            signer_index, key
+        );
+
+        let auth = resolve_auth_key(wallet_id, &format!("co-sign a multisig transaction{}", key))?;
+        let (signature, _pubkey) =
+            vault.raw_sign(auth, singlesig_lock_args, message_bytes.clone())?;
+        signed.push(qpv2_core::types::MsigSignature {
+            signer_index,
+            signature,
+        });
+    }
 
     let response = qpv2_core::types::SigningResponse {
         version: request.version,
-        signer_index,
-        signature: hex::encode(&signature),
+        signed,
         signing_message: request.signing_message.clone(),
     };
 
     let response_json = serde_json::to_string_pretty(&response)
         .map_err(|e| format!("JSON serialization failed: {}", e))?;
-    fs::write(output, &response_json).map_err(|e| format!("Failed to write file: {}", e))?;
+    fs::write(output, &response_json).map_err(|e| format!("Failed to write {}: {}", output, e))?;
 
     println!("Signing response written to: {}", output);
     Ok(())
@@ -1328,7 +1346,7 @@ fn handle_msig_submit(
         return Err("Network mismatch: request was built for a different network.".to_string());
     }
 
-    let mut signatures: Vec<(usize, Vec<u8>)> = Vec::new();
+    let mut signatures: Vec<qpv2_core::types::MsigSignature> = Vec::new();
 
     for path in response_paths {
         let resp_json = fs::read_to_string(path)
@@ -1336,16 +1354,12 @@ fn handle_msig_submit(
         let response: qpv2_core::types::SigningResponse = serde_json::from_str(&resp_json)
             .map_err(|e| format!("Invalid signing response JSON in '{}': {}", path, e))?;
 
-        if response.signing_message != request.signing_message {
-            return Err(format!(
-                "Response from '{}' has mismatched signing message.",
-                path
-            ));
-        }
+        response
+            .validate(&request, &signatures)
+            .map_err(|e| format!("Response from '{}' refused: {}", path, e))?;
 
-        let sig_bytes = hex::decode(&response.signature)
-            .map_err(|e| format!("Invalid signature hex in '{}': {}", path, e))?;
-        signatures.push((response.signer_index, sig_bytes));
+        // A response carries one signature per key its wallet holds.
+        signatures.extend(response.signed);
     }
 
     let threshold = request.multisig_config.threshold() as usize;

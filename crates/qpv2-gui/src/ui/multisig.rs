@@ -76,17 +76,6 @@ impl App {
                             Ok(addr) => addr.to_string(),
                             Err(_) => format!("0x{}", a.lock_args),
                         };
-                        // A signer is "local" when the account's initiating
-                        // single-sig key in this wallet carries the same pubkey.
-                        let local_pubkey = a
-                            .initiating_signer_lock_args
-                            .as_ref()
-                            .and_then(|la| {
-                                self.accounts
-                                    .iter()
-                                    .find(|x| x.lock_args == *la && x.config.is_single_sig())
-                            })
-                            .map(|x| x.config.signers()[0].pubkey());
                         let signers = a
                             .config
                             .signers()
@@ -94,7 +83,12 @@ impl App {
                             .enumerate()
                             .map(|(si, s)| {
                                 let pk_hex = hex::encode(s.pubkey());
-                                let is_local = local_pubkey == Some(s.pubkey());
+                                // A signer is "local" when one of this wallet's
+                                // single-sig accounts carries the same pubkey.
+                                let is_local = self.accounts.iter().any(|x| {
+                                    x.config.is_single_sig()
+                                        && x.config.signers()[0].pubkey() == s.pubkey()
+                                });
                                 SignerLine {
                                     text: format!(
                                         "S{} {} {}",

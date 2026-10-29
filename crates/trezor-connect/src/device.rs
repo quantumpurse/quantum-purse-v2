@@ -237,7 +237,6 @@ impl TrezorSession {
             index: account_index,
             lock_args: hex::encode(&addr.lock_args),
             config,
-            initiating_signer_lock_args: None,
         })
     }
 }

@@ -166,27 +166,34 @@ impl KeyVault {
         db::get_multisig_accounts(wallet_id).map_err(|e| e.to_string())
     }
 
-    /// Finds which of this wallet's single-sig accounts is a signer of a
-    /// multisig. Returns that signer's position in `config`'s signer list and
-    /// the account's lock args. If the wallet holds several of the keys, the
-    /// first of its accounts that matches is used. The GUI and the CLI both
-    /// use it to co-sign a request.
-    pub fn find_local_signer(
+    /// Finds which of this wallet's single-sig accounts are signers of a
+    /// multisig. Returns each one's position in `config`'s signer list with
+    /// the account's lock args, in signer-list order: a wallet holding several
+    /// of the keys gets one entry per key, to sign with each. The GUI and the
+    /// CLI both use it to sign and to co-sign.
+    pub fn find_local_signers(
         wallet_id: u32,
         config: &MultisigConfig,
-    ) -> Result<(usize, String), String> {
-        let variant = Self::get_spx_variant(wallet_id)?;
-        for account in Self::get_singlesig_accounts(wallet_id)? {
-            let account_pubkey = account.config.signers()[0].pubkey();
-            if let Some(index) = config
-                .signers()
-                .iter()
-                .position(|s| s.pubkey() == account_pubkey && s.variant() == variant)
-            {
-                return Ok((index, account.lock_args));
-            }
+    ) -> Result<Vec<(usize, String)>, String> {
+        let accounts = Self::get_singlesig_accounts(wallet_id)?;
+        let found: Vec<(usize, String)> = config
+            .signers()
+            .iter()
+            .enumerate()
+            .filter_map(|(index, signer)| {
+                accounts
+                    .iter()
+                    .find(|a| {
+                        let own = &a.config.signers()[0];
+                        own.pubkey() == signer.pubkey() && own.variant() == signer.variant()
+                    })
+                    .map(|a| (index, a.lock_args.clone()))
+            })
+            .collect();
+        if found.is_empty() {
+            return Err("No account in this wallet is a signer of this multisig.".to_string());
         }
-        Err("No account in this wallet is a signer of this multisig.".to_string())
+        Ok(found)
     }
 
     /// Retrieves all accounts (single-sig + multisig) combined.
@@ -349,7 +356,6 @@ impl KeyVault {
             index,
             lock_args: encode(lock_script_args),
             config,
-            initiating_signer_lock_args: None,
         };
 
         db::add_singlesig_account(self.wallet_id, account.clone()).map_err(|e| e.to_string())?;
@@ -416,7 +422,6 @@ impl KeyVault {
             index: 0,
             lock_args: encode(lock_script_args),
             config,
-            initiating_signer_lock_args: Some(singlesig_lock_args.to_string()),
         };
 
         db::add_multisig_account(wallet_id, account.clone()).map_err(|e| e.to_string())?;
@@ -825,7 +830,6 @@ impl KeyVault {
                 index: 0,
                 lock_args: encode(lock_script_args),
                 config,
-                initiating_signer_lock_args: None,
             };
             lock_args_array.push(encode(lock_script_args));
 

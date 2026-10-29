@@ -105,14 +105,14 @@ pub fn build_signing_request(
 
 /// Assembles the complete witness lock field for a multisig transaction.
 ///
-/// Takes the multisig configuration and a set of `(signer_index, raw_signature)`
-/// pairs. Validates that exactly M signatures are present, the first R signers
-/// have signatures, and there are no duplicates.
+/// Takes the multisig configuration and the signatures made, each at its
+/// signer's position. Validates that exactly M signatures are present, the
+/// first R signers have signatures, and there are no duplicates.
 ///
 /// Returns the byte vector to be placed in `WitnessArgs.lock`.
 pub fn assemble_multisig_witness(
     config: &qpv2_core::types::MultisigConfig,
-    signatures: &[(usize, Vec<u8>)],
+    signatures: &[qpv2_core::types::MsigSignature],
 ) -> Result<Vec<u8>, NodeManagerError> {
     let n = config.signers().len();
     let m = config.threshold() as usize;
@@ -127,7 +127,7 @@ pub fn assemble_multisig_witness(
     }
 
     let sig_indices: std::collections::HashSet<usize> =
-        signatures.iter().map(|(i, _)| *i).collect();
+        signatures.iter().map(|s| s.signer_index).collect();
     if sig_indices.len() != signatures.len() {
         return Err(NodeManagerError::RpcError(
             "Duplicate signer indices in signatures.".to_string(),
@@ -143,11 +143,11 @@ pub fn assemble_multisig_witness(
         }
     }
 
-    for &(idx, _) in signatures {
-        if idx >= n {
+    for sig in signatures {
+        if sig.signer_index >= n {
             return Err(NodeManagerError::RpcError(format!(
                 "Signer index {} out of range (N={}).",
-                idx, n
+                sig.signer_index, n
             )));
         }
     }
@@ -160,19 +160,19 @@ pub fn assemble_multisig_witness(
             .try_into()
             .expect("SpxVariant and ParamId share discriminants");
 
-        if let Some((_, sig)) = signatures.iter().find(|(idx, _)| *idx == i) {
+        if let Some(sig) = signatures.iter().find(|s| s.signer_index == i) {
             let (_, expected_sig_len) = ckb_fips205_utils::verifying::lengths(param_id);
-            if sig.len() != expected_sig_len {
+            if sig.signature.len() != expected_sig_len {
                 return Err(NodeManagerError::RpcError(format!(
                     "Signer {} signature length mismatch: expected {}, got {}.",
                     i,
                     expected_sig_len,
-                    sig.len()
+                    sig.signature.len()
                 )));
             }
             lock.push(ckb_fips205_utils::construct_flag(param_id, true));
             lock.extend_from_slice(signer.pubkey());
-            lock.extend_from_slice(sig);
+            lock.extend_from_slice(&sig.signature);
         } else {
             lock.push(ckb_fips205_utils::construct_flag(param_id, false));
             lock.extend_from_slice(signer.pubkey());

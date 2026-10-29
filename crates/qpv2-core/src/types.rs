@@ -284,11 +284,6 @@ pub struct SphincsPlusAccount {
     pub lock_args: String,
     /// Lock script multisig configuration.
     pub config: MultisigConfig,
-    /// For multisig accounts: the singlesig lock_args of the local signer
-    /// that was chosen when creating this account. Used by `sign_transaction`
-    /// to pick the correct key. `None` for singlesig accounts.
-    #[serde(default)]
-    pub initiating_signer_lock_args: Option<String>,
 }
 
 /// Human-readable metadata so co-signers can verify what they're signing.
@@ -328,16 +323,77 @@ pub struct SigningRequest {
     pub metadata: SigningMetadata,
 }
 
-/// A co-signer's response containing their signature.
+/// A co-signer's response: every signature their wallet made for a request,
+/// one per key it holds in the multisig.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SigningResponse {
     pub version: u8,
-    /// Index of this signer within the multisig config's signers array.
-    pub signer_index: usize,
-    /// Raw SPHINCS+ signature bytes, hex-encoded.
-    pub signature: String,
+    pub signed: Vec<MsigSignature>,
     /// Echo of the signing message this was signed against, for cross-check.
     pub signing_message: String,
+}
+
+impl SigningResponse {
+    /// Checks a co-signer's response against the request it answers and
+    /// against `collected`, the signatures gathered so far, before the caller
+    /// adds its signatures. The GUI and the CLI both use it. The signatures
+    /// themselves are not verified here: a wrong one is refused by the chain.
+    pub fn validate(
+        &self,
+        request: &SigningRequest,
+        collected: &[MsigSignature],
+    ) -> Result<(), String> {
+        if self.version != request.version {
+            return Err(format!(
+                "Response version {} does not match the request's {}.",
+                self.version, request.version
+            ));
+        }
+        if self.signing_message != request.signing_message {
+            return Err("Response signing message does not match.".to_string());
+        }
+
+        // A response carries one signature per key its wallet holds. Every
+        // one is checked before any is added.
+        if self.signed.is_empty() {
+            return Err("The response holds no signature.".to_string());
+        }
+        let n_signers = request.multisig_config.signers().len();
+        for (i, sig) in self.signed.iter().enumerate() {
+            if sig.signer_index >= n_signers {
+                return Err(format!(
+                    "Signer index {} out of range (N={}).",
+                    sig.signer_index, n_signers
+                ));
+            }
+            if collected.iter().any(|s| s.signer_index == sig.signer_index) {
+                return Err(format!(
+                    "Signer {} already provided a signature.",
+                    sig.signer_index
+                ));
+            }
+            if self.signed[..i]
+                .iter()
+                .any(|s| s.signer_index == sig.signer_index)
+            {
+                return Err(format!(
+                    "The response holds signer {} twice.",
+                    sig.signer_index
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// One signature in a [`SigningResponse`].
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct MsigSignature {
+    /// Index of the signer within the multisig config's signers array.
+    pub signer_index: usize,
+    /// Raw SPHINCS+ signature bytes; hex in the JSON.
+    #[serde(with = "hex::serde")]
+    pub signature: Vec<u8>,
 }
 
 /// Authentication method used to protect the vault.
