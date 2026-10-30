@@ -28,44 +28,16 @@ pub struct HardwareSigningContext {
 
 /// Computes the 32-byte CKB_TX_MESSAGE_ALL hash for a given unsigned transaction.
 ///
-/// This is the message that each signer signs with their SPHINCS+ key.
-/// Handles the `ckb_types` → `ckb_gen_types` conversion internally.
+/// This is the message that each signer signs with their SPHINCS+ key. The
+/// hash itself lives in core (`qpv2_core::utilities::compute_signing_message`)
+/// so that everything signing a transaction hashes it the same way.
 pub fn compute_signing_message(
     tx: &TransactionView,
     input_cells: &[(CellOutput, Bytes)],
     script_group_index: usize,
 ) -> Result<[u8; 32], NodeManagerError> {
-    let packed_tx = tx.data();
-    let gen_tx = ckb_gen_types::packed::Transaction::from_slice(packed_tx.as_slice())
-        .map_err(|e| NodeManagerError::RpcError(format!("Invalid Transaction: {}", e)))?;
-
-    let gen_inputs: Vec<(
-        ckb_gen_types::packed::CellOutput,
-        ckb_gen_types::bytes::Bytes,
-    )> = input_cells
-        .iter()
-        .map(|(output, data)| {
-            let gen_output = ckb_gen_types::packed::CellOutput::from_slice(output.as_slice())
-                .expect("valid CellOutput");
-            (
-                gen_output,
-                ckb_gen_types::bytes::Bytes::copy_from_slice(data),
-            )
-        })
-        .collect();
-
-    let mut hasher = ckb_fips205_utils::Hasher::message_hasher();
-    ckb_fips205_utils::ckb_tx_message_all_from_mock_tx::generate_ckb_tx_message_all(
-        &gen_tx,
-        &gen_inputs,
-        ckb_fips205_utils::ckb_tx_message_all_from_mock_tx::ScriptOrIndex::Index(
-            script_group_index,
-        ),
-        &mut hasher,
-    )
-    .map_err(|e| NodeManagerError::RpcError(format!("Failed to compute tx message: {:?}", e)))?;
-
-    Ok(hasher.hash())
+    qpv2_core::utilities::compute_signing_message(tx, input_cells, script_group_index)
+        .map_err(NodeManagerError::RpcError)
 }
 
 /// Builds a `SigningRequest` from an unsigned transaction and its context.

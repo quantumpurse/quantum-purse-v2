@@ -7,10 +7,13 @@ use aes_gcm::{
 };
 use bip39::{Language, Mnemonic};
 use ckb_fips205_utils::{
-    ckb_tx_message_all_from_mock_tx::{generate_ckb_tx_message_all_from_mock_tx, ScriptOrIndex},
+    ckb_tx_message_all_from_mock_tx::{
+        generate_ckb_tx_message_all, generate_ckb_tx_message_all_from_mock_tx, ScriptOrIndex,
+    },
     Hasher,
 };
 use ckb_mock_tx_types::{MockTransaction, ReprMockTransaction};
+use ckb_types::{bytes::Bytes, core::TransactionView, packed::CellOutput, prelude::*};
 use hex::{decode, encode};
 use hkdf::Hkdf;
 use scrypt::{scrypt, Params};
@@ -319,6 +322,46 @@ pub fn get_ckb_tx_message_all(serialized_mock_tx: Vec<u8>) -> Result<Vec<u8>, St
     .map_err(|e| format!("CKB_TX_MESSAGE_ALL error: {:?}", e))?;
     let message = message_hasher.hash();
     Ok(message.to_vec())
+}
+
+/// Computes the 32-byte CKB_TX_MESSAGE_ALL hash for a given unsigned transaction.
+///
+/// This is the message that each signer signs with their SPHINCS+ key.
+/// Handles the `ckb_types` → `ckb_gen_types` conversion internally.
+pub fn compute_signing_message(
+    tx: &TransactionView,
+    input_cells: &[(CellOutput, Bytes)],
+    script_group_index: usize,
+) -> Result<[u8; 32], String> {
+    let packed_tx = tx.data();
+    let gen_tx = ckb_gen_types::packed::Transaction::from_slice(packed_tx.as_slice())
+        .map_err(|e| format!("Invalid Transaction: {}", e))?;
+
+    let gen_inputs: Vec<(
+        ckb_gen_types::packed::CellOutput,
+        ckb_gen_types::bytes::Bytes,
+    )> = input_cells
+        .iter()
+        .map(|(output, data)| {
+            let gen_output = ckb_gen_types::packed::CellOutput::from_slice(output.as_slice())
+                .expect("valid CellOutput");
+            (
+                gen_output,
+                ckb_gen_types::bytes::Bytes::copy_from_slice(data),
+            )
+        })
+        .collect();
+
+    let mut hasher = Hasher::message_hasher();
+    generate_ckb_tx_message_all(
+        &gen_tx,
+        &gen_inputs,
+        ScriptOrIndex::Index(script_group_index),
+        &mut hasher,
+    )
+    .map_err(|e| format!("Failed to compute tx message: {:?}", e))?;
+
+    Ok(hasher.hash())
 }
 
 /// Check strength of a password.

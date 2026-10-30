@@ -1215,7 +1215,6 @@ version = "0.1.0"
 dependencies = [
  "byteorder",
  "ckb-fips205-utils",
- "ckb-gen-types",
  "ckb-jsonrpc-types",
  "ckb-sdk",
  "ckb-types",
@@ -5143,6 +5142,7 @@ dependencies = [
  "anyhow",
  "bip39",
  "ckb-fips205-utils",
+ "ckb-gen-types",
  "ckb-mock-tx-types",
  "ckb-sdk",
  "ckb-types",
