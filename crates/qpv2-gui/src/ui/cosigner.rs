@@ -143,7 +143,7 @@ impl App {
                 // so the local stays a plain `SigningRequest`.
                 request.as_ref().clone(),
                 signatures.len(),
-                request.multisig_config.threshold() as usize,
+                request.multisig_config().threshold() as usize,
                 *step1_done,
             ),
             _ => return,
@@ -285,7 +285,7 @@ impl App {
                     ..
                 } => (
                     signatures.len(),
-                    request.multisig_config.threshold() as usize,
+                    request.multisig_config().threshold() as usize,
                 ),
                 _ => return,
             };
@@ -432,12 +432,17 @@ impl App {
                             );
                             ui.add_space(8.0);
 
-                            detail_field(ui, &self.colors, "TYPE", &request.metadata.tx_type);
-                            detail_field(ui, &self.colors, "FROM", &request.metadata.from_address);
-                            if let Some(ref to) = request.metadata.to_address {
+                            detail_field(ui, &self.colors, "TYPE", &request.metadata().tx_type);
+                            detail_field(
+                                ui,
+                                &self.colors,
+                                "FROM",
+                                &request.metadata().from_address,
+                            );
+                            if let Some(ref to) = request.metadata().to_address {
                                 detail_field(ui, &self.colors, "TO", to);
                             }
-                            if let Some(ref amount) = request.metadata.amount_ckb {
+                            if let Some(ref amount) = request.metadata().amount_ckb {
                                 detail_field(
                                     ui,
                                     &self.colors,
@@ -451,8 +456,8 @@ impl App {
                                 "THRESHOLD",
                                 &format!(
                                     "{}-of-{}",
-                                    request.multisig_config.threshold(),
-                                    request.multisig_config.signers().len()
+                                    request.multisig_config().threshold(),
+                                    request.multisig_config().signers().len()
                                 ),
                             );
                         });

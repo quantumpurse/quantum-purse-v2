@@ -305,24 +305,27 @@ pub struct SigningMetadata {
 ///
 /// Contains the unsigned transaction, pre-computed signing message,
 /// and enough context for the co-signer to independently verify and sign.
+///
+/// The fields are private so that a request can only come from
+/// [`Self::new`] or from its JSON, and is never changed afterwards.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SigningRequest {
-    pub version: u8,
+    version: u8,
     /// The unsigned CKB transaction (ckb_jsonrpc_types::Transaction as JSON).
-    pub unsigned_tx: serde_json::Value,
+    unsigned_tx: serde_json::Value,
     /// Previous output cells for CKB_TX_MESSAGE_ALL verification.
     /// Each entry: (CellOutput molecule hex, data hex).
-    pub input_cells: Vec<(String, String)>,
+    input_cells: Vec<(String, String)>,
     /// The 32-byte signing message (blake2b hash), hex-encoded.
-    pub signing_message: String,
+    signing_message: String,
     /// Full multisig configuration for the sending account.
-    pub multisig_config: MultisigConfig,
+    multisig_config: MultisigConfig,
     /// Witness index in the transaction where the lock field goes.
-    pub script_group_index: usize,
+    script_group_index: usize,
     /// Whether this targets mainnet or testnet.
-    pub is_mainnet: bool,
+    is_mainnet: bool,
     /// Human-readable summary for co-signer verification.
-    pub metadata: SigningMetadata,
+    metadata: SigningMetadata,
 }
 
 impl SigningRequest {
@@ -359,6 +362,41 @@ impl SigningRequest {
             is_mainnet,
             metadata,
         })
+    }
+
+    /// Format version of the request.
+    pub fn version(&self) -> u8 {
+        self.version
+    }
+
+    /// The unsigned CKB transaction (ckb_jsonrpc_types::Transaction as JSON).
+    pub fn unsigned_tx(&self) -> &serde_json::Value {
+        &self.unsigned_tx
+    }
+
+    /// The 32-byte signing message (blake2b hash), hex-encoded.
+    pub fn signing_message(&self) -> &str {
+        &self.signing_message
+    }
+
+    /// Full multisig configuration for the sending account.
+    pub fn multisig_config(&self) -> &MultisigConfig {
+        &self.multisig_config
+    }
+
+    /// Witness index in the transaction where the lock field goes.
+    pub fn script_group_index(&self) -> usize {
+        self.script_group_index
+    }
+
+    /// Whether this targets mainnet or testnet.
+    pub fn is_mainnet(&self) -> bool {
+        self.is_mainnet
+    }
+
+    /// Human-readable summary for co-signer verification.
+    pub fn metadata(&self) -> &SigningMetadata {
+        &self.metadata
     }
 }
 

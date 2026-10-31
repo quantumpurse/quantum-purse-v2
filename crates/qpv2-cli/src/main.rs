@@ -1171,7 +1171,7 @@ fn handle_msig_build_dao(
     fs::write(output, &json).map_err(|e| format!("Failed to write file: {}", e))?;
 
     println!("Signing request written to: {}", output);
-    println!("Message: {}", request.signing_message);
+    println!("Message: {}", request.signing_message());
     println!(
         "Requires {} of {} signatures.",
         account.config.threshold(),
@@ -1257,7 +1257,7 @@ fn handle_msig_build_transfer(ctx: &MsigBuildCtx, to: &str, amount: &str) -> Res
     fs::write(output, &json).map_err(|e| format!("Failed to write file: {}", e))?;
 
     println!("Signing request written to: {}", output);
-    println!("Message: {}", request.signing_message);
+    println!("Message: {}", request.signing_message());
     println!(
         "Requires {} of {} signatures.",
         account.config.threshold(),
@@ -1272,24 +1272,24 @@ fn handle_msig_sign(wallet_id: u32, request_path: &str, output: &str) -> Result<
     let request: qpv2_core::types::SigningRequest =
         serde_json::from_str(&json).map_err(|e| format!("Invalid signing request JSON: {}", e))?;
 
-    println!("Transaction type: {}", request.metadata.tx_type);
-    println!("From: {}", request.metadata.from_address);
-    if let Some(ref to) = request.metadata.to_address {
+    println!("Transaction type: {}", request.metadata().tx_type);
+    println!("From: {}", request.metadata().from_address);
+    if let Some(ref to) = request.metadata().to_address {
         println!("To: {}", to);
     }
-    if let Some(ref amount) = request.metadata.amount_ckb {
+    if let Some(ref amount) = request.metadata().amount_ckb {
         println!("Amount: {} CKB", amount);
     }
     println!(
         "Threshold: {}-of-{}",
-        request.multisig_config.threshold(),
-        request.multisig_config.signers().len()
+        request.multisig_config().threshold(),
+        request.multisig_config().signers().len()
     );
 
     let variant = KeyVault::get_spx_variant(wallet_id)?;
-    let signers = KeyVault::find_local_signers(wallet_id, &request.multisig_config)?;
+    let signers = KeyVault::find_local_signers(wallet_id, request.multisig_config())?;
 
-    let message_bytes = hex::decode(&request.signing_message)
+    let message_bytes = hex::decode(request.signing_message())
         .map_err(|e| format!("Invalid signing message hex: {}", e))?;
     let vault = KeyVault::new(variant, wallet_id);
 
@@ -1318,9 +1318,9 @@ fn handle_msig_sign(wallet_id: u32, request_path: &str, output: &str) -> Result<
     }
 
     let response = qpv2_core::types::SigningResponse {
-        version: request.version,
+        version: request.version(),
         signed,
-        signing_message: request.signing_message.clone(),
+        signing_message: request.signing_message().to_string(),
     };
 
     let response_json = serde_json::to_string_pretty(&response)
@@ -1342,7 +1342,7 @@ fn handle_msig_submit(
     let request: qpv2_core::types::SigningRequest = serde_json::from_str(&req_json)
         .map_err(|e| format!("Invalid signing request JSON: {}", e))?;
 
-    if (network == "mainnet") != request.is_mainnet {
+    if (network == "mainnet") != request.is_mainnet() {
         return Err("Network mismatch: request was built for a different network.".to_string());
     }
 
@@ -1362,7 +1362,7 @@ fn handle_msig_submit(
         signatures.extend(response.signed);
     }
 
-    let threshold = request.multisig_config.threshold() as usize;
+    let threshold = request.multisig_config().threshold() as usize;
     if signatures.len() != threshold {
         return Err(format!(
             "Expected {} response file(s) (threshold), got {}.",
@@ -1372,16 +1372,17 @@ fn handle_msig_submit(
     }
 
     println!("Assembling witness with {} signatures...", signatures.len());
-    let witness_lock = ckb_node::assemble_multisig_witness(&request.multisig_config, &signatures)
+    let witness_lock = ckb_node::assemble_multisig_witness(request.multisig_config(), &signatures)
         .map_err(|e| format!("Failed to assemble witness: {}", e))?;
 
-    let json_tx: ckb_jsonrpc_types::Transaction = serde_json::from_value(request.unsigned_tx)
-        .map_err(|e| format!("Failed to parse unsigned tx: {}", e))?;
+    let json_tx: ckb_jsonrpc_types::Transaction =
+        serde_json::from_value(request.unsigned_tx().clone())
+            .map_err(|e| format!("Failed to parse unsigned tx: {}", e))?;
     let packed_tx: ckb_types::packed::Transaction = json_tx.into();
     use ckb_types::prelude::IntoTransactionView;
     let unsigned_tx = packed_tx.into_view();
 
-    let signed_tx = ckb_node::fill_witness(unsigned_tx, request.script_group_index, witness_lock)
+    let signed_tx = ckb_node::fill_witness(unsigned_tx, request.script_group_index(), witness_lock)
         .map_err(|e| format!("Failed to fill witness: {}", e))?;
 
     let qp_client = make_qp_client(network, rpc_url)?;

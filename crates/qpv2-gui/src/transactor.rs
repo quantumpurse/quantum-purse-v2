@@ -786,7 +786,7 @@ impl App {
             };
 
         let witness_lock =
-            match ckb_node::assemble_multisig_witness(&request.multisig_config, &signatures) {
+            match ckb_node::assemble_multisig_witness(request.multisig_config(), &signatures) {
                 Ok(w) => w,
                 Err(e) => {
                     let msg = format!("Failed to assemble witness: {}", e);
@@ -797,7 +797,7 @@ impl App {
             };
 
         let signed_tx =
-            match ckb_node::fill_witness(unsigned_tx, request.script_group_index, witness_lock) {
+            match ckb_node::fill_witness(unsigned_tx, request.script_group_index(), witness_lock) {
                 Ok(tx) => tx,
                 Err(e) => {
                     let msg = format!("Failed to fill witness: {}", e);

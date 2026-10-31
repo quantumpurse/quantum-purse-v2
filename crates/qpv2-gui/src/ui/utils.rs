@@ -216,7 +216,7 @@ impl App {
                 &format!(
                     "Awaiting co-signers — {} of {} signatures collected.",
                     signatures.len(),
-                    request.multisig_config.threshold()
+                    request.multisig_config().threshold()
                 ),
                 c.text,
                 true,
