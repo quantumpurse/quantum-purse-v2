@@ -50,7 +50,7 @@ fn sign_transaction(
         vault.wallet_id
     );
 
-    let message = ckb_node::compute_signing_message(&unsigned_tx, input_cells, 0)
+    let message = qpv2_core::utilities::compute_signing_message(&unsigned_tx, input_cells, 0)
         .map_err(|e| format!("Failed to compute tx message: {}", e))?;
 
     if account.config.is_single_sig() {
@@ -91,7 +91,7 @@ fn sign_transaction(
     let from_addr = crate::utils::lock_args_to_address(&account.lock_args, is_mainnet)
         .map(|a| a.to_string())
         .unwrap_or_else(|_| format!("0x{}", account.lock_args));
-    let request = ckb_node::build_signing_request(
+    let request = qpv2_core::types::SigningRequest::new(
         &unsigned_tx,
         input_cells,
         &account.config,

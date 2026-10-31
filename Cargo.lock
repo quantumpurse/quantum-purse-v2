@@ -5143,6 +5143,7 @@ dependencies = [
  "bip39",
  "ckb-fips205-utils",
  "ckb-gen-types",
+ "ckb-jsonrpc-types",
  "ckb-mock-tx-types",
  "ckb-sdk",
  "ckb-types",

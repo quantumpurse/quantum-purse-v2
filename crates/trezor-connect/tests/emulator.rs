@@ -151,7 +151,7 @@ fn sign_transfer_verifies() {
         let mut prev_txs: HashMap<H256, TransactionView> = HashMap::new();
         prev_txs.insert(prev_hash.unpack(), prev_tx);
 
-        let digest = ckb_node::compute_signing_message(&unsigned, &input_cells, 0)
+        let digest = qpv2_core::utilities::compute_signing_message(&unsigned, &input_cells, 0)
             .expect("compute_signing_message");
         let signed = dev
             .sign_tx(

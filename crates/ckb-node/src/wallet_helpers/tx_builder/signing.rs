@@ -26,55 +26,6 @@ pub struct HardwareSigningContext {
     pub headers: Vec<HeaderView>,
 }
 
-/// Computes the 32-byte CKB_TX_MESSAGE_ALL hash for a given unsigned transaction.
-///
-/// This is the message that each signer signs with their SPHINCS+ key. The
-/// hash itself lives in core (`qpv2_core::utilities::compute_signing_message`)
-/// so that everything signing a transaction hashes it the same way.
-pub fn compute_signing_message(
-    tx: &TransactionView,
-    input_cells: &[(CellOutput, Bytes)],
-    script_group_index: usize,
-) -> Result<[u8; 32], NodeManagerError> {
-    qpv2_core::utilities::compute_signing_message(tx, input_cells, script_group_index)
-        .map_err(NodeManagerError::RpcError)
-}
-
-/// Builds a `SigningRequest` from an unsigned transaction and its context.
-///
-/// Computes the CKB_TX_MESSAGE_ALL signing message and packages everything
-/// a co-signer needs to verify and sign the transaction.
-pub fn build_signing_request(
-    tx: &TransactionView,
-    input_cells: &[(CellOutput, Bytes)],
-    config: &qpv2_core::types::MultisigConfig,
-    script_group_index: usize,
-    is_mainnet: bool,
-    metadata: qpv2_core::types::SigningMetadata,
-) -> Result<qpv2_core::types::SigningRequest, NodeManagerError> {
-    let signing_message = compute_signing_message(tx, input_cells, script_group_index)?;
-
-    let json_tx: ckb_jsonrpc_types::Transaction = tx.data().into();
-    let unsigned_tx = serde_json::to_value(json_tx)
-        .map_err(|e| NodeManagerError::RpcError(format!("TX serialization failed: {}", e)))?;
-
-    let input_cells_hex: Vec<(String, String)> = input_cells
-        .iter()
-        .map(|(output, data)| (hex::encode(output.as_slice()), hex::encode(data.as_ref())))
-        .collect();
-
-    Ok(qpv2_core::types::SigningRequest {
-        version: 1,
-        unsigned_tx,
-        input_cells: input_cells_hex,
-        signing_message: hex::encode(signing_message),
-        multisig_config: config.clone(),
-        script_group_index,
-        is_mainnet,
-        metadata,
-    })
-}
-
 /// Assembles the complete witness lock field for a multisig transaction.
 ///
 /// Takes the multisig configuration and the signatures made, each at its

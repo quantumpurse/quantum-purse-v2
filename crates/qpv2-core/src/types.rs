@@ -1,5 +1,7 @@
 use crate::constants::MULTISIG_RESERVED_FIELD_VALUE;
 use crate::containers::{SecureString, SecureVec};
+use crate::utilities::compute_signing_message;
+use ckb_types::{bytes::Bytes, core::TransactionView, packed::CellOutput, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{Shl, Shr};
@@ -321,6 +323,43 @@ pub struct SigningRequest {
     pub is_mainnet: bool,
     /// Human-readable summary for co-signer verification.
     pub metadata: SigningMetadata,
+}
+
+impl SigningRequest {
+    /// Builds a `SigningRequest` from an unsigned transaction and its context.
+    ///
+    /// Computes the CKB_TX_MESSAGE_ALL signing message and packages everything
+    /// a co-signer needs to verify and sign the transaction.
+    pub fn new(
+        tx: &TransactionView,
+        input_cells: &[(CellOutput, Bytes)],
+        config: &MultisigConfig,
+        script_group_index: usize,
+        is_mainnet: bool,
+        metadata: SigningMetadata,
+    ) -> Result<Self, String> {
+        let signing_message = compute_signing_message(tx, input_cells, script_group_index)?;
+
+        let json_tx: ckb_jsonrpc_types::Transaction = tx.data().into();
+        let unsigned_tx =
+            serde_json::to_value(json_tx).map_err(|e| format!("TX serialization failed: {}", e))?;
+
+        let input_cells_hex: Vec<(String, String)> = input_cells
+            .iter()
+            .map(|(output, data)| (hex::encode(output.as_slice()), hex::encode(data.as_ref())))
+            .collect();
+
+        Ok(SigningRequest {
+            version: 1,
+            unsigned_tx,
+            input_cells: input_cells_hex,
+            signing_message: hex::encode(signing_message),
+            multisig_config: config.clone(),
+            script_group_index,
+            is_mainnet,
+            metadata,
+        })
+    }
 }
 
 /// A co-signer's response: every signature their wallet made for a request,

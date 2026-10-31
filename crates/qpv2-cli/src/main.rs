@@ -778,7 +778,7 @@ fn handle_dao_deposit(
         ckb_node::wallet_helpers::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
             .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
-    let message = ckb_node::compute_signing_message(&unsigned_tx, &input_cells, 0)
+    let message = qpv2_core::utilities::compute_signing_message(&unsigned_tx, &input_cells, 0)
         .map_err(|e| format!("Failed to compute tx message: {}", e))?;
 
     let signed_tx = if KeyVault::is_hardware_wallet(wallet_id) {
@@ -833,7 +833,7 @@ fn handle_dao_prepare(
         ckb_node::wallet_helpers::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
             .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
-    let message = ckb_node::compute_signing_message(&unsigned_tx, &input_cells, 0)
+    let message = qpv2_core::utilities::compute_signing_message(&unsigned_tx, &input_cells, 0)
         .map_err(|e| format!("Failed to compute tx message: {}", e))?;
 
     let signed_tx = if KeyVault::is_hardware_wallet(wallet_id) {
@@ -888,7 +888,7 @@ fn handle_dao_withdraw(
         ckb_node::wallet_helpers::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
             .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
-    let message = ckb_node::compute_signing_message(&unsigned_tx, &input_cells, 0)
+    let message = qpv2_core::utilities::compute_signing_message(&unsigned_tx, &input_cells, 0)
         .map_err(|e| format!("Failed to compute tx message: {}", e))?;
 
     let signed_tx = if KeyVault::is_hardware_wallet(wallet_id) {
@@ -966,7 +966,7 @@ fn handle_transfer(
             .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
     println!("Computing signing message...");
-    let message = ckb_node::compute_signing_message(&unsigned_tx, &input_cells, 0)
+    let message = qpv2_core::utilities::compute_signing_message(&unsigned_tx, &input_cells, 0)
         .map_err(|e| format!("Failed to compute tx message: {}", e))?;
 
     let signed_tx = if KeyVault::is_hardware_wallet(wallet_id) {
@@ -1156,7 +1156,7 @@ fn handle_msig_build_dao(
     };
 
     println!("Computing signing message...");
-    let request = ckb_node::build_signing_request(
+    let request = qpv2_core::types::SigningRequest::new(
         &unsigned_tx,
         &input_cells,
         &account.config,
@@ -1242,7 +1242,7 @@ fn handle_msig_build_transfer(ctx: &MsigBuildCtx, to: &str, amount: &str) -> Res
     };
 
     println!("Computing signing message...");
-    let request = ckb_node::build_signing_request(
+    let request = qpv2_core::types::SigningRequest::new(
         &unsigned_tx,
         &input_cells,
         &account.config,
