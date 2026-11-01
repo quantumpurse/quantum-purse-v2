@@ -330,9 +330,19 @@ pub fn get_ckb_tx_message_all(serialized_mock_tx: Vec<u8>) -> Result<Vec<u8>, St
 /// Handles the `ckb_types` → `ckb_gen_types` conversion internally.
 pub fn compute_signing_message(
     tx: &TransactionView,
-    input_cells: &[(CellOutput, Bytes)],
+    input_cells: &[(CellOutput, Bytes)], // mock data for the input outpoints in tx
     script_group_index: usize,
 ) -> Result<[u8; 32], String> {
+    // Verify the mock input data length matches the number of inputs in the transaction.
+    let inputs_num = tx.inputs().len();
+    if input_cells.len() != inputs_num {
+        return Err(format!(
+            "Expected one input cell per transaction input ({}), got {}.",
+            inputs_num,
+            input_cells.len()
+        ));
+    }
+
     let packed_tx = tx.data();
     let gen_tx = ckb_gen_types::packed::Transaction::from_slice(packed_tx.as_slice())
         .map_err(|e| format!("Invalid Transaction: {}", e))?;

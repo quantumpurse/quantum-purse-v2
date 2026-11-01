@@ -307,12 +307,15 @@ pub struct SigningMetadata {
 /// and enough context for the co-signer to independently verify and sign.
 ///
 /// The fields are private so that a request can only come from
-/// [`Self::new`] or from its JSON, and is never changed afterwards.
+/// [`Self::new`] or from its JSON, and is never changed afterwards. Both
+/// ways run the same checks (the `TryFrom` below), so every request in
+/// memory has passed them.
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(try_from = "RawSigningRequest")]
 pub struct SigningRequest {
     version: u8,
-    /// The unsigned CKB transaction (ckb_jsonrpc_types::Transaction as JSON).
-    unsigned_tx: serde_json::Value,
+    /// The unsigned CKB transaction, in CKB's JSON form.
+    unsigned_tx: ckb_jsonrpc_types::Transaction,
     /// Previous output cells for CKB_TX_MESSAGE_ALL verification.
     /// Each entry: (CellOutput molecule hex, data hex).
     input_cells: Vec<(String, String)>,
@@ -328,11 +331,81 @@ pub struct SigningRequest {
     metadata: SigningMetadata,
 }
 
+/// A signing request's fields as read from JSON, before
+/// [`SigningRequest`]'s checks. Only for the `TryFrom` below, which `new()`
+/// also goes through; never use it as a request anywhere else.
+#[derive(Deserialize)]
+struct RawSigningRequest {
+    version: u8,
+    unsigned_tx: ckb_jsonrpc_types::Transaction,
+    input_cells: Vec<(String, String)>,
+    signing_message: String,
+    multisig_config: MultisigConfig,
+    script_group_index: usize,
+    is_mainnet: bool,
+    metadata: SigningMetadata,
+}
+
+impl TryFrom<RawSigningRequest> for SigningRequest {
+    type Error = String;
+
+    /// Checks that the request's transaction hashes to the message it asks
+    /// to sign.
+    ///
+    /// The input cells come from the requester too, and that is safe: a
+    /// request that lies about a cell hashes differently from what the chain
+    /// computes, so a signature made for it cannot unlock anything.
+    fn try_from(request: RawSigningRequest) -> Result<Self, String> {
+        let tx = ckb_types::packed::Transaction::from(request.unsigned_tx.clone()).into_view();
+        let input_cells = decode_input_cells(&request.input_cells)?;
+        let message = compute_signing_message(&tx, &input_cells, request.script_group_index)?;
+
+        let stated = hex::decode(&request.signing_message)
+            .map_err(|e| format!("The request's signing message is not hex: {}.", e))?;
+        if stated != message {
+            return Err(
+                "The request's signing message does not match its transaction.".to_string(),
+            );
+        }
+
+        Ok(SigningRequest {
+            version: request.version,
+            unsigned_tx: request.unsigned_tx,
+            input_cells: request.input_cells,
+            signing_message: request.signing_message,
+            multisig_config: request.multisig_config,
+            script_group_index: request.script_group_index,
+            is_mainnet: request.is_mainnet,
+            metadata: request.metadata,
+        })
+    }
+}
+
+fn decode_input_cells(
+    input_cells: &[(String, String)],
+) -> Result<Vec<(CellOutput, Bytes)>, String> {
+    input_cells
+        .iter()
+        .enumerate()
+        .map(|(i, (output_hex, data_hex))| {
+            let output_bytes = hex::decode(output_hex)
+                .map_err(|e| format!("Input cell {} is not hex: {}.", i, e))?;
+            let output = CellOutput::from_slice(&output_bytes)
+                .map_err(|e| format!("Input cell {} is malformed: {}.", i, e))?;
+            let data = hex::decode(data_hex)
+                .map_err(|e| format!("Input cell {}'s data is not hex: {}.", i, e))?;
+            Ok((output, Bytes::from(data)))
+        })
+        .collect()
+}
+
 impl SigningRequest {
     /// Builds a `SigningRequest` from an unsigned transaction and its context.
     ///
     /// Computes the CKB_TX_MESSAGE_ALL signing message and packages everything
-    /// a co-signer needs to verify and sign the transaction.
+    /// a co-signer needs to verify and sign the transaction. The result goes
+    /// through the same checks as a request read from JSON, so what this
+    /// wallet builds is always what a co-signer can read.
     pub fn new(
         tx: &TransactionView,
         input_cells: &[(CellOutput, Bytes)],
@@ -343,16 +416,14 @@ impl SigningRequest {
     ) -> Result<Self, String> {
         let signing_message = compute_signing_message(tx, input_cells, script_group_index)?;
 
-        let json_tx: ckb_jsonrpc_types::Transaction = tx.data().into();
-        let unsigned_tx =
-            serde_json::to_value(json_tx).map_err(|e| format!("TX serialization failed: {}", e))?;
+        let unsigned_tx: ckb_jsonrpc_types::Transaction = tx.data().into();
 
         let input_cells_hex: Vec<(String, String)> = input_cells
             .iter()
             .map(|(output, data)| (hex::encode(output.as_slice()), hex::encode(data.as_ref())))
             .collect();
 
-        Ok(SigningRequest {
+        Self::try_from(RawSigningRequest {
             version: 1,
             unsigned_tx,
             input_cells: input_cells_hex,
@@ -369,8 +440,8 @@ impl SigningRequest {
         self.version
     }
 
-    /// The unsigned CKB transaction (ckb_jsonrpc_types::Transaction as JSON).
-    pub fn unsigned_tx(&self) -> &serde_json::Value {
+    /// The unsigned CKB transaction, in CKB's JSON form.
+    pub fn unsigned_tx(&self) -> &ckb_jsonrpc_types::Transaction {
         &self.unsigned_tx
     }
 
@@ -625,5 +696,109 @@ mod tests {
         assert!(err.contains("at least one co-signer"), "{err}");
         let two = Signer::new(SpxVariant::Sha2128S, vec![2; SHA2_128S_PK_LEN]).unwrap();
         assert!(MultisigConfig::new(0, 1, vec![one, two]).is_ok());
+    }
+
+    mod signing_request {
+        use super::*;
+        use crate::constants::{CKB_TESTNET_CODE_HASH, CKB_TESTNET_HASH_TYPE};
+        use ckb_types::{
+            core::TransactionBuilder,
+            packed::{CellInput, OutPoint, Script, WitnessArgs},
+        };
+
+        const CKB: u64 = 100_000_000;
+
+        fn multisig() -> MultisigConfig {
+            let signers = vec![
+                Signer::new(SpxVariant::Sha2128S, vec![1; SHA2_128S_PK_LEN]).unwrap(),
+                Signer::new(SpxVariant::Sha2128S, vec![2; SHA2_128S_PK_LEN]).unwrap(),
+            ];
+            MultisigConfig::new(0, 1, signers).unwrap()
+        }
+
+        /// The multisig's lock on testnet.
+        fn lock_of(config: &MultisigConfig) -> Script {
+            let code_hash: [u8; 32] = hex::decode(CKB_TESTNET_CODE_HASH.trim_start_matches("0x"))
+                .unwrap()
+                .try_into()
+                .unwrap();
+            Script::new_builder()
+                .code_hash(code_hash.pack())
+                .hash_type(CKB_TESTNET_HASH_TYPE)
+                .args(Bytes::from(config.lock_script_args().to_vec()).pack())
+                .build()
+        }
+
+        fn cell(capacity_ckb: u64, lock: Script) -> CellOutput {
+            CellOutput::new_builder()
+                .capacity(capacity_ckb * CKB)
+                .lock(lock)
+                .build()
+        }
+
+        /// A transaction spending one cell and sending `send_ckb` from it.
+        fn transfer(send_ckb: u64) -> TransactionView {
+            TransactionBuilder::default()
+                .input(CellInput::new(OutPoint::new([1u8; 32].pack(), 0), 0))
+                .output(cell(send_ckb, Script::default()))
+                .output_data(Bytes::new().pack())
+                .witness(
+                    WitnessArgs::new_builder()
+                        .lock(Some(Bytes::from(vec![0u8; 16])).pack())
+                        .build()
+                        .as_bytes()
+                        .pack(),
+                )
+                .build()
+        }
+
+        /// A request to send 100 CKB out of a 200 CKB cell held by the
+        /// multisig, as JSON so a test can tamper with it.
+        fn request_json() -> serde_json::Value {
+            let config = multisig();
+            let input_cells = vec![(cell(200, lock_of(&config)), Bytes::new())];
+            let metadata = SigningMetadata {
+                from_address: String::new(),
+                to_address: None,
+                amount_ckb: None,
+                tx_type: "Transfer".to_string(),
+            };
+            let request =
+                SigningRequest::new(&transfer(100), &input_cells, &config, 0, false, metadata)
+                    .unwrap();
+            serde_json::to_value(request).unwrap()
+        }
+
+        fn read(json: serde_json::Value) -> Result<SigningRequest, String> {
+            serde_json::from_value(json).map_err(|e| e.to_string())
+        }
+
+        #[test]
+        fn built_request_reads_back() {
+            let json = request_json();
+            let request = read(json.clone()).unwrap();
+            assert_eq!(serde_json::to_value(request).unwrap(), json);
+        }
+
+        #[test]
+        fn request_missing_an_input_cell_is_refused() {
+            let mut json = request_json();
+            json["input_cells"].as_array_mut().unwrap().pop();
+            let err = read(json).unwrap_err();
+            assert!(
+                err.contains("Expected one input cell per transaction input (1), got 0"),
+                "{err}"
+            );
+        }
+
+        #[test]
+        fn request_whose_transaction_was_swapped_is_refused() {
+            // Same message, but the transaction now sends 150 CKB.
+            let mut json = request_json();
+            let swapped: ckb_jsonrpc_types::Transaction = transfer(150).data().into();
+            json["unsigned_tx"] = serde_json::to_value(swapped).unwrap();
+            let err = read(json).unwrap_err();
+            assert!(err.contains("does not match its transaction"), "{err}");
+        }
     }
 }

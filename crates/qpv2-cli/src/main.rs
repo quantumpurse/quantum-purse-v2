@@ -1375,10 +1375,7 @@ fn handle_msig_submit(
     let witness_lock = ckb_node::assemble_multisig_witness(request.multisig_config(), &signatures)
         .map_err(|e| format!("Failed to assemble witness: {}", e))?;
 
-    let json_tx: ckb_jsonrpc_types::Transaction =
-        serde_json::from_value(request.unsigned_tx().clone())
-            .map_err(|e| format!("Failed to parse unsigned tx: {}", e))?;
-    let packed_tx: ckb_types::packed::Transaction = json_tx.into();
+    let packed_tx: ckb_types::packed::Transaction = request.unsigned_tx().clone().into();
     use ckb_types::prelude::IntoTransactionView;
     let unsigned_tx = packed_tx.into_view();
 
