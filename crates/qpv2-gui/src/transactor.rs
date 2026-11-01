@@ -41,7 +41,7 @@ fn sign_transaction(
     account: &SphincsPlusAccount,
     kind: TransactionKind,
     unsigned_tx: ckb_types::core::TransactionView,
-    input_cells: &[(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)],
+    input_cells: &[ckb_mock_tx_types::MockInput],
     is_mainnet: bool,
 ) -> Result<SignedTx, String> {
     tracing::info!(
@@ -545,7 +545,7 @@ impl App {
         &mut self,
         kind: TransactionKind,
         unsigned_tx: ckb_types::core::TransactionView,
-        _input_cells: Vec<(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)>,
+        _input_cells: Vec<ckb_mock_tx_types::MockInput>,
         lock_args: String,
     ) {
         let account = match self.accounts.iter().find(|a| a.lock_args == lock_args) {
@@ -626,7 +626,7 @@ impl App {
         &mut self,
         kind: TransactionKind,
         unsigned_tx: ckb_types::core::TransactionView,
-        input_cells: Vec<(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)>,
+        input_cells: Vec<ckb_mock_tx_types::MockInput>,
         lock_args: String,
     ) {
         let (account, vault) = match self.find_signing_account(&lock_args) {
@@ -673,7 +673,7 @@ impl App {
         &mut self,
         kind: TransactionKind,
         unsigned_tx: ckb_types::core::TransactionView,
-        input_cells: Vec<(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)>,
+        input_cells: Vec<ckb_mock_tx_types::MockInput>,
         lock_args: String,
     ) {
         let credential_id = match self.get_fido2_credential() {

@@ -1216,6 +1216,7 @@ dependencies = [
  "byteorder",
  "ckb-fips205-utils",
  "ckb-jsonrpc-types",
+ "ckb-mock-tx-types",
  "ckb-sdk",
  "ckb-types",
  "dirs",
@@ -5171,6 +5172,7 @@ dependencies = [
  "ckb-fips205-utils",
  "ckb-gen-types",
  "ckb-jsonrpc-types",
+ "ckb-mock-tx-types",
  "ckb-node",
  "ckb-sdk",
  "ckb-types",
@@ -6732,7 +6734,7 @@ name = "trezor-connect"
 version = "0.1.0"
 dependencies = [
  "ckb-fips205-utils",
- "ckb-node",
+ "ckb-mock-tx-types",
  "ckb-types",
  "env_logger",
  "getrandom 0.3.4",

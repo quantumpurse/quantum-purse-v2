@@ -18,6 +18,7 @@ trezor-connect = { path = "../trezor-connect" }
 ckb-fips205-utils = { path = "../ckb-fips205-utils", features = ["signing"] }
 ckb-gen-types = { version = "1.0.2", default-features = false }
 ckb-jsonrpc-types = "1.0.2"
+ckb-mock-tx-types = "1.0.0"
 ckb-sdk = { version = "5.0.0", features = ["native-tls-vendored"] }
 ckb-types = "=1.0.1"
 eframe = "0.35.0"

@@ -7,6 +7,7 @@
 
 use crate::client::{QpClient, TransactionStatus};
 use crate::error::NodeManagerError;
+use ckb_mock_tx_types::MockInput;
 use ckb_types::{
     bytes::Bytes,
     core::{HeaderView, TransactionView},
@@ -127,14 +128,15 @@ fn get_transaction_with_retry(
     }
 }
 
-/// Fetches the input cells (CellOutput + data) for every input in a transaction.
+/// Fetches the cell every input in a transaction spends (CellOutput + data),
+/// each paired with the input that spends it, in input order.
 ///
 /// This data is required by `generate_ckb_tx_message_all` to compute the
 /// transaction message hash for quantum-resistant signing.
 pub fn fetch_input_cells(
     qp_client: &QpClient,
     tx: &TransactionView,
-) -> Result<Vec<(CellOutput, Bytes)>, NodeManagerError> {
+) -> Result<Vec<MockInput>, NodeManagerError> {
     let mut inputs = Vec::new();
 
     for input in tx.inputs().into_iter() {
@@ -176,7 +178,12 @@ pub fn fetch_input_cells(
         let cell_output: CellOutput = output.clone().into();
         let cell_data: Bytes = data.clone().into_bytes();
 
-        inputs.push((cell_output, cell_data));
+        inputs.push(MockInput {
+            input,
+            output: cell_output,
+            data: cell_data,
+            header: None,
+        });
     }
 
     Ok(inputs)

@@ -1,7 +1,8 @@
 use crate::constants::MULTISIG_RESERVED_FIELD_VALUE;
 use crate::containers::{SecureString, SecureVec};
 use crate::utilities::compute_signing_message;
-use ckb_types::{bytes::Bytes, core::TransactionView, packed::CellOutput, prelude::*};
+use ckb_mock_tx_types::{MockInput, ReprMockInput};
+use ckb_types::{core::TransactionView, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{Shl, Shr};
@@ -310,15 +311,15 @@ pub struct SigningMetadata {
 /// [`Self::new`] or from its JSON, and is never changed afterwards. Both
 /// ways run the same checks (the `TryFrom` below), so every request in
 /// memory has passed them.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(try_from = "RawSigningRequest")]
 pub struct SigningRequest {
     version: u8,
     /// The unsigned CKB transaction, in CKB's JSON form.
     unsigned_tx: ckb_jsonrpc_types::Transaction,
-    /// Previous output cells for CKB_TX_MESSAGE_ALL verification.
-    /// Each entry: (CellOutput molecule hex, data hex).
-    input_cells: Vec<(String, String)>,
+    /// The cells the transaction spends, for CKB_TX_MESSAGE_ALL: one per
+    /// input, in input order, each naming the input that spends it.
+    input_cells: Vec<ReprMockInput>,
     /// The 32-byte signing message (blake2b hash), hex-encoded.
     signing_message: String,
     /// Full multisig configuration for the sending account.
@@ -331,6 +332,25 @@ pub struct SigningRequest {
     metadata: SigningMetadata,
 }
 
+// By hand: the input cells' type, `ReprMockInput`, has no `Debug`.
+impl fmt::Debug for SigningRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SigningRequest")
+            .field("version", &self.version)
+            .field("unsigned_tx", &self.unsigned_tx)
+            .field(
+                "input_cells",
+                &format_args!("{} cells", self.input_cells.len()),
+            )
+            .field("signing_message", &self.signing_message)
+            .field("multisig_config", &self.multisig_config)
+            .field("script_group_index", &self.script_group_index)
+            .field("is_mainnet", &self.is_mainnet)
+            .field("metadata", &self.metadata)
+            .finish()
+    }
+}
+
 /// A signing request's fields as read from JSON, before
 /// [`SigningRequest`]'s checks. Only for the `TryFrom` below, which `new()`
 /// also goes through; never use it as a request anywhere else.
@@ -338,7 +358,7 @@ pub struct SigningRequest {
 struct RawSigningRequest {
     version: u8,
     unsigned_tx: ckb_jsonrpc_types::Transaction,
-    input_cells: Vec<(String, String)>,
+    input_cells: Vec<ReprMockInput>,
     signing_message: String,
     multisig_config: MultisigConfig,
     script_group_index: usize,
@@ -357,7 +377,12 @@ impl TryFrom<RawSigningRequest> for SigningRequest {
     /// computes, so a signature made for it cannot unlock anything.
     fn try_from(request: RawSigningRequest) -> Result<Self, String> {
         let tx = ckb_types::packed::Transaction::from(request.unsigned_tx.clone()).into_view();
-        let input_cells = decode_input_cells(&request.input_cells)?;
+        let input_cells: Vec<MockInput> = request
+            .input_cells
+            .iter()
+            .cloned()
+            .map(MockInput::from)
+            .collect();
         let message = compute_signing_message(&tx, &input_cells, request.script_group_index)?;
 
         let stated = hex::decode(&request.signing_message)
@@ -381,24 +406,6 @@ impl TryFrom<RawSigningRequest> for SigningRequest {
     }
 }
 
-fn decode_input_cells(
-    input_cells: &[(String, String)],
-) -> Result<Vec<(CellOutput, Bytes)>, String> {
-    input_cells
-        .iter()
-        .enumerate()
-        .map(|(i, (output_hex, data_hex))| {
-            let output_bytes = hex::decode(output_hex)
-                .map_err(|e| format!("Input cell {} is not hex: {}.", i, e))?;
-            let output = CellOutput::from_slice(&output_bytes)
-                .map_err(|e| format!("Input cell {} is malformed: {}.", i, e))?;
-            let data = hex::decode(data_hex)
-                .map_err(|e| format!("Input cell {}'s data is not hex: {}.", i, e))?;
-            Ok((output, Bytes::from(data)))
-        })
-        .collect()
-}
-
 impl SigningRequest {
     /// Builds a `SigningRequest` from an unsigned transaction and its context.
     ///
@@ -408,7 +415,7 @@ impl SigningRequest {
     /// wallet builds is always what a co-signer can read.
     pub fn new(
         tx: &TransactionView,
-        input_cells: &[(CellOutput, Bytes)],
+        input_cells: &[MockInput],
         config: &MultisigConfig,
         script_group_index: usize,
         is_mainnet: bool,
@@ -418,15 +425,16 @@ impl SigningRequest {
 
         let unsigned_tx: ckb_jsonrpc_types::Transaction = tx.data().into();
 
-        let input_cells_hex: Vec<(String, String)> = input_cells
+        let spent: Vec<ReprMockInput> = input_cells
             .iter()
-            .map(|(output, data)| (hex::encode(output.as_slice()), hex::encode(data.as_ref())))
+            .cloned()
+            .map(ReprMockInput::from)
             .collect();
 
         Self::try_from(RawSigningRequest {
             version: 1,
             unsigned_tx,
-            input_cells: input_cells_hex,
+            input_cells: spent,
             signing_message: hex::encode(signing_message),
             multisig_config: config.clone(),
             script_group_index,
@@ -702,8 +710,9 @@ mod tests {
         use super::*;
         use crate::constants::{CKB_TESTNET_CODE_HASH, CKB_TESTNET_HASH_TYPE};
         use ckb_types::{
+            bytes::Bytes,
             core::TransactionBuilder,
-            packed::{CellInput, OutPoint, Script, WitnessArgs},
+            packed::{CellInput, CellOutput, OutPoint, Script, WitnessArgs},
         };
 
         const CKB: u64 = 100_000_000;
@@ -756,7 +765,13 @@ mod tests {
         /// multisig, as JSON so a test can tamper with it.
         fn request_json() -> serde_json::Value {
             let config = multisig();
-            let input_cells = vec![(cell(200, lock_of(&config)), Bytes::new())];
+            let tx = transfer(100);
+            let input_cells = vec![MockInput {
+                input: tx.inputs().get(0).unwrap(),
+                output: cell(200, lock_of(&config)),
+                data: Bytes::new(),
+                header: None,
+            }];
             let metadata = SigningMetadata {
                 from_address: String::new(),
                 to_address: None,
@@ -764,8 +779,7 @@ mod tests {
                 tx_type: "Transfer".to_string(),
             };
             let request =
-                SigningRequest::new(&transfer(100), &input_cells, &config, 0, false, metadata)
-                    .unwrap();
+                SigningRequest::new(&tx, &input_cells, &config, 0, false, metadata).unwrap();
             serde_json::to_value(request).unwrap()
         }
 
@@ -787,6 +801,17 @@ mod tests {
             let err = read(json).unwrap_err();
             assert!(
                 err.contains("Expected one input cell per transaction input (1), got 0"),
+                "{err}"
+            );
+        }
+
+        #[test]
+        fn request_with_a_cell_naming_another_input_is_refused() {
+            let mut json = request_json();
+            json["input_cells"][0]["input"]["previous_output"]["index"] = "0x1".into();
+            let err = read(json).unwrap_err();
+            assert!(
+                err.contains("Input cell 0 does not name the transaction's input 0"),
                 "{err}"
             );
         }

@@ -147,7 +147,12 @@ fn sign_transfer_verifies() {
             .witness(placeholder.as_bytes().pack())
             .build();
 
-        let input_cells = vec![(prev_output, Bytes::new())];
+        let input_cells = vec![ckb_mock_tx_types::MockInput {
+            input: unsigned.inputs().get(0).expect("one input"),
+            output: prev_output,
+            data: Bytes::new(),
+            header: None,
+        }];
         let mut prev_txs: HashMap<H256, TransactionView> = HashMap::new();
         prev_txs.insert(prev_hash.unpack(), prev_tx);
 

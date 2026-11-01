@@ -12,8 +12,8 @@ use ckb_fips205_utils::{
     },
     Hasher,
 };
-use ckb_mock_tx_types::{MockTransaction, ReprMockTransaction};
-use ckb_types::{bytes::Bytes, core::TransactionView, packed::CellOutput, prelude::*};
+use ckb_mock_tx_types::{MockInput, MockTransaction, ReprMockTransaction};
+use ckb_types::{core::TransactionView, prelude::*};
 use hex::{decode, encode};
 use hkdf::Hkdf;
 use scrypt::{scrypt, Params};
@@ -330,7 +330,7 @@ pub fn get_ckb_tx_message_all(serialized_mock_tx: Vec<u8>) -> Result<Vec<u8>, St
 /// Handles the `ckb_types` → `ckb_gen_types` conversion internally.
 pub fn compute_signing_message(
     tx: &TransactionView,
-    input_cells: &[(CellOutput, Bytes)], // mock data for the input outpoints in tx
+    input_cells: &[MockInput], // mock data for the input outpoints in tx
     script_group_index: usize,
 ) -> Result<[u8; 32], String> {
     // Verify the mock input data length matches the number of inputs in the transaction.
@@ -342,6 +342,16 @@ pub fn compute_signing_message(
             input_cells.len()
         ));
     }
+    // The hash pairs cells with inputs by position, so each cell must be for
+    // the input at its own position.
+    for (i, (tx_input, mock_input)) in tx.inputs().into_iter().zip(input_cells).enumerate() {
+        if tx_input != mock_input.input {
+            return Err(format!(
+                "Input cell {} does not name the transaction's input {}.",
+                i, i
+            ));
+        }
+    }
 
     let packed_tx = tx.data();
     let gen_tx = ckb_gen_types::packed::Transaction::from_slice(packed_tx.as_slice())
@@ -352,12 +362,13 @@ pub fn compute_signing_message(
         ckb_gen_types::bytes::Bytes,
     )> = input_cells
         .iter()
-        .map(|(output, data)| {
-            let gen_output = ckb_gen_types::packed::CellOutput::from_slice(output.as_slice())
-                .expect("valid CellOutput");
+        .map(|mock_input| {
+            let gen_output =
+                ckb_gen_types::packed::CellOutput::from_slice(mock_input.output.as_slice())
+                    .expect("valid CellOutput");
             (
                 gen_output,
-                ckb_gen_types::bytes::Bytes::copy_from_slice(data),
+                ckb_gen_types::bytes::Bytes::copy_from_slice(&mock_input.data),
             )
         })
         .collect();

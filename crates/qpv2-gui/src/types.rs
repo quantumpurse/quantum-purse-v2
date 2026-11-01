@@ -59,7 +59,7 @@ pub(crate) type TxBuildResult = Result<
     (
         TransactionKind,
         ckb_types::core::TransactionView,
-        Vec<(ckb_types::packed::CellOutput, ckb_types::bytes::Bytes)>,
+        Vec<ckb_mock_tx_types::MockInput>,
         String,
     ),
     String,
