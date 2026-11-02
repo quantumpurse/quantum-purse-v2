@@ -1,8 +1,11 @@
-use crate::constants::MULTISIG_RESERVED_FIELD_VALUE;
+use crate::constants::{
+    CKB_MAINNET_CODE_HASH, CKB_MAINNET_HASH_TYPE, CKB_TESTNET_CODE_HASH, CKB_TESTNET_HASH_TYPE,
+    MULTISIG_RESERVED_FIELD_VALUE,
+};
 use crate::containers::{SecureString, SecureVec};
 use crate::utilities::compute_signing_message;
 use ckb_mock_tx_types::{MockInput, ReprMockInput};
-use ckb_types::{core::TransactionView, prelude::*, H256};
+use ckb_types::{bytes::Bytes, core::TransactionView, packed::Script, prelude::*, H256};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{Shl, Shr};
@@ -276,6 +279,25 @@ impl MultisigConfig {
         }
         H256(hasher.hash())
     }
+
+    /// This config's lock: the quantum-resistant lock script on mainnet or
+    /// testnet, with this config's lock args.
+    pub fn lock_script(&self, is_mainnet: bool) -> Script {
+        let (code_hash, hash_type) = if is_mainnet {
+            (CKB_MAINNET_CODE_HASH, CKB_MAINNET_HASH_TYPE)
+        } else {
+            (CKB_TESTNET_CODE_HASH, CKB_TESTNET_HASH_TYPE)
+        };
+        let code_hash: H256 = code_hash
+            .trim_start_matches("0x")
+            .parse()
+            .expect("the lock's code hash constants are valid hex");
+        Script::new_builder()
+            .code_hash(code_hash.pack())
+            .hash_type(hash_type)
+            .args(Bytes::from(self.lock_script_args().as_bytes().to_vec()).pack())
+            .build()
+    }
 }
 
 /// Represents a SPHINCS+ account within the quantum-resistant lock script.
@@ -374,16 +396,45 @@ struct ReprSigningRequest {
 impl TryFrom<ReprSigningRequest> for SigningRequest {
     type Error = String;
 
-    /// Checks that the request's transaction hashes to the message it asks
-    /// to sign.
+    /// Checks that the request's multisig is a valid one, that every input
+    /// is locked by it, and that the transaction hashes to the message it
+    /// asks to sign.
     ///
     /// The input cells come from the requester too, and that is safe: a
     /// request that lies about a cell hashes differently from what the chain
     /// computes, so a signature made for it cannot unlock anything.
     fn try_from(repr: ReprSigningRequest) -> Result<Self, String> {
+        // Rebuilted and referified config from the request.
+        let given = &repr.multisig_config;
+        let multisig_config = given
+            .signers
+            .iter()
+            .map(|s| Signer::new(s.variant, s.pubkey.clone()))
+            .collect::<Result<Vec<_>, _>>()
+            .and_then(|signers| {
+                MultisigConfig::new(given.required_first_n, given.threshold, signers)
+            })
+            .map_err(|e| format!("The request's multisig is invalid: {}", e))?;
+
         let unsigned_tx = ckb_types::packed::Transaction::from(repr.unsigned_tx).into_view();
         let input_cells: Vec<MockInput> =
             repr.input_cells.into_iter().map(MockInput::from).collect();
+
+        // Every input must be locked by this multisig, on the request's
+        // network. The signed hash doesn't name the lock, so this signature
+        // could also unlock another input under a lock holding the same key,
+        // such as one of the co-signer's own single-sig cells.
+        let lock = multisig_config.lock_script(repr.is_mainnet);
+        if let Some(i) = input_cells
+            .iter()
+            .position(|mock_input| mock_input.output.lock() != lock)
+        {
+            return Err(format!(
+                "Input cell {} is not locked by the request's multisig.",
+                i
+            ));
+        }
+
         let message = compute_signing_message(&unsigned_tx, &input_cells, repr.script_group_index)?;
 
         let stated = hex::decode(&repr.signing_message)
@@ -399,7 +450,7 @@ impl TryFrom<ReprSigningRequest> for SigningRequest {
             unsigned_tx,
             input_cells,
             signing_message: message,
-            multisig_config: repr.multisig_config,
+            multisig_config,
             script_group_index: repr.script_group_index,
             is_mainnet: repr.is_mainnet,
             metadata: repr.metadata,
@@ -765,10 +816,13 @@ mod tests {
                 .build()
         }
 
-        /// A transaction spending one cell and sending `send_ckb` from it.
-        fn transfer(send_ckb: u64) -> TransactionView {
-            TransactionBuilder::default()
-                .input(CellInput::new(OutPoint::new([1u8; 32].pack(), 0), 0))
+        /// A transaction spending `inputs` cells and sending `send_ckb`.
+        fn transaction(inputs: u32, send_ckb: u64) -> TransactionView {
+            let mut builder = TransactionBuilder::default();
+            for index in 0..inputs {
+                builder = builder.input(CellInput::new(OutPoint::new([1u8; 32].pack(), index), 0));
+            }
+            builder
                 .output(cell(send_ckb, Script::default()))
                 .output_data(Bytes::new().pack())
                 .witness(
@@ -781,25 +835,39 @@ mod tests {
                 .build()
         }
 
-        /// A request to send 100 CKB out of a 200 CKB cell held by the
-        /// multisig, as JSON so a test can tamper with it.
-        fn request_json() -> serde_json::Value {
-            let config = multisig();
-            let tx = transfer(100);
-            let input_cells = vec![MockInput {
-                input: tx.inputs().get(0).unwrap(),
-                output: cell(200, lock_of(&config)),
-                data: Bytes::new(),
-                header: None,
-            }];
+        /// A request to send 100 CKB out of `cells`, one input each, from
+        /// `config`.
+        fn spend(
+            cells: Vec<CellOutput>,
+            config: &MultisigConfig,
+            is_mainnet: bool,
+        ) -> Result<SigningRequest, String> {
+            let tx = transaction(cells.len() as u32, 100);
+            let input_cells: Vec<MockInput> = tx
+                .inputs()
+                .into_iter()
+                .zip(cells)
+                .map(|(input, output)| MockInput {
+                    input,
+                    output,
+                    data: Bytes::new(),
+                    header: None,
+                })
+                .collect();
             let metadata = SigningMetadata {
                 from_address: String::new(),
                 to_address: None,
                 amount_ckb: None,
                 tx_type: "Transfer".to_string(),
             };
-            let request =
-                SigningRequest::new(&tx, &input_cells, &config, 0, false, metadata).unwrap();
+            SigningRequest::new(&tx, &input_cells, config, 0, is_mainnet, metadata)
+        }
+
+        /// A request to send 100 CKB out of a 200 CKB cell held by the
+        /// multisig, as JSON so a test can tamper with it.
+        fn request_json() -> serde_json::Value {
+            let config = multisig();
+            let request = spend(vec![cell(200, lock_of(&config))], &config, false).unwrap();
             serde_json::to_value(request).unwrap()
         }
 
@@ -840,10 +908,46 @@ mod tests {
         fn request_whose_transaction_was_swapped_is_refused() {
             // Same message, but the transaction now sends 150 CKB.
             let mut json = request_json();
-            let swapped: ckb_jsonrpc_types::Transaction = transfer(150).data().into();
+            let swapped: ckb_jsonrpc_types::Transaction = transaction(1, 150).data().into();
             json["unsigned_tx"] = serde_json::to_value(swapped).unwrap();
             let err = read(json).unwrap_err();
             assert!(err.contains("does not match its transaction"), "{err}");
+        }
+
+        /// The drain attack: one input from the multisig, one from the
+        /// co-signer's own single-sig account. The hash is honest, but it
+        /// doesn't name the lock, so the signature could also unlock the
+        /// co-signer's own cell.
+        #[test]
+        fn request_spending_a_cell_outside_its_multisig_is_refused() {
+            let config = multisig();
+            let own_key = config.signers()[0].clone();
+            let own_account =
+                MultisigConfig::single_sig(own_key.variant, own_key.pubkey, Default::default());
+            let cells = vec![
+                cell(100, lock_of(&config)),
+                cell(100_000, lock_of(&own_account)),
+            ];
+            let err = spend(cells, &config, false).unwrap_err();
+            assert!(
+                err.contains("Input cell 1 is not locked by the request's multisig"),
+                "{err}"
+            );
+        }
+
+        /// A 1-of-1 "multisig" is the co-signer's own single-sig lock, so its
+        /// coins would pass the lock check.
+        #[test]
+        fn request_whose_multisig_is_a_single_sig_is_refused() {
+            let own_key = multisig().signers()[0].clone();
+            let own_account =
+                MultisigConfig::single_sig(own_key.variant, own_key.pubkey, Default::default());
+            let err =
+                spend(vec![cell(200, lock_of(&own_account))], &own_account, false).unwrap_err();
+            assert!(
+                err.contains("The request's multisig is invalid: A multisig account needs 2..=255"),
+                "{err}"
+            );
         }
     }
 }
