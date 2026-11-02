@@ -13,7 +13,7 @@ use ckb_fips205_utils::{
     Hasher,
 };
 use ckb_mock_tx_types::{MockInput, MockTransaction, ReprMockTransaction};
-use ckb_types::{core::TransactionView, prelude::*};
+use ckb_types::{core::TransactionView, prelude::*, H256};
 use hex::{decode, encode};
 use hkdf::Hkdf;
 use scrypt::{scrypt, Params};
@@ -332,7 +332,7 @@ pub fn compute_signing_message(
     tx: &TransactionView,
     input_cells: &[MockInput], // mock data for the input outpoints in tx
     script_group_index: usize,
-) -> Result<[u8; 32], String> {
+) -> Result<H256, String> {
     // Verify the mock input data length matches the number of inputs in the transaction.
     let inputs_num = tx.inputs().len();
     if input_cells.len() != inputs_num {
@@ -382,7 +382,7 @@ pub fn compute_signing_message(
     )
     .map_err(|e| format!("Failed to compute tx message: {:?}", e))?;
 
-    Ok(hasher.hash())
+    Ok(H256(hasher.hash()))
 }
 
 /// Check strength of a password.

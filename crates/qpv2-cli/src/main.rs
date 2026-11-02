@@ -787,7 +787,8 @@ fn handle_dao_deposit(
         let auth = resolve_auth_key(wallet_id, "deposit into Nervos DAO")?;
         let variant = KeyVault::get_spx_variant(wallet_id)?;
         let vault = KeyVault::new(variant, wallet_id);
-        let signature_bytes = vault.ckb_sign(auth, lock_args.to_string(), message.to_vec())?;
+        let signature_bytes =
+            vault.ckb_sign(auth, lock_args.to_string(), message.as_bytes().to_vec())?;
 
         ckb_node::fill_witness(unsigned_tx, 0, signature_bytes)
             .map_err(|e| format!("Failed to fill witness: {}", e))?
@@ -842,7 +843,8 @@ fn handle_dao_prepare(
         let auth = resolve_auth_key(wallet_id, "request a DAO withdrawal")?;
         let variant = KeyVault::get_spx_variant(wallet_id)?;
         let vault = KeyVault::new(variant, wallet_id);
-        let signature_bytes = vault.ckb_sign(auth, lock_args.to_string(), message.to_vec())?;
+        let signature_bytes =
+            vault.ckb_sign(auth, lock_args.to_string(), message.as_bytes().to_vec())?;
 
         ckb_node::fill_witness(unsigned_tx, 0, signature_bytes)
             .map_err(|e| format!("Failed to fill witness: {}", e))?
@@ -897,7 +899,8 @@ fn handle_dao_withdraw(
         let auth = resolve_auth_key(wallet_id, "complete the DAO withdrawal")?;
         let variant = KeyVault::get_spx_variant(wallet_id)?;
         let vault = KeyVault::new(variant, wallet_id);
-        let signature_bytes = vault.ckb_sign(auth, lock_args.to_string(), message.to_vec())?;
+        let signature_bytes =
+            vault.ckb_sign(auth, lock_args.to_string(), message.as_bytes().to_vec())?;
 
         ckb_node::fill_witness(unsigned_tx, 0, signature_bytes)
             .map_err(|e| format!("Failed to fill witness: {}", e))?
@@ -975,7 +978,8 @@ fn handle_transfer(
         let auth = resolve_auth_key(wallet_id, "sign and send the transfer")?;
         let variant = KeyVault::get_spx_variant(wallet_id)?;
         let vault = KeyVault::new(variant, wallet_id);
-        let signature_bytes = vault.ckb_sign(auth, lock_args.to_string(), message.to_vec())?;
+        let signature_bytes =
+            vault.ckb_sign(auth, lock_args.to_string(), message.as_bytes().to_vec())?;
         ckb_node::fill_witness(unsigned_tx, 0, signature_bytes)
             .map_err(|e| format!("Failed to fill witness: {}", e))?
     };
@@ -1171,7 +1175,7 @@ fn handle_msig_build_dao(
     fs::write(output, &json).map_err(|e| format!("Failed to write file: {}", e))?;
 
     println!("Signing request written to: {}", output);
-    println!("Message: {}", hex::encode(request.signing_message()));
+    println!("Message: {}", request.signing_message());
     println!(
         "Requires {} of {} signatures.",
         account.config.threshold(),
@@ -1257,7 +1261,7 @@ fn handle_msig_build_transfer(ctx: &MsigBuildCtx, to: &str, amount: &str) -> Res
     fs::write(output, &json).map_err(|e| format!("Failed to write file: {}", e))?;
 
     println!("Signing request written to: {}", output);
-    println!("Message: {}", hex::encode(request.signing_message()));
+    println!("Message: {}", request.signing_message());
     println!(
         "Requires {} of {} signatures.",
         account.config.threshold(),
@@ -1289,7 +1293,7 @@ fn handle_msig_sign(wallet_id: u32, request_path: &str, output: &str) -> Result<
     let variant = KeyVault::get_spx_variant(wallet_id)?;
     let signers = KeyVault::find_local_signers(wallet_id, request.multisig_config())?;
 
-    let message_bytes = request.signing_message().to_vec();
+    let message_bytes = request.signing_message().as_bytes().to_vec();
     let vault = KeyVault::new(variant, wallet_id);
 
     // One unlock per key this wallet holds in the request, so every
@@ -1319,7 +1323,7 @@ fn handle_msig_sign(wallet_id: u32, request_path: &str, output: &str) -> Result<
     let response = qpv2_core::types::SigningResponse {
         version: request.version(),
         signed,
-        signing_message: hex::encode(request.signing_message()),
+        signing_message: request.signing_message().to_string(),
     };
 
     let response_json = serde_json::to_string_pretty(&response)

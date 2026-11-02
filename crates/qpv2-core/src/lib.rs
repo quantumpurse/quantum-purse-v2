@@ -9,7 +9,6 @@ use fips205::{
     traits::{KeyGen, SerDes, Signer, Verifier},
     *,
 };
-use hex::encode;
 use zeroize::Zeroize;
 
 pub mod constants;
@@ -354,7 +353,7 @@ impl KeyVault {
 
         let account = SphincsPlusAccount {
             index,
-            lock_args: encode(lock_script_args),
+            lock_args: lock_script_args.to_string(),
             config,
         };
 
@@ -420,7 +419,7 @@ impl KeyVault {
 
         let account = SphincsPlusAccount {
             index: 0,
-            lock_args: encode(lock_script_args),
+            lock_args: lock_script_args.to_string(),
             config,
         };
 
@@ -781,7 +780,7 @@ impl KeyVault {
                 single_sig_convention,
             );
             let lock_script_args = config.lock_script_args();
-            lock_args_array.push(encode(lock_script_args));
+            lock_args_array.push(lock_script_args.to_string());
         }
         Ok(lock_args_array)
     }
@@ -828,10 +827,10 @@ impl KeyVault {
 
             let account = SphincsPlusAccount {
                 index: 0,
-                lock_args: encode(lock_script_args),
+                lock_args: lock_script_args.to_string(),
                 config,
             };
-            lock_args_array.push(encode(lock_script_args));
+            lock_args_array.push(lock_script_args.to_string());
 
             db::add_singlesig_account(self.wallet_id, account).map_err(|e| e.to_string())?;
         }

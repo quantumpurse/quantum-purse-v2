@@ -2,7 +2,7 @@ use crate::constants::MULTISIG_RESERVED_FIELD_VALUE;
 use crate::containers::{SecureString, SecureVec};
 use crate::utilities::compute_signing_message;
 use ckb_mock_tx_types::{MockInput, ReprMockInput};
-use ckb_types::{core::TransactionView, prelude::*};
+use ckb_types::{core::TransactionView, prelude::*, H256};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{Shl, Shr};
@@ -265,7 +265,7 @@ impl MultisigConfig {
     ///
     /// Hashes: `[S R M N] + [param_flag₁ pk₁] + [param_flag₂ pk₂] + ...`
     /// where each param_flag has its lowest bit cleared (no-signature variant).
-    pub fn lock_script_args(&self) -> [u8; 32] {
+    pub fn lock_script_args(&self) -> H256 {
         use ckb_fips205_utils::Hasher;
         let mut hasher = Hasher::script_args_hasher();
         hasher.update(&self.header_bytes());
@@ -274,7 +274,7 @@ impl MultisigConfig {
             hasher.update(&[param_flag]);
             hasher.update(&signer.pubkey);
         }
-        hasher.hash()
+        H256(hasher.hash())
     }
 }
 
@@ -324,7 +324,7 @@ pub struct SigningRequest {
     /// input, in input order, each naming the input that spends it.
     input_cells: Vec<MockInput>,
     /// The 32-byte signing message (blake2b hash).
-    signing_message: [u8; 32],
+    signing_message: H256,
     /// Full multisig configuration for the sending account.
     multisig_config: MultisigConfig,
     /// Witness index in the transaction where the lock field goes.
@@ -345,7 +345,7 @@ impl fmt::Debug for SigningRequest {
                 "input_cells",
                 &format_args!("{} cells", self.input_cells.len()),
             )
-            .field("signing_message", &hex::encode(self.signing_message))
+            .field("signing_message", &format_args!("{}", self.signing_message))
             .field("multisig_config", &self.multisig_config)
             .field("script_group_index", &self.script_group_index)
             .field("is_mainnet", &self.is_mainnet)
@@ -388,7 +388,7 @@ impl TryFrom<ReprSigningRequest> for SigningRequest {
 
         let stated = hex::decode(&repr.signing_message)
             .map_err(|e| format!("The request's signing message is not hex: {}.", e))?;
-        if stated != message {
+        if stated.as_slice() != message.as_bytes() {
             return Err(
                 "The request's signing message does not match its transaction.".to_string(),
             );
@@ -417,7 +417,7 @@ impl From<SigningRequest> for ReprSigningRequest {
                 .into_iter()
                 .map(ReprMockInput::from)
                 .collect(),
-            signing_message: hex::encode(request.signing_message),
+            signing_message: request.signing_message.to_string(),
             multisig_config: request.multisig_config,
             script_group_index: request.script_group_index,
             is_mainnet: request.is_mainnet,
@@ -455,7 +455,7 @@ impl SigningRequest {
             version: 1,
             unsigned_tx,
             input_cells: spent,
-            signing_message: hex::encode(signing_message),
+            signing_message: signing_message.to_string(),
             multisig_config: config.clone(),
             script_group_index,
             is_mainnet,
@@ -474,7 +474,7 @@ impl SigningRequest {
     }
 
     /// The 32-byte signing message (blake2b hash).
-    pub fn signing_message(&self) -> &[u8; 32] {
+    pub fn signing_message(&self) -> &H256 {
         &self.signing_message
     }
 
@@ -525,7 +525,7 @@ impl SigningResponse {
                 self.version, request.version
             ));
         }
-        if self.signing_message != hex::encode(request.signing_message) {
+        if self.signing_message != request.signing_message.to_string() {
             return Err("Response signing message does not match.".to_string());
         }
 
@@ -747,14 +747,14 @@ mod tests {
 
         /// The multisig's lock on testnet.
         fn lock_of(config: &MultisigConfig) -> Script {
-            let code_hash: [u8; 32] = hex::decode(CKB_TESTNET_CODE_HASH.trim_start_matches("0x"))
-                .unwrap()
-                .try_into()
+            let code_hash: H256 = CKB_TESTNET_CODE_HASH
+                .trim_start_matches("0x")
+                .parse()
                 .unwrap();
             Script::new_builder()
                 .code_hash(code_hash.pack())
                 .hash_type(CKB_TESTNET_HASH_TYPE)
-                .args(Bytes::from(config.lock_script_args().to_vec()).pack())
+                .args(Bytes::from(config.lock_script_args().as_bytes().to_vec()).pack())
                 .build()
         }
 

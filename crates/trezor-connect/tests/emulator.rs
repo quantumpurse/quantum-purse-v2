@@ -182,7 +182,8 @@ fn sign_transfer_verifies() {
     assert_eq!(&lock_blob[5..5 + 32], pubkey.as_slice(), "witness pubkey");
     let sig = &lock_blob[5 + 32..];
 
-    let ok = qpv2_core::KeyVault::raw_verify(variant, &pubkey, &digest, sig).expect("raw_verify");
+    let ok = qpv2_core::KeyVault::raw_verify(variant, &pubkey, digest.as_bytes(), sig)
+        .expect("raw_verify");
     assert!(ok, "device signature must verify against the host digest");
     println!(
         "sign_tx OK: {}-byte witness lock; signature verifies",

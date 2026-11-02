@@ -12,10 +12,10 @@ use trezor_client::protos;
 
 use crate::TrezorSignerError;
 
-const DAO_TYPE_CODE_HASH: [u8; 32] = [
+const DAO_TYPE_CODE_HASH: H256 = H256([
     0x82, 0xd7, 0x6d, 0x1b, 0x75, 0xfe, 0x2f, 0xd9, 0xa2, 0x7d, 0xfb, 0xaa, 0x65, 0xa0, 0x39, 0x22,
     0x1a, 0x38, 0x0d, 0x76, 0xc9, 0x26, 0xf3, 0x78, 0xd3, 0xf8, 0x1c, 0xf3, 0xe7, 0xe1, 0x3f, 0x2e,
-];
+]);
 
 /// Read a molecule `Byte` (hash type / dep type) as a plain `u8`.
 fn byte(b: packed::Byte) -> u8 {
@@ -99,7 +99,7 @@ pub fn resolved_inputs_of(
                     return false;
                 };
                 let hash_type: u8 = type_script.hash_type().into();
-                type_script.code_hash().raw_data().as_ref() == DAO_TYPE_CODE_HASH
+                type_script.code_hash().raw_data().as_ref() == DAO_TYPE_CODE_HASH.as_bytes()
                     && hash_type == 1
                     && data.len() == 8
                     && data.as_ref() != [0u8; 8]
@@ -247,7 +247,7 @@ mod tests {
     #[test]
     fn dao_withdrawal_inputs_include_both_header_indices() {
         let dao_type = Script::new_builder()
-            .code_hash(packed::Byte32::from_slice(&DAO_TYPE_CODE_HASH).unwrap())
+            .code_hash(DAO_TYPE_CODE_HASH.pack())
             .hash_type(ScriptHashType::Type)
             .build();
         let prev_output = CellOutput::new_builder()

@@ -36,7 +36,7 @@ pub struct SignedWitness {
     /// ready to place into the signing witness via `ckb_node::fill_witness`.
     pub witness_lock: Vec<u8>,
     /// The transaction hash the device computed.
-    pub tx_hash: [u8; 32],
+    pub tx_hash: H256,
 }
 
 impl TrezorSession {
@@ -230,7 +230,7 @@ impl TrezorSession {
 
         Ok(SignedWitness {
             witness_lock: sig_buf,
-            tx_hash,
+            tx_hash: H256(tx_hash),
         })
     }
 }
