@@ -5,7 +5,14 @@ use crate::constants::{
 use crate::containers::{SecureString, SecureVec};
 use crate::utilities::compute_signing_message;
 use ckb_mock_tx_types::{MockInput, ReprMockInput};
-use ckb_types::{bytes::Bytes, core::TransactionView, packed::Script, prelude::*, H256};
+use ckb_sdk::constants::DAO_TYPE_HASH;
+use ckb_types::{
+    bytes::Bytes,
+    core::{ScriptHashType, TransactionView},
+    packed::{CellOutput, Script},
+    prelude::*,
+    H256,
+};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{Shl, Shr};
@@ -397,8 +404,8 @@ impl TryFrom<ReprSigningRequest> for SigningRequest {
     type Error = String;
 
     /// Checks that the request's multisig is a valid one, that every input
-    /// is locked by it, and that the transaction hashes to the message it
-    /// asks to sign.
+    /// is locked by it, that every cell is plain or a Nervos DAO cell, and
+    /// that the transaction hashes to the message it asks to sign.
     ///
     /// The input cells come from the requester too, and that is safe: a
     /// request that lies about a cell hashes differently from what the chain
@@ -435,6 +442,28 @@ impl TryFrom<ReprSigningRequest> for SigningRequest {
             ));
         }
 
+        // Every cell is plain or a Nervos DAO cell, the only kinds this
+        // wallet builds. Any other may carry an asset the co-signer can't
+        // see, such as a token spent along with its CKB, or a type script
+        // that never lets the cell be spent again.
+        if let Some(i) = input_cells
+            .iter()
+            .position(|mock_input| !is_plain_or_dao(&mock_input.output, &mock_input.data))
+        {
+            return Err(format!(
+                "Input cell {} is neither plain nor a Nervos DAO cell.",
+                i
+            ));
+        }
+        for (i, (output, data)) in unsigned_tx.outputs_with_data_iter().enumerate() {
+            if !is_plain_or_dao(&output, &data) {
+                return Err(format!(
+                    "Output {} is neither plain nor a Nervos DAO cell.",
+                    i
+                ));
+            }
+        }
+
         let message = compute_signing_message(&unsigned_tx, &input_cells, repr.script_group_index)?;
 
         let stated = hex::decode(&repr.signing_message)
@@ -455,6 +484,21 @@ impl TryFrom<ReprSigningRequest> for SigningRequest {
             is_mainnet: repr.is_mainnet,
             metadata: repr.metadata,
         })
+    }
+}
+
+/// Whether a cell is plain (no type script, no data) or a Nervos DAO cell
+/// (the DAO's type script and 8 bytes of data).
+fn is_plain_or_dao(output: &CellOutput, data: &[u8]) -> bool {
+    match output.type_().to_opt() {
+        None => data.is_empty(),
+        Some(type_script) => {
+            let dao = Script::new_builder()
+                .code_hash(DAO_TYPE_HASH.pack())
+                .hash_type(ScriptHashType::Type)
+                .build();
+            type_script == dao && data.len() == 8
+        }
     }
 }
 
@@ -816,15 +860,48 @@ mod tests {
                 .build()
         }
 
-        /// A transaction spending `inputs` cells and sending `send_ckb`.
-        fn transaction(inputs: u32, send_ckb: u64) -> TransactionView {
+        /// A cell with no type script and no data.
+        fn plain_cell(capacity_ckb: u64, lock: Script) -> (CellOutput, Bytes) {
+            (cell(capacity_ckb, lock), Bytes::new())
+        }
+
+        /// A Nervos DAO cell: a deposit when `block` is 0, otherwise a
+        /// withdrawal request for the deposit made in that block.
+        fn dao_cell(capacity_ckb: u64, lock: Script, block: u64) -> (CellOutput, Bytes) {
+            let dao_type = Script::new_builder()
+                .code_hash(DAO_TYPE_HASH.pack())
+                .hash_type(ScriptHashType::Type)
+                .build();
+            let output = cell(capacity_ckb, lock)
+                .as_builder()
+                .type_(Some(dao_type).pack())
+                .build();
+            (output, Bytes::from(block.to_le_bytes().to_vec()))
+        }
+
+        /// A token cell: some other type script, with the token amount as data.
+        fn token_cell(capacity_ckb: u64, lock: Script) -> (CellOutput, Bytes) {
+            let token_type = Script::new_builder()
+                .code_hash([7u8; 32].pack())
+                .hash_type(ScriptHashType::Type)
+                .build();
+            let output = cell(capacity_ckb, lock)
+                .as_builder()
+                .type_(Some(token_type).pack())
+                .build();
+            (output, Bytes::from(1_000_000u128.to_le_bytes().to_vec()))
+        }
+
+        /// A transaction spending `inputs` cells into `outputs`.
+        fn transaction(inputs: u32, outputs: Vec<(CellOutput, Bytes)>) -> TransactionView {
             let mut builder = TransactionBuilder::default();
             for index in 0..inputs {
                 builder = builder.input(CellInput::new(OutPoint::new([1u8; 32].pack(), index), 0));
             }
+            for (output, data) in outputs {
+                builder = builder.output(output).output_data(data.pack());
+            }
             builder
-                .output(cell(send_ckb, Script::default()))
-                .output_data(Bytes::new().pack())
                 .witness(
                     WitnessArgs::new_builder()
                         .lock(Some(Bytes::from(vec![0u8; 16])).pack())
@@ -835,22 +912,21 @@ mod tests {
                 .build()
         }
 
-        /// A request to send 100 CKB out of `cells`, one input each, from
-        /// `config`.
-        fn spend(
-            cells: Vec<CellOutput>,
+        /// A testnet request from `config`, spending `inputs` into `outputs`.
+        fn request(
+            inputs: Vec<(CellOutput, Bytes)>,
+            outputs: Vec<(CellOutput, Bytes)>,
             config: &MultisigConfig,
-            is_mainnet: bool,
         ) -> Result<SigningRequest, String> {
-            let tx = transaction(cells.len() as u32, 100);
+            let tx = transaction(inputs.len() as u32, outputs);
             let input_cells: Vec<MockInput> = tx
                 .inputs()
                 .into_iter()
-                .zip(cells)
-                .map(|(input, output)| MockInput {
+                .zip(inputs)
+                .map(|(input, (output, data))| MockInput {
                     input,
                     output,
-                    data: Bytes::new(),
+                    data,
                     header: None,
                 })
                 .collect();
@@ -860,14 +936,23 @@ mod tests {
                 amount_ckb: None,
                 tx_type: "Transfer".to_string(),
             };
-            SigningRequest::new(&tx, &input_cells, config, 0, is_mainnet, metadata)
+            SigningRequest::new(&tx, &input_cells, config, 0, false, metadata)
+        }
+
+        /// A request to send 100 CKB to someone out of plain `cells`.
+        fn spend(
+            cells: Vec<CellOutput>,
+            config: &MultisigConfig,
+        ) -> Result<SigningRequest, String> {
+            let inputs = cells.into_iter().map(|c| (c, Bytes::new())).collect();
+            request(inputs, vec![plain_cell(100, Script::default())], config)
         }
 
         /// A request to send 100 CKB out of a 200 CKB cell held by the
         /// multisig, as JSON so a test can tamper with it.
         fn request_json() -> serde_json::Value {
             let config = multisig();
-            let request = spend(vec![cell(200, lock_of(&config))], &config, false).unwrap();
+            let request = spend(vec![cell(200, lock_of(&config))], &config).unwrap();
             serde_json::to_value(request).unwrap()
         }
 
@@ -876,7 +961,7 @@ mod tests {
         }
 
         #[test]
-        fn built_request_reads_back() {
+        fn request_written_to_json_reads_back_unchanged() {
             let json = request_json();
             let request = read(json.clone()).unwrap();
             assert_eq!(serde_json::to_value(request).unwrap(), json);
@@ -908,7 +993,10 @@ mod tests {
         fn request_whose_transaction_was_swapped_is_refused() {
             // Same message, but the transaction now sends 150 CKB.
             let mut json = request_json();
-            let swapped: ckb_jsonrpc_types::Transaction = transaction(1, 150).data().into();
+            let swapped: ckb_jsonrpc_types::Transaction =
+                transaction(1, vec![plain_cell(150, Script::default())])
+                    .data()
+                    .into();
             json["unsigned_tx"] = serde_json::to_value(swapped).unwrap();
             let err = read(json).unwrap_err();
             assert!(err.contains("does not match its transaction"), "{err}");
@@ -928,7 +1016,7 @@ mod tests {
                 cell(100, lock_of(&config)),
                 cell(100_000, lock_of(&own_account)),
             ];
-            let err = spend(cells, &config, false).unwrap_err();
+            let err = spend(cells, &config).unwrap_err();
             assert!(
                 err.contains("Input cell 1 is not locked by the request's multisig"),
                 "{err}"
@@ -942,12 +1030,63 @@ mod tests {
             let own_key = multisig().signers()[0].clone();
             let own_account =
                 MultisigConfig::single_sig(own_key.variant, own_key.pubkey, Default::default());
-            let err =
-                spend(vec![cell(200, lock_of(&own_account))], &own_account, false).unwrap_err();
+            let err = spend(vec![cell(200, lock_of(&own_account))], &own_account).unwrap_err();
             assert!(
                 err.contains("The request's multisig is invalid: A multisig account needs 2..=255"),
                 "{err}"
             );
+        }
+
+        /// A token cell the multisig holds, spent along with its CKB: the
+        /// co-signer would see only the CKB.
+        #[test]
+        fn request_spending_a_token_cell_is_refused() {
+            let config = multisig();
+            let err = request(
+                vec![token_cell(200, lock_of(&config))],
+                vec![plain_cell(100, Script::default())],
+                &config,
+            )
+            .unwrap_err();
+            assert!(
+                err.contains("Input cell 0 is neither plain nor a Nervos DAO cell"),
+                "{err}"
+            );
+        }
+
+        /// The multisig's ordinary transfers pass: plain cells in, plain
+        /// cells out.
+        #[test]
+        fn request_spending_plain_cells_passes() {
+            let config = multisig();
+            let result = request(
+                vec![plain_cell(200, lock_of(&config))],
+                vec![
+                    plain_cell(100, Script::default()),
+                    plain_cell(99, lock_of(&config)),
+                ],
+                &config,
+            );
+            assert!(result.is_ok(), "{:?}", result.err());
+        }
+
+        /// The multisig's own DAO steps still pass: a withdrawal request
+        /// spends a deposit, with a plain cell paying the fee.
+        #[test]
+        fn request_for_a_dao_withdrawal_request_passes() {
+            let config = multisig();
+            let result = request(
+                vec![
+                    dao_cell(200, lock_of(&config), 0),
+                    plain_cell(100, lock_of(&config)),
+                ],
+                vec![
+                    dao_cell(200, lock_of(&config), 12_345),
+                    plain_cell(99, lock_of(&config)),
+                ],
+                &config,
+            );
+            assert!(result.is_ok(), "{:?}", result.err());
         }
     }
 }

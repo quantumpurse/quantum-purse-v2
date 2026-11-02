@@ -70,6 +70,10 @@
 - [x] **Cancellable tx-history sync thread.** Bounded retries (8 attempts, exponential backoff) replace the infinite retry loop. On give-up the sync aborts, rolls back to the last saved snapshot, and yields the single-flight slot so a later tick retries from current chain state.
 - [ ] **Show pending transactions from the tx pool.** The dashboard's PENDING state is unreachable — the indexer only returns mined transactions and nothing creates pending records locally. On full node / public RPC backends, query `get_raw_tx_pool`, resolve each hash with `get_transaction`, match outputs against the wallet's lock args, and stream matching entries as `TxRecord { is_pending: true, block_number: 0 }`. The existing reconcile already retains pending rows and replaces them when the mined version arrives. Light client has no local mempool so this is full node / public RPC only.
 
+## Tokens
+
+- [ ] **Let users add a type script's configuration, and have the wallet manage those cells.** The wallet only spends plain cells and Nervos DAO cells, and a signing request carrying any other cell is refused (`TryFrom<ReprSigningRequest>` in `qpv2-core/src/types.rs`), so tokens such as xUDT sitting in an account can't be moved. Let the user enter a type script's configuration (code hash, hash type, args, cell dep, name, decimals), then have the wallet show its balance, send it, and accept it when co-signing: the type joins the request whitelist, and the co-sign summary decodes its amounts so the co-signer sees "send 1,000 XYZ" before signing. Mind the issuer case: when the account is the token's issuer (its lock hash equals the token's args), a transaction can mint new tokens, so the summary must show tokens created, not only tokens moved. A type the wallet can't describe stays refused.
+
 
 # KNOWN BUGS
 
