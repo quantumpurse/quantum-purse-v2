@@ -1171,7 +1171,7 @@ fn handle_msig_build_dao(
     fs::write(output, &json).map_err(|e| format!("Failed to write file: {}", e))?;
 
     println!("Signing request written to: {}", output);
-    println!("Message: {}", request.signing_message());
+    println!("Message: {}", hex::encode(request.signing_message()));
     println!(
         "Requires {} of {} signatures.",
         account.config.threshold(),
@@ -1257,7 +1257,7 @@ fn handle_msig_build_transfer(ctx: &MsigBuildCtx, to: &str, amount: &str) -> Res
     fs::write(output, &json).map_err(|e| format!("Failed to write file: {}", e))?;
 
     println!("Signing request written to: {}", output);
-    println!("Message: {}", request.signing_message());
+    println!("Message: {}", hex::encode(request.signing_message()));
     println!(
         "Requires {} of {} signatures.",
         account.config.threshold(),
@@ -1289,8 +1289,7 @@ fn handle_msig_sign(wallet_id: u32, request_path: &str, output: &str) -> Result<
     let variant = KeyVault::get_spx_variant(wallet_id)?;
     let signers = KeyVault::find_local_signers(wallet_id, request.multisig_config())?;
 
-    let message_bytes = hex::decode(request.signing_message())
-        .map_err(|e| format!("Invalid signing message hex: {}", e))?;
+    let message_bytes = request.signing_message().to_vec();
     let vault = KeyVault::new(variant, wallet_id);
 
     // One unlock per key this wallet holds in the request, so every
@@ -1320,7 +1319,7 @@ fn handle_msig_sign(wallet_id: u32, request_path: &str, output: &str) -> Result<
     let response = qpv2_core::types::SigningResponse {
         version: request.version(),
         signed,
-        signing_message: request.signing_message().to_string(),
+        signing_message: hex::encode(request.signing_message()),
     };
 
     let response_json = serde_json::to_string_pretty(&response)
@@ -1375,9 +1374,7 @@ fn handle_msig_submit(
     let witness_lock = ckb_node::assemble_multisig_witness(request.multisig_config(), &signatures)
         .map_err(|e| format!("Failed to assemble witness: {}", e))?;
 
-    let packed_tx: ckb_types::packed::Transaction = request.unsigned_tx().clone().into();
-    use ckb_types::prelude::IntoTransactionView;
-    let unsigned_tx = packed_tx.into_view();
+    let unsigned_tx = request.unsigned_tx().clone();
 
     let signed_tx = ckb_node::fill_witness(unsigned_tx, request.script_group_index(), witness_lock)
         .map_err(|e| format!("Failed to fill witness: {}", e))?;

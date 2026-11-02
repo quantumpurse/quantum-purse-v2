@@ -80,8 +80,7 @@ impl App {
             .map_err(|e| format!("Failed to read variant: {}", e))?;
         let keys = KeyVault::find_local_signers(self.wallet_id, request.multisig_config())?;
 
-        let message = hex::decode(request.signing_message())
-            .map_err(|e| format!("Invalid signing message hex: {}", e))?;
+        let message = request.signing_message().to_vec();
 
         Ok(CosignSigner {
             variant,
@@ -196,7 +195,7 @@ fn sign(
     let response = SigningResponse {
         version: request.version(),
         signed,
-        signing_message: request.signing_message().to_string(),
+        signing_message: hex::encode(request.signing_message()),
     };
     serde_json::to_string_pretty(&response)
         .map_err(|e| format!("Failed to serialize response: {}", e))

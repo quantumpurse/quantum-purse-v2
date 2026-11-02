@@ -311,17 +311,20 @@ pub struct SigningMetadata {
 /// [`Self::new`] or from its JSON, and is never changed afterwards. Both
 /// ways run the same checks (the `TryFrom` below), so every request in
 /// memory has passed them.
+///
+/// It holds native CKB types; its JSON form is [`ReprSigningRequest`], the
+/// way `MockInput` pairs with `ReprMockInput`.
 #[derive(Serialize, Deserialize, Clone)]
-#[serde(try_from = "RawSigningRequest")]
+#[serde(try_from = "ReprSigningRequest", into = "ReprSigningRequest")]
 pub struct SigningRequest {
     version: u8,
-    /// The unsigned CKB transaction, in CKB's JSON form.
-    unsigned_tx: ckb_jsonrpc_types::Transaction,
+    /// The unsigned CKB transaction.
+    unsigned_tx: TransactionView,
     /// The cells the transaction spends, for CKB_TX_MESSAGE_ALL: one per
     /// input, in input order, each naming the input that spends it.
-    input_cells: Vec<ReprMockInput>,
-    /// The 32-byte signing message (blake2b hash), hex-encoded.
-    signing_message: String,
+    input_cells: Vec<MockInput>,
+    /// The 32-byte signing message (blake2b hash).
+    signing_message: [u8; 32],
     /// Full multisig configuration for the sending account.
     multisig_config: MultisigConfig,
     /// Witness index in the transaction where the lock field goes.
@@ -332,7 +335,7 @@ pub struct SigningRequest {
     metadata: SigningMetadata,
 }
 
-// By hand: the input cells' type, `ReprMockInput`, has no `Debug`.
+// By hand: the input cells' type, `MockInput`, has no `Debug`.
 impl fmt::Debug for SigningRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SigningRequest")
@@ -342,7 +345,7 @@ impl fmt::Debug for SigningRequest {
                 "input_cells",
                 &format_args!("{} cells", self.input_cells.len()),
             )
-            .field("signing_message", &self.signing_message)
+            .field("signing_message", &hex::encode(self.signing_message))
             .field("multisig_config", &self.multisig_config)
             .field("script_group_index", &self.script_group_index)
             .field("is_mainnet", &self.is_mainnet)
@@ -351,14 +354,16 @@ impl fmt::Debug for SigningRequest {
     }
 }
 
-/// A signing request's fields as read from JSON, before
-/// [`SigningRequest`]'s checks. Only for the `TryFrom` below, which `new()`
-/// also goes through; never use it as a request anywhere else.
-#[derive(Deserialize)]
-struct RawSigningRequest {
+/// The JSON form of a [`SigningRequest`]. Reading turns it into a request
+/// through the checks in the `TryFrom` below, which `new()` also goes
+/// through; writing turns a request back with the `From`. Never use it as a
+/// request anywhere else.
+#[derive(Serialize, Deserialize)]
+struct ReprSigningRequest {
     version: u8,
     unsigned_tx: ckb_jsonrpc_types::Transaction,
     input_cells: Vec<ReprMockInput>,
+    /// Hex-encoded.
     signing_message: String,
     multisig_config: MultisigConfig,
     script_group_index: usize,
@@ -366,7 +371,7 @@ struct RawSigningRequest {
     metadata: SigningMetadata,
 }
 
-impl TryFrom<RawSigningRequest> for SigningRequest {
+impl TryFrom<ReprSigningRequest> for SigningRequest {
     type Error = String;
 
     /// Checks that the request's transaction hashes to the message it asks
@@ -375,17 +380,13 @@ impl TryFrom<RawSigningRequest> for SigningRequest {
     /// The input cells come from the requester too, and that is safe: a
     /// request that lies about a cell hashes differently from what the chain
     /// computes, so a signature made for it cannot unlock anything.
-    fn try_from(request: RawSigningRequest) -> Result<Self, String> {
-        let tx = ckb_types::packed::Transaction::from(request.unsigned_tx.clone()).into_view();
-        let input_cells: Vec<MockInput> = request
-            .input_cells
-            .iter()
-            .cloned()
-            .map(MockInput::from)
-            .collect();
-        let message = compute_signing_message(&tx, &input_cells, request.script_group_index)?;
+    fn try_from(repr: ReprSigningRequest) -> Result<Self, String> {
+        let unsigned_tx = ckb_types::packed::Transaction::from(repr.unsigned_tx).into_view();
+        let input_cells: Vec<MockInput> =
+            repr.input_cells.into_iter().map(MockInput::from).collect();
+        let message = compute_signing_message(&unsigned_tx, &input_cells, repr.script_group_index)?;
 
-        let stated = hex::decode(&request.signing_message)
+        let stated = hex::decode(&repr.signing_message)
             .map_err(|e| format!("The request's signing message is not hex: {}.", e))?;
         if stated != message {
             return Err(
@@ -394,15 +395,34 @@ impl TryFrom<RawSigningRequest> for SigningRequest {
         }
 
         Ok(SigningRequest {
+            version: repr.version,
+            unsigned_tx,
+            input_cells,
+            signing_message: message,
+            multisig_config: repr.multisig_config,
+            script_group_index: repr.script_group_index,
+            is_mainnet: repr.is_mainnet,
+            metadata: repr.metadata,
+        })
+    }
+}
+
+impl From<SigningRequest> for ReprSigningRequest {
+    fn from(request: SigningRequest) -> Self {
+        ReprSigningRequest {
             version: request.version,
-            unsigned_tx: request.unsigned_tx,
-            input_cells: request.input_cells,
-            signing_message: request.signing_message,
+            unsigned_tx: request.unsigned_tx.data().into(),
+            input_cells: request
+                .input_cells
+                .into_iter()
+                .map(ReprMockInput::from)
+                .collect(),
+            signing_message: hex::encode(request.signing_message),
             multisig_config: request.multisig_config,
             script_group_index: request.script_group_index,
             is_mainnet: request.is_mainnet,
             metadata: request.metadata,
-        })
+        }
     }
 }
 
@@ -431,7 +451,7 @@ impl SigningRequest {
             .map(ReprMockInput::from)
             .collect();
 
-        Self::try_from(RawSigningRequest {
+        Self::try_from(ReprSigningRequest {
             version: 1,
             unsigned_tx,
             input_cells: spent,
@@ -448,13 +468,13 @@ impl SigningRequest {
         self.version
     }
 
-    /// The unsigned CKB transaction, in CKB's JSON form.
-    pub fn unsigned_tx(&self) -> &ckb_jsonrpc_types::Transaction {
+    /// The unsigned CKB transaction.
+    pub fn unsigned_tx(&self) -> &TransactionView {
         &self.unsigned_tx
     }
 
-    /// The 32-byte signing message (blake2b hash), hex-encoded.
-    pub fn signing_message(&self) -> &str {
+    /// The 32-byte signing message (blake2b hash).
+    pub fn signing_message(&self) -> &[u8; 32] {
         &self.signing_message
     }
 
@@ -505,7 +525,7 @@ impl SigningResponse {
                 self.version, request.version
             ));
         }
-        if self.signing_message != request.signing_message {
+        if self.signing_message != hex::encode(request.signing_message) {
             return Err("Response signing message does not match.".to_string());
         }
 
