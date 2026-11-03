@@ -547,7 +547,7 @@ impl App {
                                     ckb_node::NetworkType::Mainnet
                                 );
                                 external_recipient =
-                                    Some(crate::utils::script_to_address(&packed, is_mainnet));
+                                    Some(qpv2_core::utilities::address_of(&packed, is_mainnet));
                             }
                         }
                     }

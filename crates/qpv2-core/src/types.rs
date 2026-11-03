@@ -3,9 +3,9 @@ use crate::constants::{
     MULTISIG_RESERVED_FIELD_VALUE,
 };
 use crate::containers::{SecureString, SecureVec};
-use crate::utilities::compute_signing_message;
+use crate::utilities::{address_of, compute_signing_message};
 use ckb_mock_tx_types::{MockInput, ReprMockInput};
-use ckb_sdk::{constants::DAO_TYPE_HASH, Address, AddressPayload, NetworkType};
+use ckb_sdk::constants::DAO_TYPE_HASH;
 use ckb_types::{
     bytes::Bytes,
     core::{ScriptHashType, TransactionView},
@@ -600,19 +600,6 @@ fn summarize(
         to,
         fee,
     })
-}
-
-/// A lock as its full CKB address.
-///
-/// `AddressPayload::from` panics on a hash type CKB doesn't know, which a
-/// request can't carry: the JSON reader only accepts the known ones.
-fn address_of(lock: &Script, is_mainnet: bool) -> String {
-    let network = if is_mainnet {
-        NetworkType::Mainnet
-    } else {
-        NetworkType::Testnet
-    };
-    Address::new(network, AddressPayload::from(lock.clone()), true).to_string()
 }
 
 /// Whether a cell is plain (no type script, no data) or a Nervos DAO cell

@@ -13,7 +13,8 @@ use ckb_fips205_utils::{
     Hasher,
 };
 use ckb_mock_tx_types::{MockInput, MockTransaction, ReprMockTransaction};
-use ckb_types::{core::TransactionView, prelude::*, H256};
+use ckb_sdk::{Address, AddressPayload, NetworkType};
+use ckb_types::{core::TransactionView, packed::Script, prelude::*, H256};
 use hex::{decode, encode};
 use hkdf::Hkdf;
 use scrypt::{scrypt, Params};
@@ -383,6 +384,20 @@ pub fn compute_signing_message(
     .map_err(|e| format!("Failed to compute tx message: {:?}", e))?;
 
     Ok(H256(hasher.hash()))
+}
+
+/// A lock script as its full CKB address.
+///
+/// `AddressPayload::from` panics on a hash type CKB doesn't know. Scripts
+/// read through CKB's JSON, from the chain or from a signing request, only
+/// ever carry the known ones.
+pub fn address_of(lock: &Script, is_mainnet: bool) -> String {
+    let network = if is_mainnet {
+        NetworkType::Mainnet
+    } else {
+        NetworkType::Testnet
+    };
+    Address::new(network, AddressPayload::from(lock.clone()), true).to_string()
 }
 
 /// Check strength of a password.

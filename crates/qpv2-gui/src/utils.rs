@@ -7,7 +7,7 @@ use qpv2_core::constants::{
 /// Converts a hex-encoded wallet lock_args to a CKB address.
 ///
 /// Assumes the wallet's quantum-resistant lock script code_hash / hash_type.
-/// Use `script_to_address` for arbitrary external locks instead.
+/// Use `qpv2_core::utilities::address_of` for arbitrary external locks instead.
 pub(crate) fn lock_args_to_address(
     lock_args: &str,
     is_mainnet: bool,
@@ -43,22 +43,6 @@ pub(crate) fn lock_args_to_address(
         Bytes::from(args_bytes),
     );
     Ok(Address::new(network, payload, true))
-}
-
-/// Converts an arbitrary on-chain lock `Script` to its bech32m address string.
-///
-/// Unlike `lock_args_to_address`, this accepts any lock script (any code_hash /
-/// hash_type), so it works for external recipients in the Address Book.
-pub(crate) fn script_to_address(script: &ckb_types::packed::Script, is_mainnet: bool) -> String {
-    use ckb_sdk::{Address, AddressPayload, NetworkType};
-
-    let network = if is_mainnet {
-        NetworkType::Mainnet
-    } else {
-        NetworkType::Testnet
-    };
-    let payload = AddressPayload::from(script.clone());
-    Address::new(network, payload, true).to_string()
 }
 
 /// Format shannons as a numeric CKB string without the unit suffix.
