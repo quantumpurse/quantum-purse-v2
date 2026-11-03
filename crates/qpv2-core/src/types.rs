@@ -5,7 +5,7 @@ use crate::constants::{
 use crate::containers::{SecureString, SecureVec};
 use crate::utilities::compute_signing_message;
 use ckb_mock_tx_types::{MockInput, ReprMockInput};
-use ckb_sdk::constants::DAO_TYPE_HASH;
+use ckb_sdk::{constants::DAO_TYPE_HASH, Address, AddressPayload, NetworkType};
 use ckb_types::{
     bytes::Bytes,
     core::{ScriptHashType, TransactionView},
@@ -362,6 +362,9 @@ pub struct SigningRequest {
     is_mainnet: bool,
     /// Human-readable summary for co-signer verification.
     metadata: SigningMetadata,
+    /// What the transaction does, decoded from the transaction itself. Not
+    /// part of the JSON: it is worked out again whenever a request is read.
+    summary: MsigRequestSummary,
 }
 
 // By hand: the input cells' type, `MockInput`, has no `Debug`.
@@ -379,6 +382,7 @@ impl fmt::Debug for SigningRequest {
             .field("script_group_index", &self.script_group_index)
             .field("is_mainnet", &self.is_mainnet)
             .field("metadata", &self.metadata)
+            .field("summary", &self.summary)
             .finish()
     }
 }
@@ -431,10 +435,10 @@ impl TryFrom<ReprSigningRequest> for SigningRequest {
         // network. The signed hash doesn't name the lock, so this signature
         // could also unlock another input under a lock holding the same key,
         // such as one of the co-signer's own single-sig cells.
-        let lock = multisig_config.lock_script(repr.is_mainnet);
+        let msig_lock = multisig_config.lock_script(repr.is_mainnet);
         if let Some(i) = input_cells
             .iter()
-            .position(|mock_input| mock_input.output.lock() != lock)
+            .position(|mock_input| mock_input.output.lock() != msig_lock)
         {
             return Err(format!(
                 "Input cell {} is not locked by the request's multisig.",
@@ -474,6 +478,8 @@ impl TryFrom<ReprSigningRequest> for SigningRequest {
             );
         }
 
+        let summary = summarize(&unsigned_tx, &input_cells, &msig_lock, repr.is_mainnet)?;
+
         Ok(SigningRequest {
             version: repr.version,
             unsigned_tx,
@@ -483,8 +489,130 @@ impl TryFrom<ReprSigningRequest> for SigningRequest {
             script_group_index: repr.script_group_index,
             is_mainnet: repr.is_mainnet,
             metadata: repr.metadata,
+            summary,
         })
     }
+}
+
+/// What a signing request's transaction does, decoded from the transaction
+/// itself, for the co-signer to read before signing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MsigRequestSummary {
+    /// The multisig the coins leave, as a full address.
+    pub from: String,
+    /// One line per output, in output order.
+    pub to: Vec<CreatedCell>,
+    /// What goes in minus what comes out, in shannons. `None` when the
+    /// transaction completes a DAO withdrawal: its payout includes interest,
+    /// which only the deposit's headers tell.
+    pub fee: Option<u64>,
+}
+
+/// One output of a signing request's transaction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreatedCell {
+    pub kind: CellKind,
+    /// Who receives the cell: whoever can spend it next.
+    pub recipient: Recipient,
+    pub shannons: u64,
+}
+
+/// The kinds of cell a signing request may create.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CellKind {
+    /// No type script and no data: plain CKB.
+    Plain,
+    /// A new Nervos DAO deposit.
+    DaoDeposit,
+    /// A Nervos DAO deposit moved on to its withdrawal request.
+    DaoWithdrawalRequest,
+}
+
+/// Who receives a created cell.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Recipient {
+    /// Receiver of the change.
+    Sender,
+    /// Anyone else, as a full address.
+    Other(String),
+}
+
+/// Decodes what `tx` does. `lock` is the request's multisig lock, which
+/// every input already carries.
+fn summarize(
+    tx: &TransactionView,
+    input_cells: &[MockInput],
+    msig_lock: &Script,
+    is_mainnet: bool,
+) -> Result<MsigRequestSummary, String> {
+    let mut to = Vec::new();
+    let mut output_capacity: u64 = 0;
+    for (output, data) in tx.outputs_with_data_iter() {
+        let shannons: u64 = output.capacity().unpack();
+        output_capacity = output_capacity
+            .checked_add(shannons)
+            .ok_or_else(|| "The request's outputs add up to more CKB than exists.".to_string())?;
+        // Only plain and DAO cells.
+        let kind = if output.type_().to_opt().is_none() {
+            CellKind::Plain
+        } else if data.iter().all(|byte| *byte == 0) {
+            CellKind::DaoDeposit
+        } else {
+            CellKind::DaoWithdrawalRequest
+        };
+        let recipient = if output.lock() == *msig_lock {
+            Recipient::Sender
+        } else {
+            Recipient::Other(address_of(&output.lock(), is_mainnet))
+        };
+        to.push(CreatedCell {
+            kind,
+            recipient,
+            shannons,
+        });
+    }
+
+    let mut input_capacity: u64 = 0;
+    let mut completes_withdrawal = false;
+    for mock_input in input_cells {
+        let shannons: u64 = mock_input.output.capacity().unpack();
+        input_capacity = input_capacity
+            .checked_add(shannons)
+            .ok_or_else(|| "The request's inputs add up to more CKB than exists.".to_string())?;
+        // before this function is executed, try_from() implemetnation has already filtered only
+        // plain cell and DAO cell. So if the input is not a plain cell, it must be a DAO cell.
+        let is_dao = mock_input.output.type_().to_opt().is_some();
+        if is_dao && mock_input.data.iter().any(|byte| *byte != 0) {
+            completes_withdrawal = true;
+        }
+    }
+    let fee = if completes_withdrawal {
+        None
+    } else {
+        let fee = input_capacity
+            .checked_sub(output_capacity)
+            .ok_or_else(|| "The request's outputs hold more CKB than its inputs.".to_string())?;
+        Some(fee)
+    };
+
+    Ok(MsigRequestSummary {
+        from: address_of(msig_lock, is_mainnet),
+        to,
+        fee,
+    })
+}
+
+/// A lock as its full CKB address.
+///
+/// `AddressPayload::from` panics on a hash type CKB doesn't know, which a
+/// request can't carry: the JSON reader only accepts the known ones.
+fn address_of(lock: &Script, is_mainnet: bool) -> String {
+    let network = if is_mainnet {
+        NetworkType::Mainnet
+    } else {
+        NetworkType::Testnet
+    };
+    Address::new(network, AddressPayload::from(lock.clone()), true).to_string()
 }
 
 /// Whether a cell is plain (no type script, no data) or a Nervos DAO cell
@@ -591,6 +719,11 @@ impl SigningRequest {
     /// Human-readable summary for co-signer verification.
     pub fn metadata(&self) -> &SigningMetadata {
         &self.metadata
+    }
+
+    /// What the transaction does, decoded from the transaction itself.
+    pub fn summary(&self) -> &MsigRequestSummary {
+        &self.summary
     }
 }
 
@@ -1087,6 +1220,95 @@ mod tests {
                 &config,
             );
             assert!(result.is_ok(), "{:?}", result.err());
+        }
+
+        /// A friend's single-sig lock, for outputs that leave the multisig.
+        fn friend() -> Script {
+            let key = Signer::new(SpxVariant::Sha2128S, vec![3; SHA2_128S_PK_LEN]).unwrap();
+            lock_of(&MultisigConfig::single_sig(
+                key.variant,
+                key.pubkey,
+                SingleSigConvention::Standard,
+            ))
+        }
+
+        fn address(lock: &Script) -> String {
+            address_of(lock, false)
+        }
+
+        #[test]
+        fn transfer_reads_as_a_send_with_change_and_fee() {
+            let config = multisig();
+            let summary = request(
+                vec![plain_cell(200, lock_of(&config))],
+                vec![plain_cell(100, friend()), plain_cell(99, lock_of(&config))],
+                &config,
+            )
+            .unwrap()
+            .summary()
+            .clone();
+            assert_eq!(
+                summary,
+                MsigRequestSummary {
+                    from: address(&lock_of(&config)),
+                    to: vec![
+                        CreatedCell {
+                            kind: CellKind::Plain,
+                            recipient: Recipient::Other(address(&friend())),
+                            shannons: 100 * CKB,
+                        },
+                        CreatedCell {
+                            kind: CellKind::Plain,
+                            recipient: Recipient::Sender,
+                            shannons: 99 * CKB,
+                        },
+                    ],
+                    fee: Some(CKB),
+                }
+            );
+        }
+
+        /// SigningRequest construction validation should compare the whole lock
+        #[test]
+        fn summarize_compares_the_whole_lock() {
+            let config = multisig();
+            let lookalike = lock_of(&config)
+                .as_builder()
+                .code_hash([9u8; 32].pack())
+                .build();
+            let summary = request(
+                vec![plain_cell(200, lock_of(&config))],
+                vec![plain_cell(199, lookalike.clone())],
+                &config,
+            )
+            .unwrap()
+            .summary()
+            .clone();
+            assert_eq!(
+                summary.to[0].recipient,
+                Recipient::Other(address(&lookalike))
+            );
+        }
+
+        #[test]
+        fn dao_deposit_for_a_friend_names_the_friend() {
+            let config = multisig();
+            let summary = request(
+                vec![plain_cell(200, lock_of(&config))],
+                vec![dao_cell(199, friend(), 0)],
+                &config,
+            )
+            .unwrap()
+            .summary()
+            .clone();
+            assert_eq!(
+                summary.to[0],
+                CreatedCell {
+                    kind: CellKind::DaoDeposit,
+                    recipient: Recipient::Other(address(&friend())),
+                    shannons: 199 * CKB,
+                }
+            );
         }
     }
 }
