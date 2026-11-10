@@ -1,7 +1,7 @@
 //! The two steps of a binding, each run off the UI thread: `prepare` when the
 //! user pastes an API key, `bind` when they confirm the addresses.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use chrono::Utc;
 
@@ -10,7 +10,7 @@ use crate::checks::{verify_event, Expected};
 use crate::client::{AccountInfo, DaoClient};
 use crate::event::challenge;
 use crate::proof::verify_ack;
-use crate::receipt::write_receipt;
+use crate::receipt::Receipt;
 use crate::settings::Settings;
 
 /// What Start learns: whose account this is, the server's pinned key, and
@@ -25,11 +25,15 @@ pub struct Prepared {
     pub bound: Vec<String>,
 }
 
-/// A finished binding.
+/// A binding the server accepted.
 #[derive(Debug, Clone)]
 pub struct Bound {
     pub count: usize,
-    pub receipt: PathBuf,
+    pub receipt: Receipt,
+    /// Why the server's ack failed verification, if it did. The binding may
+    /// then not be safely archived, and the receipt holds the signed event
+    /// alone.
+    pub ack_error: Option<String>,
 }
 
 /// Start: reads the account key from `api_key`, pins the server's key on
@@ -76,8 +80,8 @@ pub fn prepare(
 }
 
 /// Confirm: asks for an event over `addresses`, checks it, signs every
-/// address's challenge, submits, checks the server's ack and saves a
-/// receipt in `receipts_dir`.
+/// address's challenge, submits, checks the server's ack and builds the
+/// receipt for the user to save.
 ///
 /// `read_tip` returns this wallet's own chain tip and is called once the
 /// event has arrived. `sign` gets `(address, challenge)` pairs in the
@@ -87,7 +91,6 @@ pub fn bind(
     addresses: &[String],
     read_tip: impl FnOnce() -> Result<Option<u64>, String>,
     sign: impl FnOnce(&[(String, String)]) -> Result<Vec<String>, String>,
-    receipts_dir: &Path,
 ) -> Result<Bound, String> {
     let client = DaoClient::new(&prepared.server_url)?;
     let mut event = client.open_session(&prepared.api_key, addresses)?;
@@ -119,21 +122,19 @@ pub fn bind(
     event.bind_signatures = signatures;
 
     let ack = client.submit(&prepared.api_key, &event)?;
-    match verify_ack(&event, &ack, &prepared.server_pubkey) {
+    let (receipt, ack_error) = match verify_ack(&event, &ack, &prepared.server_pubkey) {
         Ok(()) => {
-            let receipt = write_receipt(receipts_dir, &event, Some(&ack))?;
             tracing::info!("DAO v2 binding acked (leaf_index={})", ack.leaf_index);
-            Ok(Bound {
-                count: event.ckb_addresses.len(),
-                receipt,
-            })
+            (Receipt::new(&event, Some(&ack))?, None)
         }
         Err(e) => {
-            let receipt = write_receipt(receipts_dir, &event, None)?;
-            Err(format!(
-                "{e} The signed event was saved to {}; the binding may not be safely archived.",
-                receipt.display()
-            ))
+            tracing::error!("{}", e);
+            (Receipt::new(&event, None)?, Some(e))
         }
-    }
+    };
+    Ok(Bound {
+        count: event.ckb_addresses.len(),
+        receipt,
+        ack_error,
+    })
 }

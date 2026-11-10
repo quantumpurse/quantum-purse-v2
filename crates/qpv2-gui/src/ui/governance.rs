@@ -5,7 +5,7 @@ use eframe::egui;
 
 use super::utils::{
     accent_button, data_row, device_waiting_line, ghost_button, panel_frame, section_header,
-    truncate_middle, FIDO2_WAITING_TEXT,
+    truncate_middle, unsaved_file_row, FIDO2_WAITING_TEXT,
 };
 use crate::types::{display_font, label_font};
 use crate::App;
@@ -38,6 +38,7 @@ impl App {
                     section_header(ui, &self.colors, "01", "Address Binding");
                     ui.add_space(10.0);
                     self.draw_binding_form(ui);
+                    self.draw_receipt_row(ui);
                 });
             });
         });
@@ -83,7 +84,10 @@ impl App {
         );
         ui.add_space(12.0);
 
-        let can_start = !busy && !self.governance.api_key.trim().is_empty();
+        // A new binding's receipt would replace an unsaved one, so the last
+        // receipt must be saved first.
+        let receipt_unsaved = self.governance.unsaved_receipt.is_some();
+        let can_start = !busy && !receipt_unsaved && !self.governance.api_key.trim().is_empty();
         if ui
             .add_enabled(
                 can_start,
@@ -93,6 +97,14 @@ impl App {
         {
             self.start_governance_binding();
         }
+        if receipt_unsaved {
+            ui.add_space(8.0);
+            ui.label(
+                egui::RichText::new("Save your last binding receipt before binding again.")
+                    .size(11.0)
+                    .color(self.colors.text_muted),
+            );
+        }
         if self.governance.prepare_rx.is_some() {
             ui.add_space(8.0);
             ui.label(
@@ -101,8 +113,18 @@ impl App {
                     .color(self.colors.text_muted),
             );
         }
+    }
 
-        if let Some(receipt) = &self.governance.last_receipt {
+    /// The last binding's receipt: a Save row while it is unsaved, its path
+    /// once saved. Drawn whatever the form shows, because an unsaved receipt
+    /// outlives a switch to a wallet that cannot bind.
+    fn draw_receipt_row(&mut self, ui: &mut egui::Ui) {
+        if self.governance.unsaved_receipt.is_some() {
+            ui.add_space(12.0);
+            if unsaved_file_row(ui, &self.colors, "binding receipt") {
+                self.save_governance_receipt("", false);
+            }
+        } else if let Some(receipt) = &self.governance.last_receipt {
             ui.add_space(12.0);
             data_row(
                 ui,
