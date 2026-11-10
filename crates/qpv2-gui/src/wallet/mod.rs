@@ -291,6 +291,8 @@ impl App {
         // A co-signer response belongs to the wallet that signed it.
         self.cosign_request_json.clear();
         self.cosign_response_json = None;
+        // So does a binding in progress, with its job.
+        self.governance.reset();
 
         self.dao_deposited_cells.clear();
         self.dao_prepared_cells.clear();

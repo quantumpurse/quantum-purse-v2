@@ -10,6 +10,7 @@ QPV2 is a pure Rust Quantum Purse built on top of [Quantum Purse V1's core](http
 - **`keychain`** — is multi-platform hardware backed key keeper and manager (Apple Keychain, TMP2.0 on Windows and Linus).
 - **`ckb-node`** — CKB node abstraction and wallet-domain helpers.
 - **`trezor-connect`** — Trezor Safe hardware connector.
+- **`daov2`** — CKB DAO v2 address binding: the binding event, the checks before signing, and the DAO server's wallet API.
 - **`ckb-fips205-utils`** — copied from the [quantum-resistant-lock-script project](https://github.com/nervosnetwork/quantum-resistant-lock-script) and primarily used for `CKB_TX_MESSAGE_ALL`.
 
 ### Build & Run

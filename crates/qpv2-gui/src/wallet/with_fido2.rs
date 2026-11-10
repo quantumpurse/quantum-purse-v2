@@ -392,6 +392,7 @@ impl App {
             || self.fido2_sign_rx.is_some()
             || self.fido2_cosign_rx.is_some()
             || self.fido2_export_rx.is_some()
+            || self.governance.bind_uses_fido2
     }
 
     /// The open wallet's security-key credential, for a new job on the key.

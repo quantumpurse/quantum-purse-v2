@@ -104,18 +104,19 @@ impl App {
                             Tab::Accounts => self.show_accounts_tab(ui),
                             Tab::Multisig => self.show_multisig_tab(ui),
                             Tab::Wallets => self.show_wallets_tab(ui),
+                            Tab::Governance => self.show_governance_tab(ui),
                         }
                     });
             });
     }
 
-    /// Number keys 1–7 switch modules when no text field is focused and no
+    /// Number keys 1–8 switch modules when no text field is focused and no
     /// device task is waiting on the user (see `device_task_in_flight`).
     fn handle_module_shortcuts(&mut self, ctx: &egui::Context) {
         if ctx.memory(|m| m.focused().is_some()) || self.device_task_in_flight() {
             return;
         }
-        const KEYS: [egui::Key; 7] = [
+        const KEYS: [egui::Key; 8] = [
             egui::Key::Num1,
             egui::Key::Num2,
             egui::Key::Num3,
@@ -123,6 +124,7 @@ impl App {
             egui::Key::Num5,
             egui::Key::Num6,
             egui::Key::Num7,
+            egui::Key::Num8,
         ];
         for (key, tab) in KEYS.iter().zip(Tab::ALL) {
             if ctx.input(|i| i.key_pressed(*key)) && self.active_tab != tab {

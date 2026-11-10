@@ -538,7 +538,67 @@ impl KeyVault {
             })?;
         let seed = utilities::decrypt(&auth, payload)?;
 
-        let (_, pri_key) = self.derive_spx_keys(&seed, account.index)?;
+        self.ckb_sign_with_seed(&seed, &account, &message)
+    }
+
+    /// `ckb_sign` for many messages under one authentication: the seed is
+    /// decrypted once, then each `(lock_args, message)` is signed by its
+    /// account. Signatures come back in request order.
+    ///
+    /// **Parameters**:
+    /// - `auth: AuthKey` - The authentication key used to decrypt the private keys.
+    /// - `requests: Vec<(String, Vec<u8>)>` - Each signing account's hex lock args and the message it signs.
+    ///
+    /// **Returns**:
+    /// - `Result<Vec<Vec<u8>>, String>` - One signature per request on success, or an error on failure.
+    pub fn ckb_sign_batch(
+        &self,
+        auth: AuthKey,
+        requests: Vec<(String, Vec<u8>)>,
+    ) -> Result<Vec<Vec<u8>>, String> {
+        Self::validate_auth(&auth)?;
+
+        tracing::info!(
+            "CKB batch signing (wallet_id={}, count={})",
+            self.wallet_id,
+            requests.len()
+        );
+
+        // Every account is resolved before the seed is decrypted, so an
+        // unknown one fails without touching the key.
+        let mut accounts = Vec::with_capacity(requests.len());
+        for (lock_args, _) in &requests {
+            let account = Self::get_account(self.wallet_id, lock_args)?.ok_or_else(|| {
+                tracing::error!("Account not found");
+                format!("Account not found: {}", lock_args)
+            })?;
+            accounts.push(account);
+        }
+
+        let payload = db::get_encrypted_seed(self.wallet_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| {
+                tracing::error!("Master seed not found");
+                "Master seed not found".to_string()
+            })?;
+        let seed = utilities::decrypt(&auth, payload)?;
+
+        accounts
+            .iter()
+            .zip(&requests)
+            .map(|(account, (_, message))| self.ckb_sign_with_seed(&seed, account, message))
+            .collect()
+    }
+
+    /// Signs `message` with `account`'s key derived from the decrypted
+    /// `seed`, in the quantum-resistant lock script's witness layout.
+    fn ckb_sign_with_seed(
+        &self,
+        seed: &[u8],
+        account: &SphincsPlusAccount,
+        message: &[u8],
+    ) -> Result<Vec<u8>, String> {
+        let (_, pri_key) = self.derive_spx_keys(seed, account.index)?;
         let config = &account.config;
 
         match self.variant {
