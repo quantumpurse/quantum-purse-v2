@@ -221,7 +221,7 @@ pub(crate) struct CurrentWallet {
 }
 
 /// Navigation modules listed in the left rail. Order here is the rail
-/// order and the 1–7 keyboard shortcut order.
+/// order and the 1–8 keyboard shortcut order.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum Tab {
     Dashboard,
@@ -231,11 +231,12 @@ pub(crate) enum Tab {
     Multisig,
     Wallets,
     Settings,
+    Governance,
 }
 
 impl Tab {
     /// All modules in rail / shortcut order.
-    pub(crate) const ALL: [Tab; 7] = [
+    pub(crate) const ALL: [Tab; 8] = [
         Tab::Dashboard,
         Tab::Transfer,
         Tab::DaoOperations,
@@ -243,6 +244,7 @@ impl Tab {
         Tab::Multisig,
         Tab::Wallets,
         Tab::Settings,
+        Tab::Governance,
     ];
 
     /// Full module name shown under its icon in the rail.
@@ -255,6 +257,7 @@ impl Tab {
             Tab::Multisig => "Multisig",
             Tab::Wallets => "Wallets",
             Tab::Settings => "Settings",
+            Tab::Governance => "Governance",
         }
     }
 }

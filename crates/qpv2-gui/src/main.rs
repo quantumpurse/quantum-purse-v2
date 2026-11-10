@@ -5,6 +5,7 @@
 
 mod cosign;
 mod fetcher;
+mod governance;
 mod palette;
 mod poller;
 mod qr_adoption;
@@ -233,6 +234,8 @@ pub(crate) struct App {
     // How the seed-export thread tells the main UI thread it is done. Some while
     // that thread owns the pinentry dialog; the overlay locks the wallet meanwhile.
     pub(crate) seed_export_dialog_done_rx: Option<mpsc::Receiver<Result<(), String>>>,
+    // ── DAO v2 address binding (Governance tab) ──
+    pub(crate) governance: governance::Governance,
     // ── Trezor link status (device-backed wallets only) ──
     // What the last probe saw. Never a live connection: the host opens a THP
     // session per operation, so this is polled presence, not a held link.
@@ -562,6 +565,7 @@ impl App {
             fido2_cosign_rx: None,
             fido2_export_rx: None,
             seed_export_dialog_done_rx: None,
+            governance: governance::Governance::new(),
             device_status: trezor_connect::DeviceStatus::Working,
             device_status_rx: None,
             device_status_probed_at: None,
@@ -667,6 +671,7 @@ impl eframe::App for App {
         self.poll_fido2_sign();
         self.poll_fido2_cosign();
         self.poll_fido2_export();
+        self.poll_governance();
 
         // Device link: probed on its own cadence, polled everywhere. Both are
         // no-ops unless the open wallet is device-backed.
@@ -720,6 +725,7 @@ impl eframe::App for App {
         self.show_wallet_modal(&ctx);
         self.show_multisig_modal(&ctx);
         self.show_dao_deposit_modal(&ctx);
+        self.show_governance_modal(&ctx);
         self.show_seed_export_blocking_overlay(&ctx);
 
         // The seed phrase pinentry dialog is a separate process with its own copy of
@@ -781,6 +787,7 @@ impl eframe::App for App {
             || self.fido2_cosign_rx.is_some()
             || self.fido2_export_rx.is_some()
             || self.seed_export_dialog_done_rx.is_some()
+            || self.governance.busy()
         {
             // A frame is what checks the channel, so the repaint rate is the
             // poll rate. These waits are human-paced — someone typing a PIN on

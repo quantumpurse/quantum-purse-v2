@@ -5,6 +5,7 @@ mod cosigner;
 mod cover;
 mod dao;
 mod dashboard;
+mod governance;
 mod hw_dropdown;
 mod main_stages;
 mod multisig;

@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added — GUI
+- Governance tab: bind this wallet's addresses to a CKB DAO v2 account with a binding API key from the DAO website. The wallet checks the server's event before signing (account key, account id, address list, time window, block height against its own node), signs every address after one authentication, checks the server's ack, and keeps a receipt under the data folder's `daov2/receipts`. Not available for Trezor wallets or wallets using the v1 address format.
+
 ## [2.0.0] - 2026-06-XX
 
 First major release. Adds the GUI and expands the CLI with multi-wallet support, hardware-backed authentication, and on-chain operations.

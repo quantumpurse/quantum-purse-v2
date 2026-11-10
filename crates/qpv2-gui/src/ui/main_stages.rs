@@ -107,18 +107,19 @@ impl App {
                             Tab::Multisig => self.show_multisig_tab(ui),
                             Tab::Wallets => self.show_wallets_tab(ui),
                             Tab::Settings => self.show_settings_tab(ui),
+                            Tab::Governance => self.show_governance_tab(ui),
                         }
                     });
             });
     }
 
-    /// Number keys 1–7 switch modules when no text field is focused and no
+    /// Number keys 1–8 switch modules when no text field is focused and no
     /// device task is waiting on the user (see `device_task_in_flight`).
     fn handle_module_shortcuts(&mut self, ctx: &egui::Context) {
         if ctx.memory(|m| m.focused().is_some()) || self.device_task_in_flight() {
             return;
         }
-        const KEYS: [egui::Key; 7] = [
+        const KEYS: [egui::Key; 8] = [
             egui::Key::Num1,
             egui::Key::Num2,
             egui::Key::Num3,
@@ -126,6 +127,7 @@ impl App {
             egui::Key::Num5,
             egui::Key::Num6,
             egui::Key::Num7,
+            egui::Key::Num8,
         ];
         for (key, tab) in KEYS.iter().zip(Tab::ALL) {
             if ctx.input(|i| i.key_pressed(*key)) && self.active_tab != tab {
@@ -1017,6 +1019,12 @@ fn paint_tab_icon(painter: &egui::Painter, tab: Tab, rect: egui::Rect, color: eg
             frame(13.0, 4.0, 4.0, 4.0);
             frame(7.0, 10.0, 4.0, 4.0);
             frame(15.0, 16.0, 4.0, 4.0);
+        }
+        // A ballot dropping into its box.
+        Tab::Governance => {
+            frame(4.0, 12.0, 16.0, 8.0);
+            line(&[(9.0, 12.0), (9.0, 4.0), (15.0, 4.0), (15.0, 12.0)]);
+            line(&[(10.5, 8.0), (11.7, 9.3), (13.6, 6.6)]);
         }
     }
 }
