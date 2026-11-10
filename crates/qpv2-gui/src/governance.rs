@@ -13,15 +13,15 @@ use qpv2_core::types::{AuthKey, AuthMethod, SingleSigConvention};
 use qpv2_core::KeyVault;
 
 use crate::types::Status;
-use crate::utils::lock_args_to_address;
+use crate::utils::{lock_args_to_address, save_with_dialog, UnsavedFile};
 use crate::wallet::{get_fido2_dek, spawn_fido2_job};
 use crate::App;
 
 /// What the binding asks the user to authenticate for.
 const AUTH_PURPOSE: &str = "bind addresses to your DAO v2 account";
 
-/// Binding state on `App`. The server URL survives wallet switches; the
-/// rest belongs to the wallet it was started in.
+/// Binding state on `App`. The server URL and an unsaved receipt survive
+/// wallet switches; the rest belongs to the wallet it was started in.
 pub(crate) struct Governance {
     /// Edit buffer for the DAO server URL; saved when Start succeeds.
     pub(crate) server_url: String,
@@ -33,6 +33,10 @@ pub(crate) struct Governance {
     pub(crate) bind_rx: Option<Receiver<Result<Bound, String>>>,
     /// Whether the binding in flight waits on a security key.
     pub(crate) bind_uses_fido2: bool,
+    /// The last binding's receipt until the user saves it: it is their
+    /// proof of the binding, so cancelling the Save dialog keeps it here.
+    pub(crate) unsaved_receipt: Option<UnsavedFile>,
+    /// Where the last receipt was saved.
     pub(crate) last_receipt: Option<PathBuf>,
 }
 
@@ -63,12 +67,14 @@ impl Governance {
             picker: None,
             bind_rx: None,
             bind_uses_fido2: false,
+            unsaved_receipt: None,
             last_receipt: None,
         }
     }
 
     /// Drops everything tied to the current wallet, including any job in
-    /// flight, so a late result cannot land in another wallet.
+    /// flight, so a late result cannot land in another wallet. An unsaved
+    /// receipt stays until the user saves it.
     pub(crate) fn reset(&mut self) {
         self.api_key.clear();
         self.prepare_rx = None;
@@ -88,14 +94,6 @@ fn settings_path() -> Result<PathBuf, String> {
     Ok(qpv2_core::db::get_data_dir()
         .map_err(|e| e.to_string())?
         .join("daov2.json"))
-}
-
-/// `<data dir>/daov2/receipts`, where binding receipts are kept.
-pub(crate) fn receipts_dir() -> Result<PathBuf, String> {
-    Ok(qpv2_core::db::get_data_dir()
-        .map_err(|e| e.to_string())?
-        .join("daov2")
-        .join("receipts"))
 }
 
 impl App {
@@ -122,6 +120,11 @@ impl App {
 
     /// Start: check the API key and read the account on a worker.
     pub(crate) fn start_governance_binding(&mut self) {
+        if self.governance.unsaved_receipt.is_some() {
+            self.status =
+                Status::Error("Save your last binding receipt before binding again.".to_string());
+            return;
+        }
         let api_key = self.governance.api_key.trim().to_string();
         if api_key.is_empty() {
             self.status = Status::Error("Paste the API key from the DAO website first.".into());
@@ -181,13 +184,6 @@ impl App {
                 return;
             }
         };
-        let receipts = match receipts_dir() {
-            Ok(d) => d,
-            Err(e) => {
-                self.status = Status::Error(e);
-                return;
-            }
-        };
         let vault = KeyVault::new(variant, self.wallet_id);
         let qp_client = self.qp_client.clone();
         let job = move |auth: AuthKey| {
@@ -211,7 +207,6 @@ impl App {
                         .ckb_sign_batch(auth, requests)
                         .map(|signatures| signatures.iter().map(hex::encode).collect())
                 },
-                &receipts,
             )
         };
 
@@ -260,6 +255,38 @@ impl App {
         }
     }
 
+    /// Asks where to save the binding receipt. Cancelling keeps it on the
+    /// tab to save later. `headline` (the binding's result, if this follows
+    /// one) leads the status line, so the result stays readable; `failed`
+    /// marks that result as an error.
+    pub(crate) fn save_governance_receipt(&mut self, headline: &str, failed: bool) {
+        let Some(file) = &self.governance.unsaved_receipt else {
+            return;
+        };
+        let (note, save_failed) = match save_with_dialog(file) {
+            Ok(Some(path)) => {
+                let note = format!("Receipt saved to {}.", path.display());
+                self.governance.unsaved_receipt = None;
+                self.governance.last_receipt = Some(path);
+                (note, false)
+            }
+            Ok(None) => (
+                "The receipt is not saved yet; save it from the Governance tab.".to_string(),
+                false,
+            ),
+            Err(e) => {
+                tracing::error!("{}", e);
+                (e, true)
+            }
+        };
+        let message = format!("{} {}", headline, note).trim().to_string();
+        self.status = if failed || save_failed {
+            Status::Error(message)
+        } else {
+            Status::Info(message)
+        };
+    }
+
     pub(crate) fn cancel_governance_binding(&mut self) {
         self.governance.picker = None;
         self.status = Status::Info("Address binding cancelled.".to_string());
@@ -296,11 +323,28 @@ impl App {
                     match result {
                         Ok(bound) => {
                             self.governance.api_key.clear();
-                            self.status = Status::Info(format!(
-                                "Bound {} address(es) to your DAO account.",
-                                bound.count
-                            ));
-                            self.governance.last_receipt = Some(bound.receipt);
+                            self.governance.unsaved_receipt = Some(UnsavedFile {
+                                name: bound.receipt.file_name,
+                                bytes: bound.receipt.json.into_bytes(),
+                            });
+                            self.governance.last_receipt = None;
+                            let (headline, failed) = match bound.ack_error {
+                                None => (
+                                    format!(
+                                        "Bound {} address(es) to your DAO account.",
+                                        bound.count
+                                    ),
+                                    false,
+                                ),
+                                Some(e) => (
+                                    format!(
+                                        "{} The binding may not be safely archived; keep the receipt.",
+                                        e
+                                    ),
+                                    true,
+                                ),
+                            };
+                            self.save_governance_receipt(&headline, failed);
                         }
                         Err(e) => {
                             tracing::error!("{}", e);

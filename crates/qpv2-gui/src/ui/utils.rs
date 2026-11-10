@@ -502,6 +502,26 @@ pub(crate) fn data_row_colored(
     });
 }
 
+/// "Not saved yet" line with a Save button, for a file the user should keep
+/// but has not saved (see `UnsavedFile`). `what` names the file in the
+/// line. Returns whether Save was clicked; the caller saves.
+pub(crate) fn unsaved_file_row(ui: &mut egui::Ui, colors: &AppColors, what: &str) -> bool {
+    let mut clicked = false;
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new(format!("Your {} is not saved yet.", what))
+                .size(11.5)
+                .color(colors.warn),
+        );
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            clicked = ui
+                .add(ghost_button(colors, "Save", egui::vec2(80.0, 24.0)))
+                .clicked();
+        });
+    });
+    clicked
+}
+
 /// Checkbox marking a mnemonic import as coming from the Quantum Purse
 /// v1 web wallet, which used a different single-sig address format.
 /// Shared by the setup screen and the import modal so the two entry

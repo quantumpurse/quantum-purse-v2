@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added — GUI
-- Governance tab: bind this wallet's addresses to a CKB DAO v2 account with a binding API key from the DAO website. The wallet checks the server's event before signing (account key, account id, address list, time window, block height against its own node), signs every address after one authentication, checks the server's ack, and keeps a receipt under the data folder's `daov2/receipts`. Not available for Trezor wallets or wallets using the v1 address format.
+- Governance tab: bind this wallet's addresses to a CKB DAO v2 account with a binding API key from the DAO website. The wallet checks the server's event before signing (account key, account id, address list, time window, block height against its own node), signs every address after one authentication, checks the server's ack, and asks where to save the receipt; a cancelled save stays on the tab until the receipt is saved. Not available for Trezor wallets or wallets using the v1 address format.
 
 ## [2.0.0] - 2026-06-XX
 

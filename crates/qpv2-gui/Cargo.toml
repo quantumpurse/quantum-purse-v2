@@ -29,6 +29,8 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 tracing-appender = "0.2"
 names = { version = "0.14.0", default-features = false }
+# The system's own Save dialog, for files the user keeps (e.g. receipts).
+rfd = "0.18"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 # Embeds the app icon (assets/icon/icon.ico) into the Windows .exe so it

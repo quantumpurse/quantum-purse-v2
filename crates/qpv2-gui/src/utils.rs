@@ -109,6 +109,26 @@ pub(crate) fn format_ckb_balance(shannons: u64) -> String {
     }
 }
 
+/// A file the user should keep, such as a binding receipt, held until they
+/// choose where it goes. The app never picks the location itself.
+pub(crate) struct UnsavedFile {
+    /// Suggested file name for the Save dialog.
+    pub(crate) name: String,
+    pub(crate) bytes: Vec<u8>,
+}
+
+/// Asks the user where to save `file` with the system's Save dialog, then
+/// writes it there. `Ok(None)` means the user cancelled. Blocks while the
+/// dialog is open, so call it from the UI thread on a user action.
+pub(crate) fn save_with_dialog(file: &UnsavedFile) -> Result<Option<std::path::PathBuf>, String> {
+    let Some(path) = rfd::FileDialog::new().set_file_name(&file.name).save_file() else {
+        return Ok(None);
+    };
+    std::fs::write(&path, &file.bytes)
+        .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+    Ok(Some(path))
+}
+
 /// Current Unix time in whole seconds (0 if the clock is pre-epoch).
 pub(crate) fn unix_now_secs() -> u64 {
     std::time::SystemTime::now()
