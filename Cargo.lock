@@ -1214,7 +1214,6 @@ name = "ckb-node"
 version = "0.1.0"
 dependencies = [
  "byteorder",
- "ckb-fips205-utils",
  "ckb-jsonrpc-types",
  "ckb-mock-tx-types",
  "ckb-sdk",

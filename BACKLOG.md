@@ -106,7 +106,9 @@ in `qpv2-core/src/types.rs`, reads `unsigned_tx` as a
 
 ## assemble_multisig_witness is in the wrong crate
 
-**Status:** Open
+**Status:** Fixed 2026-11-12 — it's now `MultisigConfig::assemble_multisig_witness`
+in `qpv2-core/src/types.rs`, returning plain error messages; `ckb-node` no
+longer depends on `ckb-fips205-utils`.
 
 **Problem:** `assemble_multisig_witness` lives in `ckb-node` but does pure in-memory witness assembly — no node interaction, no RPC. Callers write `ckb_node::assemble_multisig_witness(...)` which is semantically wrong. It also forces the function to use `NodeManagerError::RpcError` for validation errors that have nothing to do with RPC.
 

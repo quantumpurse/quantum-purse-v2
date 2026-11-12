@@ -1419,7 +1419,9 @@ fn handle_msig_submit(
     }
 
     println!("Assembling witness with {} signatures...", signatures.len());
-    let witness_lock = ckb_node::assemble_multisig_witness(request.multisig_config(), &signatures)
+    let witness_lock = request
+        .multisig_config()
+        .assemble_multisig_witness(&signatures)
         .map_err(|e| format!("Failed to assemble witness: {}", e))?;
 
     let unsigned_tx = request.unsigned_tx().clone();

@@ -805,16 +805,18 @@ impl App {
                 }
             };
 
-        let witness_lock =
-            match ckb_node::assemble_multisig_witness(request.multisig_config(), &signatures) {
-                Ok(w) => w,
-                Err(e) => {
-                    let msg = format!("Failed to assemble witness: {}", e);
-                    tracing::error!("{}", msg);
-                    self.tx_status = TransactionStatus::Error(msg);
-                    return;
-                }
-            };
+        let witness_lock = match request
+            .multisig_config()
+            .assemble_multisig_witness(&signatures)
+        {
+            Ok(w) => w,
+            Err(e) => {
+                let msg = format!("Failed to assemble witness: {}", e);
+                tracing::error!("{}", msg);
+                self.tx_status = TransactionStatus::Error(msg);
+                return;
+            }
+        };
 
         let signed_tx =
             match ckb_node::fill_witness(unsigned_tx, request.script_group_index(), witness_lock) {

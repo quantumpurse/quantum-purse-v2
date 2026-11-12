@@ -305,6 +305,83 @@ impl MultisigConfig {
             .args(Bytes::from(self.lock_script_args().as_bytes().to_vec()).pack())
             .build()
     }
+
+    /// Assembles the complete witness lock field for a multisig transaction.
+    ///
+    /// Takes the signatures made, each at its signer's position. Validates
+    /// that exactly M signatures are present, the first R signers have
+    /// signatures, and there are no duplicates.
+    ///
+    /// Returns the byte vector to be placed in `WitnessArgs.lock`.
+    pub fn assemble_multisig_witness(
+        &self,
+        signatures: &[MsigSignature],
+    ) -> Result<Vec<u8>, String> {
+        let n = self.signers().len();
+        let m = self.threshold() as usize;
+        let r = self.required_first_n() as usize;
+
+        if signatures.len() != m {
+            return Err(format!(
+                "Expected {} signatures (threshold), got {}.",
+                m,
+                signatures.len()
+            ));
+        }
+
+        let sig_indices: std::collections::HashSet<usize> =
+            signatures.iter().map(|s| s.signer_index).collect();
+        if sig_indices.len() != signatures.len() {
+            return Err("Duplicate signer indices in signatures.".to_string());
+        }
+
+        for i in 0..r {
+            if !sig_indices.contains(&i) {
+                return Err(format!(
+                    "Signer {} is required (required_first_n={}) but has no signature.",
+                    i, r
+                ));
+            }
+        }
+
+        for sig in signatures {
+            if sig.signer_index >= n {
+                return Err(format!(
+                    "Signer index {} out of range (N={}).",
+                    sig.signer_index, n
+                ));
+            }
+        }
+
+        let mut lock = Vec::new();
+        lock.extend_from_slice(&self.header_bytes());
+
+        for (i, signer) in self.signers().iter().enumerate() {
+            let param_id: ckb_fips205_utils::ParamId = (signer.variant() as u8)
+                .try_into()
+                .expect("SpxVariant and ParamId share discriminants");
+
+            if let Some(sig) = signatures.iter().find(|s| s.signer_index == i) {
+                let (_, expected_sig_len) = ckb_fips205_utils::verifying::lengths(param_id);
+                if sig.signature.len() != expected_sig_len {
+                    return Err(format!(
+                        "Signer {} signature length mismatch: expected {}, got {}.",
+                        i,
+                        expected_sig_len,
+                        sig.signature.len()
+                    ));
+                }
+                lock.push(ckb_fips205_utils::construct_flag(param_id, true));
+                lock.extend_from_slice(signer.pubkey());
+                lock.extend_from_slice(&sig.signature);
+            } else {
+                lock.push(ckb_fips205_utils::construct_flag(param_id, false));
+                lock.extend_from_slice(signer.pubkey());
+            }
+        }
+
+        Ok(lock)
+    }
 }
 
 /// Represents a SPHINCS+ account within the quantum-resistant lock script.

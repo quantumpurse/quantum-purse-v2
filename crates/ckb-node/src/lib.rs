@@ -12,8 +12,7 @@ use error::NodeManagerError;
 use process::{FullNodeProcess, LightClientProcess, NodeProcess};
 pub use wallet_helpers::queries::{DepositedCell, PreparedCell};
 pub use wallet_helpers::tx_builder::{
-    assemble_multisig_witness, fill_witness, QpDaoDepositBuilder, QpDaoPrepareBuilder,
-    QpDaoWithdrawBuilder, QpTransferBuilder,
+    fill_witness, QpDaoDepositBuilder, QpDaoPrepareBuilder, QpDaoWithdrawBuilder, QpTransferBuilder,
 };
 
 /// Single-owner slot for the local CKB node child process.
