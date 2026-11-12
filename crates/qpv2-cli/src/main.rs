@@ -774,16 +774,18 @@ fn handle_dao_deposit(
         .build_unsigned_deposit(&from_address, capacity_sh, fee_rate)
         .map_err(|e| format!("Failed to build DAO deposit: {}", e))?;
 
-    let input_cells =
-        ckb_node::wallet_helpers::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
-            .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
-
-    let message = qpv2_core::utilities::compute_signing_message(&unsigned_tx, &input_cells, 0)
-        .map_err(|e| format!("Failed to compute tx message: {}", e))?;
-
     let signed_tx = if KeyVault::is_hardware_wallet(wallet_id) {
         sign_with_trezor(&account, &qp_client, unsigned_tx)?
     } else {
+        println!("Fetching input cells...");
+        let input_cells =
+            ckb_node::wallet_helpers::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
+                .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
+
+        println!("Computing signing message...");
+        let message = qpv2_core::utilities::compute_signing_message(&unsigned_tx, &input_cells, 0)
+            .map_err(|e| format!("Failed to compute tx message: {}", e))?;
+
         let auth = resolve_auth_key(wallet_id, "deposit into Nervos DAO")?;
         let variant = KeyVault::get_spx_variant(wallet_id)?;
         let vault = KeyVault::new(variant, wallet_id);
@@ -830,16 +832,18 @@ fn handle_dao_prepare(
         .build_unsigned_dao_request_withdraw(&from_address, vec![out_point], fee_rate)
         .map_err(|e| format!("Failed to build DAO prepare: {}", e))?;
 
-    let input_cells =
-        ckb_node::wallet_helpers::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
-            .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
-
-    let message = qpv2_core::utilities::compute_signing_message(&unsigned_tx, &input_cells, 0)
-        .map_err(|e| format!("Failed to compute tx message: {}", e))?;
-
     let signed_tx = if KeyVault::is_hardware_wallet(wallet_id) {
         sign_with_trezor(&account, &qp_client, unsigned_tx)?
     } else {
+        println!("Fetching input cells...");
+        let input_cells =
+            ckb_node::wallet_helpers::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
+                .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
+
+        println!("Computing signing message...");
+        let message = qpv2_core::utilities::compute_signing_message(&unsigned_tx, &input_cells, 0)
+            .map_err(|e| format!("Failed to compute tx message: {}", e))?;
+
         let auth = resolve_auth_key(wallet_id, "request a DAO withdrawal")?;
         let variant = KeyVault::get_spx_variant(wallet_id)?;
         let vault = KeyVault::new(variant, wallet_id);
@@ -886,16 +890,18 @@ fn handle_dao_withdraw(
         .build_unsigned_dao_withdraw(&from_address, vec![out_point], fee_rate)
         .map_err(|e| format!("Failed to build DAO withdraw: {}", e))?;
 
-    let input_cells =
-        ckb_node::wallet_helpers::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
-            .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
-
-    let message = qpv2_core::utilities::compute_signing_message(&unsigned_tx, &input_cells, 0)
-        .map_err(|e| format!("Failed to compute tx message: {}", e))?;
-
     let signed_tx = if KeyVault::is_hardware_wallet(wallet_id) {
         sign_with_trezor(&account, &qp_client, unsigned_tx)?
     } else {
+        println!("Fetching input cells...");
+        let input_cells =
+            ckb_node::wallet_helpers::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
+                .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
+
+        println!("Computing signing message...");
+        let message = qpv2_core::utilities::compute_signing_message(&unsigned_tx, &input_cells, 0)
+            .map_err(|e| format!("Failed to compute tx message: {}", e))?;
+
         let auth = resolve_auth_key(wallet_id, "complete the DAO withdrawal")?;
         let variant = KeyVault::get_spx_variant(wallet_id)?;
         let vault = KeyVault::new(variant, wallet_id);
@@ -963,18 +969,18 @@ fn handle_transfer(
         .build_unsigned_transfer(&from_address, &to_address, capacity_sh, fee_rate, None)
         .map_err(|e| format!("Failed to build transaction: {}", e))?;
 
-    println!("Fetching input cells...");
-    let input_cells =
-        ckb_node::wallet_helpers::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
-            .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
-
-    println!("Computing signing message...");
-    let message = qpv2_core::utilities::compute_signing_message(&unsigned_tx, &input_cells, 0)
-        .map_err(|e| format!("Failed to compute tx message: {}", e))?;
-
     let signed_tx = if KeyVault::is_hardware_wallet(wallet_id) {
         sign_with_trezor(&account, &qp_client, unsigned_tx)?
     } else {
+        println!("Fetching input cells...");
+        let input_cells =
+            ckb_node::wallet_helpers::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
+                .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
+
+        println!("Computing signing message...");
+        let message = qpv2_core::utilities::compute_signing_message(&unsigned_tx, &input_cells, 0)
+            .map_err(|e| format!("Failed to compute tx message: {}", e))?;
+
         let auth = resolve_auth_key(wallet_id, "sign and send the transfer")?;
         let variant = KeyVault::get_spx_variant(wallet_id)?;
         let vault = KeyVault::new(variant, wallet_id);
