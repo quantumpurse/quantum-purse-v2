@@ -1288,19 +1288,45 @@ fn handle_msig_build_transfer(ctx: &MsigBuildCtx, to: &str, amount: &str) -> Res
     Ok(())
 }
 
-fn handle_msig_sign(wallet_id: u32, request_path: &str, output: &str) -> Result<(), String> {
+fn handle_msig_sign(
+    wallet_id: u32,
+    request_path: &str,
+    output: &str,
+    network: &str,
+) -> Result<(), String> {
+    let is_mainnet = match network {
+        "mainnet" => true,
+        "testnet" => false,
+        _ => {
+            return Err(format!(
+                "Invalid network '{}'. Use 'mainnet' or 'testnet'.",
+                network
+            ))
+        }
+    };
+
     let json = fs::read_to_string(request_path)
         .map_err(|e| format!("Failed to read request file: {}", e))?;
     let request: qpv2_core::types::SigningRequest =
-        serde_json::from_str(&json).map_err(|e| format!("Invalid signing request JSON: {}", e))?;
+        serde_json::from_str(&json).map_err(|e| format!("Signing request refused: {}", e))?;
 
-    println!("Transaction type: {}", request.metadata().tx_type);
-    println!("From: {}", request.metadata().from_address);
-    if let Some(ref to) = request.metadata().to_address {
-        println!("To: {}", to);
+    // The co-signer must know which network's coins the signature moves.
+    if request.is_mainnet() != is_mainnet {
+        return Err(format!(
+            "Signing request refused: it is for {}, but --network is {}.",
+            if request.is_mainnet() {
+                "mainnet"
+            } else {
+                "testnet"
+            },
+            network
+        ));
     }
-    if let Some(ref amount) = request.metadata().amount_ckb {
-        println!("Amount: {} CKB", amount);
+
+    // What the transaction does, built from the transaction itself rather
+    // than taken from the requester's description.
+    for line in request.summary().lines() {
+        println!("{}: {}", line.label, line.value);
     }
     println!(
         "Threshold: {}-of-{}",
@@ -1915,7 +1941,7 @@ fn main() -> Result<(), String> {
                     )?;
                 }
                 MsigCommands::Sign { request, output } => {
-                    handle_msig_sign(wallet_id, &request, &output)?;
+                    handle_msig_sign(wallet_id, &request, &output, &network)?;
                 }
                 MsigCommands::Submit { request, response } => {
                     handle_msig_submit(&request, &response, &network, &rpc_url)?;

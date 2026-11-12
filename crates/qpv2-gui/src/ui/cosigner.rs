@@ -416,9 +416,26 @@ impl App {
             if self.cosign_request_json.trim().is_empty() {
                 return;
             }
-            match serde_json::from_str::<qpv2_core::types::SigningRequest>(
+            let app_is_mainnet = self.qp_client.is_mainnet();
+            let checked = serde_json::from_str::<qpv2_core::types::SigningRequest>(
                 self.cosign_request_json.trim(),
-            ) {
+            )
+            .map_err(|e| e.to_string())
+            .and_then(|request| {
+                // The co-signer must know which network's coins the
+                // signature moves.
+                if request.is_mainnet() == app_is_mainnet {
+                    Ok(request)
+                } else {
+                    let network = |is_mainnet| if is_mainnet { "mainnet" } else { "testnet" };
+                    Err(format!(
+                        "this request is for {}, but the app is on {}.",
+                        network(request.is_mainnet()),
+                        network(app_is_mainnet)
+                    ))
+                }
+            });
+            match checked {
                 Ok(request) => {
                     egui::Frame::new()
                         .stroke(egui::Stroke::new(1.0, self.colors.border))
@@ -432,22 +449,15 @@ impl App {
                             );
                             ui.add_space(8.0);
 
-                            detail_field(ui, &self.colors, "TYPE", &request.metadata().tx_type);
-                            detail_field(
-                                ui,
-                                &self.colors,
-                                "FROM",
-                                &request.metadata().from_address,
-                            );
-                            if let Some(ref to) = request.metadata().to_address {
-                                detail_field(ui, &self.colors, "TO", to);
-                            }
-                            if let Some(ref amount) = request.metadata().amount_ckb {
+                            // What the transaction does, built from the
+                            // transaction itself rather than taken from the
+                            // requester's description.
+                            for line in request.summary().lines() {
                                 detail_field(
                                     ui,
                                     &self.colors,
-                                    "AMOUNT",
-                                    &format!("{} CKB", amount),
+                                    &line.label.to_uppercase(),
+                                    &line.value,
                                 );
                             }
                             detail_field(
@@ -492,7 +502,7 @@ impl App {
                                 .color(self.colors.danger),
                         );
                         ui.label(
-                            egui::RichText::new(format!("Invalid JSON: {}", e))
+                            egui::RichText::new(format!("Refused: {}", e))
                                 .size(11.0)
                                 .color(self.colors.danger),
                         );

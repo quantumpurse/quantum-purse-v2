@@ -318,7 +318,8 @@ pub struct SphincsPlusAccount {
     pub config: MultisigConfig,
 }
 
-/// Human-readable metadata so co-signers can verify what they're signing.
+/// The requester's own description of a transaction, which nothing checks.
+/// Co-signers see the summary built from the transaction instead.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SigningMetadata {
     /// Sender address (bech32m).
@@ -360,7 +361,8 @@ pub struct SigningRequest {
     script_group_index: usize,
     /// Whether this targets mainnet or testnet.
     is_mainnet: bool,
-    /// Human-readable summary for co-signer verification.
+    /// The requester's own description, which nothing checks. Co-signers see
+    /// `summary` instead.
     metadata: SigningMetadata,
     /// The full header of every header dependency, in order, or none. A DAO
     /// withdrawal needs them: its interest comes from two of them.
@@ -587,6 +589,77 @@ pub enum Recipient {
     Sender,
     /// Anyone else, as a full address.
     Other(String),
+}
+
+/// One line of a summary, as a co-signer reads it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SummaryLine {
+    pub label: String,
+    pub value: String,
+}
+
+impl MsigRequestSummary {
+    /// The lines a co-signer reads before signing: where the coins come
+    /// from, each created cell in output order, then the interest and the
+    /// fee. The CLI and the app both show these, so a co-signer reads the
+    /// same words in either.
+    pub fn lines(&self) -> Vec<SummaryLine> {
+        // A DAO cell names its owner either way: a deposit for someone else
+        // is easy to mistake for one's own.
+        let owner = |recipient: &Recipient| match recipient {
+            Recipient::Sender => "this multisig".to_string(),
+            Recipient::Other(address) => format!("{} (not this multisig)", address),
+        };
+
+        let mut lines = vec![SummaryLine {
+            label: "From".to_string(),
+            value: self.from.clone(),
+        }];
+        for cell in &self.to {
+            let amount = ckb_amount(cell.shannons);
+            let (label, value) = match (cell.kind, &cell.recipient) {
+                (CellKind::Plain, Recipient::Sender) => {
+                    (format!("Change {} to", amount), owner(&cell.recipient))
+                }
+                (CellKind::Plain, Recipient::Other(address)) => {
+                    (format!("Send {} to", amount), address.clone())
+                }
+                (CellKind::DaoDeposit, recipient) => {
+                    (format!("DAO deposit {} for", amount), owner(recipient))
+                }
+                (CellKind::DaoWithdrawalRequest, recipient) => (
+                    format!("DAO withdrawal request {} for", amount),
+                    owner(recipient),
+                ),
+            };
+            lines.push(SummaryLine { label, value });
+        }
+        if self.interest > 0 {
+            lines.push(SummaryLine {
+                label: "Interest".to_string(),
+                value: ckb_amount(self.interest),
+            });
+        }
+        lines.push(SummaryLine {
+            label: "Fee".to_string(),
+            value: ckb_amount(self.fee),
+        });
+        lines
+    }
+}
+
+/// An amount in CKB, exact to the shannon, so a co-signer never sees a fee
+/// rounded away: 1 shannon reads "0.00000001 CKB".
+fn ckb_amount(shannons: u64) -> String {
+    const SHANNONS_PER_CKB: u64 = 100_000_000;
+    let whole = shannons / SHANNONS_PER_CKB;
+    let fraction = shannons % SHANNONS_PER_CKB;
+    if fraction == 0 {
+        format!("{} CKB", whole)
+    } else {
+        let digits = format!("{:08}", fraction);
+        format!("{}.{} CKB", whole, digits.trim_end_matches('0'))
+    }
 }
 
 /// Decodes what `tx` does. `lock` is the request's multisig lock, which
@@ -1540,6 +1613,46 @@ mod tests {
             assert!(
                 err.contains("Header 1 does not match the transaction's header dependency 1"),
                 "{err}"
+            );
+        }
+
+        /// The co-signer reads amounts exact to the shannon, so a small fee
+        /// or interest is never rounded away.
+        #[test]
+        fn dao_withdrawal_lines_show_exact_amounts() {
+            let request = withdrawal(20_000_500_000, &withdrawal_headers()).unwrap();
+            let line = |label: &str, value: &str| SummaryLine {
+                label: label.to_string(),
+                value: value.to_string(),
+            };
+            assert_eq!(
+                request.summary().lines(),
+                vec![
+                    line("From", &address(&lock_of(&multisig()))),
+                    line("Change 200.005 CKB to", "this multisig"),
+                    line("Interest", "0.0086 CKB"),
+                    line("Fee", "0.0036 CKB"),
+                ]
+            );
+        }
+
+        /// A deposit for someone else says so, so the co-signer can't take
+        /// it for the multisig's own.
+        #[test]
+        fn dao_deposit_for_a_friend_reads_as_not_this_multisig() {
+            let config = multisig();
+            let request = request(
+                vec![plain_cell(200, lock_of(&config))],
+                vec![dao_cell(199, friend(), 0)],
+                &config,
+            )
+            .unwrap();
+            assert_eq!(
+                request.summary().lines()[1],
+                SummaryLine {
+                    label: "DAO deposit 199 CKB for".to_string(),
+                    value: format!("{} (not this multisig)", address(&friend())),
+                }
             );
         }
     }

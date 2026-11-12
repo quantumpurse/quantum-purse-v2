@@ -79,7 +79,14 @@
 
 ## Co-signer does not verify signing message independently
 
-**Status:** Open
+**Status:** Fixed 2026-11-12 — reading a request runs core's checks
+(`TryFrom<ReprSigningRequest>` in `qpv2-core/src/types.rs`): it recomputes
+the signing message from the transaction and its spent cells and refuses a
+mismatch, along with any spend outside the multisig or of cells other than
+plain and Nervos DAO. The CLI's `msig sign` and the app's co-sign screen then
+show the summary built from the transaction (`MsigRequestSummary::lines`)
+instead of the requester's description, and refuse a request for the other
+network.
 
 **Problem:** The co-signer signing flow (both GUI `co_sign` and CLI `msig sign`) signs the `signing_message` from the `SigningRequest` JSON without recomputing it from `unsigned_tx` + `input_cells`. A malicious initiator could craft a valid transaction (e.g., sending funds to an attacker address) while displaying fake metadata ("10 CKB to Alice"). The co-signer signs the real transaction without knowing what it does. On-chain verification passes because the signature matches the actual transaction.
 
