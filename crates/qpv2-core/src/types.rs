@@ -8,8 +8,8 @@ use ckb_mock_tx_types::{MockInput, ReprMockInput};
 use ckb_sdk::constants::DAO_TYPE_HASH;
 use ckb_types::{
     bytes::Bytes,
-    core::{ScriptHashType, TransactionView},
-    packed::{CellOutput, Script},
+    core::{Capacity, HeaderView, ScriptHashType, TransactionView},
+    packed::{Byte32, CellOutput, Script, WitnessArgs},
     prelude::*,
     H256,
 };
@@ -362,6 +362,9 @@ pub struct SigningRequest {
     is_mainnet: bool,
     /// Human-readable summary for co-signer verification.
     metadata: SigningMetadata,
+    /// The full header of every header dependency, in order, or none. A DAO
+    /// withdrawal needs them: its interest comes from two of them.
+    headers: Vec<HeaderView>,
     /// What the transaction does, decoded from the transaction itself. Not
     /// part of the JSON: it is worked out again whenever a request is read.
     summary: MsigRequestSummary,
@@ -382,6 +385,7 @@ impl fmt::Debug for SigningRequest {
             .field("script_group_index", &self.script_group_index)
             .field("is_mainnet", &self.is_mainnet)
             .field("metadata", &self.metadata)
+            .field("headers", &format_args!("{} headers", self.headers.len()))
             .field("summary", &self.summary)
             .finish()
     }
@@ -402,6 +406,9 @@ struct ReprSigningRequest {
     script_group_index: usize,
     is_mainnet: bool,
     metadata: SigningMetadata,
+    /// Absent in requests that need no headers.
+    #[serde(default)]
+    headers: Vec<ckb_jsonrpc_types::HeaderView>,
 }
 
 impl TryFrom<ReprSigningRequest> for SigningRequest {
@@ -430,6 +437,44 @@ impl TryFrom<ReprSigningRequest> for SigningRequest {
         let unsigned_tx = ckb_types::packed::Transaction::from(repr.unsigned_tx).into_view();
         let input_cells: Vec<MockInput> =
             repr.input_cells.into_iter().map(MockInput::from).collect();
+
+        // The summary walks outputs and their data in pairs, so an output
+        // without data would be left off it and out of the fee. The chain
+        // refuses such a transaction too (CKB's `OutputsDataVerifier`).
+        let outputs = unsigned_tx.outputs().len();
+        let outputs_data = unsigned_tx.outputs_data().len();
+        if outputs != outputs_data {
+            return Err(format!(
+                "The request's transaction has {} outputs but {} output data entries.",
+                outputs, outputs_data
+            ));
+        }
+
+        // Each header must hash to the header dependency at its position, so
+        // the requester can't change what a header says. Reading a header
+        // works out its hash from its contents, never from the JSON's `hash`
+        // field. Whether the block is really on the chain, the chain checks.
+        let headers: Vec<HeaderView> = repr.headers.into_iter().map(HeaderView::from).collect();
+        if !headers.is_empty() {
+            let deps: Vec<Byte32> = unsigned_tx.header_deps().into_iter().collect();
+            if headers.len() != deps.len() {
+                return Err(format!(
+                    "The request carries {} headers for {} header dependencies.",
+                    headers.len(),
+                    deps.len()
+                ));
+            }
+            if let Some(i) = headers
+                .iter()
+                .zip(&deps)
+                .position(|(header, dep)| header.hash() != *dep)
+            {
+                return Err(format!(
+                    "Header {} does not match the transaction's header dependency {}.",
+                    i, i
+                ));
+            }
+        }
 
         // Every input must be locked by this multisig, on the request's
         // network. The signed hash doesn't name the lock, so this signature
@@ -478,7 +523,13 @@ impl TryFrom<ReprSigningRequest> for SigningRequest {
             );
         }
 
-        let summary = summarize(&unsigned_tx, &input_cells, &msig_lock, repr.is_mainnet)?;
+        let summary = summarize(
+            &unsigned_tx,
+            &input_cells,
+            &headers,
+            &msig_lock,
+            repr.is_mainnet,
+        )?;
 
         Ok(SigningRequest {
             version: repr.version,
@@ -489,6 +540,7 @@ impl TryFrom<ReprSigningRequest> for SigningRequest {
             script_group_index: repr.script_group_index,
             is_mainnet: repr.is_mainnet,
             metadata: repr.metadata,
+            headers,
             summary,
         })
     }
@@ -502,10 +554,12 @@ pub struct MsigRequestSummary {
     pub from: String,
     /// One line per output, in output order.
     pub to: Vec<CreatedCell>,
-    /// What goes in minus what comes out, in shannons. `None` when the
-    /// transaction completes a DAO withdrawal: its payout includes interest,
-    /// which only the deposit's headers tell.
-    pub fee: Option<u64>,
+    /// What goes in minus what comes out, in shannons. A withdrawal request
+    /// being completed counts with its interest, as the chain counts it.
+    pub fee: u64,
+    /// What completing a DAO withdrawal earns on top of the deposit, in
+    /// shannons; 0 for any other transaction.
+    pub interest: u64,
 }
 
 /// One output of a signing request's transaction.
@@ -542,6 +596,7 @@ pub enum Recipient {
 fn summarize(
     tx: &TransactionView,
     input_cells: &[MockInput],
+    headers: &[HeaderView],
     msig_lock: &Script,
     is_mainnet: bool,
 ) -> Result<MsigRequestSummary, String> {
@@ -573,8 +628,8 @@ fn summarize(
     }
 
     let mut input_capacity: u64 = 0;
-    let mut completes_withdrawal = false;
-    for mock_input in input_cells {
+    let mut withdrawal_requests = Vec::new();
+    for (i, mock_input) in input_cells.iter().enumerate() {
         let shannons: u64 = mock_input.output.capacity().unpack();
         input_capacity = input_capacity
             .checked_add(shannons)
@@ -583,23 +638,116 @@ fn summarize(
         // plain cell and DAO cell. So if the input is not a plain cell, it must be a DAO cell.
         let is_dao = mock_input.output.type_().to_opt().is_some();
         if is_dao && mock_input.data.iter().any(|byte| *byte != 0) {
-            completes_withdrawal = true;
+            withdrawal_requests.push(i);
         }
     }
-    let fee = if completes_withdrawal {
-        None
-    } else {
-        let fee = input_capacity
-            .checked_sub(output_capacity)
-            .ok_or_else(|| "The request's outputs hold more CKB than its inputs.".to_string())?;
-        Some(fee)
+
+    // A withdrawal request being completed is worth its deposit plus the
+    // interest, which the chain adds to what the transaction may pay out.
+    let interest = match withdrawal_requests.as_slice() {
+        [] => 0,
+        [i] => withdrawal_interest(tx, *i, &input_cells[*i], headers)?,
+        _ => {
+            return Err(
+                "This wallet only supports completing one DAO withdrawal request per \
+                 transaction."
+                    .to_string(),
+            )
+        }
     };
+    let fee = input_capacity
+        .checked_add(interest)
+        .and_then(|available| available.checked_sub(output_capacity))
+        .ok_or_else(|| "The request's outputs hold more CKB than its inputs.".to_string())?;
 
     Ok(MsigRequestSummary {
         from: address_of(msig_lock, is_mainnet),
         to,
         fee,
+        interest,
     })
+}
+
+/// The interest a withdrawal request earns when the transaction completes
+/// it, worked out as CKB does (`DaoCalculator::calculate_maximum_withdraw`).
+///
+/// `headers` must be exactly two: the deposit's block, which the input's
+/// witness names, and the withdrawal request's block, the other one. With
+/// more, nothing tells which is the withdrawal request's. The arithmetic is
+/// checked: a header only has to match its hash, so its numbers may be made
+/// up.
+fn withdrawal_interest(
+    tx: &TransactionView,
+    input: usize,
+    withdrawal_request: &MockInput,
+    headers: &[HeaderView],
+) -> Result<u64, String> {
+    if headers.len() != 2 {
+        return Err(
+            "This wallet only supports completing a DAO withdrawal when the signing \
+             request carries exactly two headers: the deposit's and the withdrawal \
+             request's."
+                .to_string(),
+        );
+    }
+
+    // The witness names the deposit header by its position.
+    let deposit_index = tx
+        .witnesses()
+        .get(input)
+        .and_then(|witness| WitnessArgs::from_slice(&witness.raw_data()).ok())
+        .and_then(|witness| witness.input_type().to_opt())
+        .and_then(|index| <[u8; 8]>::try_from(index.raw_data().as_ref()).ok())
+        .map(u64::from_le_bytes)
+        .ok_or_else(|| "The withdrawal's witness doesn't name its deposit header.".to_string())?;
+    let (deposit, request) = match deposit_index {
+        0 => (&headers[0], &headers[1]),
+        1 => (&headers[1], &headers[0]),
+        _ => return Err("The withdrawal's witness names a header it doesn't carry.".to_string()),
+    };
+
+    // `is_plain_or_dao` has already made the data 8 bytes: the deposit's
+    // block number.
+    let mut deposit_block = [0u8; 8];
+    deposit_block.copy_from_slice(&withdrawal_request.data);
+    if deposit.number() != u64::from_le_bytes(deposit_block) {
+        return Err("The deposit header isn't from the block the deposit was made in.".to_string());
+    }
+    if deposit.number() >= request.number() {
+        return Err("The withdrawal request's header is not after the deposit's.".to_string());
+    }
+
+    let deposit_rate = accumulated_rate(deposit);
+    let request_rate = accumulated_rate(request);
+    if deposit_rate == 0 {
+        return Err("The deposit header has no accumulated rate.".to_string());
+    }
+
+    let invalid = || "The withdrawal request's capacity is invalid.".to_string();
+    let capacity: u64 = withdrawal_request.output.capacity().unpack();
+    let data_capacity = Capacity::bytes(withdrawal_request.data.len()).map_err(|_| invalid())?;
+    let occupied = withdrawal_request
+        .output
+        .occupied_capacity(data_capacity)
+        .map_err(|_| invalid())?
+        .as_u64();
+    let counted = capacity.checked_sub(occupied).ok_or_else(invalid)?;
+    let earned = u128::from(counted) * u128::from(request_rate) / u128::from(deposit_rate);
+    let maximum = u64::try_from(earned)
+        .ok()
+        .and_then(|earned| earned.checked_add(occupied))
+        .ok_or_else(invalid)?;
+    maximum.checked_sub(capacity).ok_or_else(|| {
+        "The withdrawal request's header has a lower rate than the deposit's.".to_string()
+    })
+}
+
+/// A header's accumulated rate: bytes 8 to 16 of its 32-byte DAO field.
+fn accumulated_rate(header: &HeaderView) -> u64 {
+    let dao: [u8; 32] = header.dao().unpack();
+    let mut rate = [0u8; 8];
+    rate.copy_from_slice(&dao[8..16]);
+    u64::from_le_bytes(rate)
 }
 
 /// Whether a cell is plain (no type script, no data) or a Nervos DAO cell
@@ -632,6 +780,7 @@ impl From<SigningRequest> for ReprSigningRequest {
             script_group_index: request.script_group_index,
             is_mainnet: request.is_mainnet,
             metadata: request.metadata,
+            headers: request.headers.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -643,6 +792,10 @@ impl SigningRequest {
     /// a co-signer needs to verify and sign the transaction. The result goes
     /// through the same checks as a request read from JSON, so what this
     /// wallet builds is always what a co-signer can read.
+    ///
+    /// `headers` are the full headers of the transaction's header
+    /// dependencies, in order, or none. Completing a DAO withdrawal needs
+    /// them, so the co-signer can see its interest and fee.
     pub fn new(
         tx: &TransactionView,
         input_cells: &[MockInput],
@@ -650,6 +803,7 @@ impl SigningRequest {
         script_group_index: usize,
         is_mainnet: bool,
         metadata: SigningMetadata,
+        headers: &[HeaderView],
     ) -> Result<Self, String> {
         let signing_message = compute_signing_message(tx, input_cells, script_group_index)?;
 
@@ -670,6 +824,7 @@ impl SigningRequest {
             script_group_index,
             is_mainnet,
             metadata,
+            headers: headers.iter().cloned().map(Into::into).collect(),
         })
     }
 
@@ -946,7 +1101,7 @@ mod tests {
         use crate::constants::{CKB_TESTNET_CODE_HASH, CKB_TESTNET_HASH_TYPE};
         use ckb_types::{
             bytes::Bytes,
-            core::TransactionBuilder,
+            core::{EpochNumberWithFraction, HeaderBuilder, TransactionBuilder},
             packed::{CellInput, CellOutput, OutPoint, Script, WitnessArgs},
         };
 
@@ -1056,7 +1211,7 @@ mod tests {
                 amount_ckb: None,
                 tx_type: "Transfer".to_string(),
             };
-            SigningRequest::new(&tx, &input_cells, config, 0, false, metadata)
+            SigningRequest::new(&tx, &input_cells, config, 0, false, metadata, &[])
         }
 
         /// A request to send 100 CKB to someone out of plain `cells`.
@@ -1250,7 +1405,8 @@ mod tests {
                             shannons: 99 * CKB,
                         },
                     ],
-                    fee: Some(CKB),
+                    fee: CKB,
+                    interest: 0,
                 }
             );
         }
@@ -1295,6 +1451,100 @@ mod tests {
                     recipient: Recipient::Other(address(&friend())),
                     shannons: 199 * CKB,
                 }
+            );
+        }
+
+        /// A header at block `number` whose accumulated rate is `rate`. The
+        /// builder also wants a difficulty and a well-formed epoch.
+        fn header(number: u64, rate: u64) -> HeaderView {
+            let mut dao = [0u8; 32];
+            dao[8..16].copy_from_slice(&rate.to_le_bytes());
+            HeaderBuilder::default()
+                .number(number)
+                .dao(dao.pack())
+                .compact_target(1u32)
+                .epoch(EpochNumberWithFraction::new(1, 0, 1).full_value())
+                .build()
+        }
+
+        /// The deposit's header (block 1,000, rate 1.0) and its withdrawal
+        /// request's (block 2,000, rate 1.0001), in that order.
+        fn withdrawal_headers() -> Vec<HeaderView> {
+            vec![
+                header(1_000, 10_000_000_000_000_000),
+                header(2_000, 10_001_000_000_000_000),
+            ]
+        }
+
+        /// A request completing the withdrawal of a 200 CKB deposit made in
+        /// block 1,000, paying `payout` shannons back to the multisig.
+        fn withdrawal(payout: u64, headers: &[HeaderView]) -> Result<SigningRequest, String> {
+            let config = multisig();
+            let (request_cell, data) = dao_cell(200, lock_of(&config), 1_000);
+            let mut builder = TransactionBuilder::default()
+                .input(CellInput::new(OutPoint::new([1u8; 32].pack(), 0), 0))
+                .output(
+                    CellOutput::new_builder()
+                        .capacity(payout)
+                        .lock(lock_of(&config))
+                        .build(),
+                )
+                .output_data(Bytes::new().pack());
+            for header in headers {
+                builder = builder.header_dep(header.hash());
+            }
+            // The witness points at the deposit header: header dependency 0.
+            let tx = builder
+                .witness(
+                    WitnessArgs::new_builder()
+                        .lock(Some(Bytes::from(vec![0u8; 16])).pack())
+                        .input_type(Some(Bytes::from(0u64.to_le_bytes().to_vec())).pack())
+                        .build()
+                        .as_bytes()
+                        .pack(),
+                )
+                .build();
+            let input_cells = vec![MockInput {
+                input: tx.inputs().get(0).unwrap(),
+                output: request_cell,
+                data,
+                header: None,
+            }];
+            let metadata = SigningMetadata {
+                from_address: String::new(),
+                to_address: None,
+                amount_ckb: None,
+                tx_type: "DAO Withdraw".to_string(),
+            };
+            SigningRequest::new(&tx, &input_cells, &config, 0, false, metadata, headers)
+        }
+
+        /// The 200 CKB cell occupies 114 CKB, so 86 CKB earn interest: at a
+        /// rate going from 1.0 to 1.0001 that's 0.0086 CKB. Paying out
+        /// 200.005 CKB leaves 0.0036 CKB as the fee.
+        #[test]
+        fn dao_withdrawal_interest_and_fee_come_from_its_two_headers() {
+            let summary = withdrawal(20_000_500_000, &withdrawal_headers())
+                .unwrap()
+                .summary()
+                .clone();
+            assert_eq!((summary.interest, summary.fee), (860_000, 360_000));
+        }
+
+        /// A requester who swaps in a header with a lower rate would make
+        /// the fee look smaller than it is. That header no longer hashes to
+        /// the transaction's header dependency.
+        #[test]
+        fn dao_withdrawal_with_a_doctored_header_is_refused() {
+            let request = withdrawal(20_000_500_000, &withdrawal_headers()).unwrap();
+            let mut json = serde_json::to_value(request).unwrap();
+            let doctored = header(2_000, 10_000_500_000_000_000);
+            json["headers"][1] =
+                serde_json::to_value(ckb_jsonrpc_types::HeaderView::from(doctored)).unwrap();
+            let err = read(json).unwrap_err();
+            assert!(
+                err.contains("Header 1 does not match the transaction's header dependency 1"),
+                "{err}"
             );
         }
     }

@@ -1167,6 +1167,7 @@ fn handle_msig_build_dao(
         0,
         is_mainnet,
         metadata,
+        &[],
     )
     .map_err(|e| format!("Failed to build signing request: {}", e))?;
 
@@ -1253,6 +1254,7 @@ fn handle_msig_build_transfer(ctx: &MsigBuildCtx, to: &str, amount: &str) -> Res
         0,
         is_mainnet,
         metadata,
+        &[],
     )
     .map_err(|e| format!("Failed to build signing request: {}", e))?;
 

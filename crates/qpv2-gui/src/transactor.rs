@@ -103,6 +103,7 @@ fn sign_transaction(
             amount_ckb: None,
             tx_type: kind.label().to_string(),
         },
+        &[],
     )
     .map_err(|e| format!("Failed to build signing request: {}", e))?;
 
