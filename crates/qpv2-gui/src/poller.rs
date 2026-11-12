@@ -424,10 +424,11 @@ impl App {
         })
         .map(|store| store.records)
         .unwrap_or_default();
+        // The file holds only confirmed records, so its highest block is
+        // the sync floor.
         self.confirmed_watermark = self
             .tx_history
             .iter()
-            .filter(|r| !r.is_pending)
             .map(|r| r.block_number)
             .max()
             .unwrap_or(0);

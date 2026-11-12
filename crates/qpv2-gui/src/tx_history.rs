@@ -12,8 +12,7 @@ use std::io::{Read, Write};
 
 /// On-disk schema. The incremental-sync watermark is derivable from
 /// `records` (max `block_number` among committed rows), so it isn't
-/// stored separately. Old files that include a `watermark` field still
-/// load cleanly — serde ignores unknown fields by default.
+/// stored separately.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct TxHistoryStore {
     pub records: Vec<TxRecord>,

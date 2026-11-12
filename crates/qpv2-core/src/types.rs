@@ -406,8 +406,6 @@ struct ReprSigningRequest {
     script_group_index: usize,
     is_mainnet: bool,
     metadata: SigningMetadata,
-    /// Absent in requests that need no headers.
-    #[serde(default)]
     headers: Vec<ckb_jsonrpc_types::HeaderView>,
 }
 
@@ -979,13 +977,10 @@ pub struct WalletEntry {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct WalletInfo {
-    #[serde(default)]
     pub name: String,
     pub spx_variant: SpxVariant,
-    #[serde(default)]
     pub auth_method: AuthMethod,
     /// Single-sig header convention for every account in this wallet.
-    #[serde(default)]
     pub single_sig_convention: SingleSigConvention,
 }
 

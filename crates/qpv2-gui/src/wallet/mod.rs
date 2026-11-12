@@ -494,13 +494,10 @@ impl App {
         match TxHistoryStore::load(self.wallet_id, self.qp_client.config().network.tag()) {
             Ok(Some(store)) => {
                 // The file holds only confirmed records, so its highest
-                // block is the sync floor. Pending rows are skipped
-                // defensively — files written by older builds may
-                // contain them.
+                // block is the sync floor.
                 self.confirmed_watermark = store
                     .records
                     .iter()
-                    .filter(|r| !r.is_pending)
                     .map(|r| r.block_number)
                     .max()
                     .unwrap_or(0);

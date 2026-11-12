@@ -90,7 +90,6 @@ struct CredentialFile {
     /// Hex, 32 bytes: the X25519 static private key identifying this host.
     host_privkey: String,
     /// One entry per paired device.
-    #[serde(default)]
     credentials: Vec<CredentialEntry>,
 }
 
