@@ -87,7 +87,11 @@
 
 ## SigningRequest uses serde_json::Value for unsigned_tx
 
-**Status:** Open
+**Status:** Fixed 2026-11-02 — a request's JSON form, `ReprSigningRequest`
+in `qpv2-core/src/types.rs`, reads `unsigned_tx` as a
+`ckb_jsonrpc_types::Transaction` and `input_cells` as
+`ckb_mock_tx_types::ReprMockInput`, each naming the input that spends it;
+`SigningRequest` itself holds the native CKB types.
 
 **Problem:** `SigningRequest.unsigned_tx` is typed as `serde_json::Value` instead of `ckb_jsonrpc_types::Transaction`. This loses type safety and requires an extra `serde_json::from_value` conversion when deserializing. The `Value` type was chosen to avoid adding `ckb-jsonrpc-types` to `qpv2-core`, but that crate is already pulled in transitively.
 
