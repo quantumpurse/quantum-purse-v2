@@ -23,19 +23,20 @@ impl App {
         };
 
         match rx.try_recv() {
-            Ok(Ok((kind, unsigned_tx, input_cells, lock_args))) => {
+            Ok(Ok((kind, unsigned_tx, input_cells, headers, lock_args))) => {
                 self.transaction_build_rx = None;
                 self.tx_status = TransactionStatus::AwaitingSignature;
 
                 match &self.auth_method {
                     Some(AuthMethod::Password) | Some(AuthMethod::Keychain) => {
-                        self.sign_and_broadcast(kind, unsigned_tx, input_cells, lock_args);
+                        self.sign_and_broadcast(kind, unsigned_tx, input_cells, headers, lock_args);
                     }
                     Some(AuthMethod::Fido2 { .. }) => {
                         self.sign_and_broadcast_with_fido2(
                             kind,
                             unsigned_tx,
                             input_cells,
+                            headers,
                             lock_args,
                         );
                     }

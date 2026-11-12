@@ -54,12 +54,14 @@ impl TransactionKind {
     }
 }
 
-/// Result type for transaction building (unsigned tx, input cells, lock_args).
+/// Result type for transaction building (unsigned tx, input cells, the
+/// headers a DAO withdrawal needs or none, lock_args).
 pub(crate) type TxBuildResult = Result<
     (
         TransactionKind,
         ckb_types::core::TransactionView,
         Vec<ckb_mock_tx_types::MockInput>,
+        Vec<ckb_types::core::HeaderView>,
         String,
     ),
     String,

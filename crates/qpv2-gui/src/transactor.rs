@@ -35,6 +35,7 @@ fn check_qr_lock_dep_ready(qp_client: &QpClient) -> Result<(), String> {
 /// each signature. A single-sig transaction comes back ready to broadcast; a
 /// multisig one comes back with this wallet's signatures and the request to
 /// send its co-signers. Touches no UI state, so it can run on a worker.
+#[allow(clippy::too_many_arguments)]
 fn sign_transaction(
     vault: &KeyVault,
     mut unlock: impl FnMut(&str) -> Result<AuthKey, String>,
@@ -42,6 +43,7 @@ fn sign_transaction(
     kind: TransactionKind,
     unsigned_tx: ckb_types::core::TransactionView,
     input_cells: &[ckb_mock_tx_types::MockInput],
+    headers: &[ckb_types::core::HeaderView],
     is_mainnet: bool,
 ) -> Result<SignedTx, String> {
     tracing::info!(
@@ -103,7 +105,7 @@ fn sign_transaction(
             amount_ckb: None,
             tx_type: kind.label().to_string(),
         },
-        &[],
+        headers,
     )
     .map_err(|e| format!("Failed to build signing request: {}", e))?;
 
@@ -279,6 +281,8 @@ impl App {
                     TransactionKind::Transfer,
                     unsigned_tx,
                     input_cells,
+                    // Only completing a DAO withdrawal needs headers.
+                    Vec::new(),
                     lock_args,
                 ))
             })();
@@ -387,6 +391,8 @@ impl App {
                     TransactionKind::DaoDeposit,
                     unsigned_tx,
                     input_cells,
+                    // Only completing a DAO withdrawal needs headers.
+                    Vec::new(),
                     lock_args,
                 ))
             })();
@@ -458,6 +464,8 @@ impl App {
                     TransactionKind::DaoPrepare,
                     unsigned_tx,
                     input_cells,
+                    // Only completing a DAO withdrawal needs headers.
+                    Vec::new(),
                     lock_args,
                 ))
             })();
@@ -521,10 +529,17 @@ impl App {
                 )
                 .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
+                let headers = ckb_node::wallet_helpers::tx_builder::fetch_header_deps(
+                    &qp_client,
+                    &unsigned_tx,
+                )
+                .map_err(|e| format!("Failed to fetch header dependencies: {}", e))?;
+
                 Ok((
                     TransactionKind::DaoWithdraw,
                     unsigned_tx,
                     input_cells,
+                    headers,
                     lock_args,
                 ))
             })();
@@ -628,6 +643,7 @@ impl App {
         kind: TransactionKind,
         unsigned_tx: ckb_types::core::TransactionView,
         input_cells: Vec<ckb_mock_tx_types::MockInput>,
+        headers: Vec<ckb_types::core::HeaderView>,
         lock_args: String,
     ) {
         let (account, vault) = match self.find_signing_account(&lock_args) {
@@ -650,6 +666,7 @@ impl App {
             kind,
             unsigned_tx,
             &input_cells,
+            &headers,
             is_mainnet,
         );
         match signed {
@@ -675,6 +692,7 @@ impl App {
         kind: TransactionKind,
         unsigned_tx: ckb_types::core::TransactionView,
         input_cells: Vec<ckb_mock_tx_types::MockInput>,
+        headers: Vec<ckb_types::core::HeaderView>,
         lock_args: String,
     ) {
         let credential_id = match self.get_fido2_credential() {
@@ -702,6 +720,7 @@ impl App {
                 kind,
                 unsigned_tx,
                 &input_cells,
+                &headers,
                 is_mainnet,
             );
             (kind, signed)

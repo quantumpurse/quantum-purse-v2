@@ -259,6 +259,23 @@ pub fn fetch_hardware_signing_context(
         }
     }
 
+    let headers = fetch_header_deps(qp_client, tx)?;
+
+    Ok(HardwareSigningContext {
+        prev_txs,
+        prev_tx_block_hashes,
+        headers,
+    })
+}
+
+/// Fetches the full header of every header dependency in a transaction, in
+/// the order the transaction lists them. A DAO withdrawal's interest comes
+/// from two of them: a multisig signing request carries them for its
+/// co-signers, and a Trezor checks them when signing.
+pub fn fetch_header_deps(
+    qp_client: &QpClient,
+    tx: &TransactionView,
+) -> Result<Vec<HeaderView>, NodeManagerError> {
     let mut headers = Vec::with_capacity(tx.header_deps().len());
     for packed_hash in tx.header_deps().into_iter() {
         let hash: H256 = packed_hash.unpack();
@@ -275,12 +292,7 @@ pub fn fetch_hardware_signing_context(
         }
         headers.push(header);
     }
-
-    Ok(HardwareSigningContext {
-        prev_txs,
-        prev_tx_block_hashes,
-        headers,
-    })
+    Ok(headers)
 }
 
 /// Replaces the placeholder witness at the given index with the signed witness data.

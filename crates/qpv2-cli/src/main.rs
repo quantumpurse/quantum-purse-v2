@@ -1148,6 +1148,15 @@ fn handle_msig_build_dao(
         ckb_node::wallet_helpers::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
             .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
+    // Only completing a DAO withdrawal needs headers.
+    let headers = if op == "withdraw" {
+        println!("Fetching header dependencies...");
+        ckb_node::wallet_helpers::tx_builder::fetch_header_deps(&qp_client, &unsigned_tx)
+            .map_err(|e| format!("Failed to fetch header dependencies: {}", e))?
+    } else {
+        Vec::new()
+    };
+
     let metadata = qpv2_core::types::SigningMetadata {
         from_address: from_address.to_string(),
         to_address: None,
@@ -1167,7 +1176,7 @@ fn handle_msig_build_dao(
         0,
         is_mainnet,
         metadata,
-        &[],
+        &headers,
     )
     .map_err(|e| format!("Failed to build signing request: {}", e))?;
 
@@ -1254,6 +1263,7 @@ fn handle_msig_build_transfer(ctx: &MsigBuildCtx, to: &str, amount: &str) -> Res
         0,
         is_mainnet,
         metadata,
+        // Only completing a DAO withdrawal needs headers.
         &[],
     )
     .map_err(|e| format!("Failed to build signing request: {}", e))?;
