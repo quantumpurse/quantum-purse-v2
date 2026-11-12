@@ -199,7 +199,10 @@ impl App {
     /// header to the current tip. `None` until both headers are cached.
     /// The realized payout lands at a future epoch boundary, so callers
     /// present this value as an estimate ("~").
-    pub(crate) fn estimated_deposit_interest(&self, cell: &ckb_node::DepositedCell) -> Option<u64> {
+    pub(crate) fn estimated_deposit_interest(
+        &self,
+        cell: &ckb_node::queries::DepositedCell,
+    ) -> Option<u64> {
         let dep_h = self.deposit_headers.get(&cell.block_number)?;
         let tip_h = self.node_status.tip_header.as_ref()?;
         let growth = extract_ar(tip_h) / extract_ar(dep_h);

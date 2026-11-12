@@ -2,18 +2,16 @@ pub mod client;
 pub mod config;
 pub mod error;
 pub mod process;
-pub mod wallet_helpers;
+mod wallet_helpers;
 
 pub use ckb_sdk::rpc::ckb_indexer::{CellType, Tx};
 pub use client::QpClient;
 pub use config::{NetworkType, NodeConfig, NodeType};
+// One short path per helper: `ckb_node::tx_builder::fill_witness`.
+pub use wallet_helpers::{lc, queries, tx_builder};
 
 use error::NodeManagerError;
 use process::{FullNodeProcess, LightClientProcess, NodeProcess};
-pub use wallet_helpers::queries::{DepositedCell, PreparedCell};
-pub use wallet_helpers::tx_builder::{
-    fill_witness, QpDaoDepositBuilder, QpDaoPrepareBuilder, QpDaoWithdrawBuilder, QpTransferBuilder,
-};
 
 /// Single-owner slot for the local CKB node child process.
 ///

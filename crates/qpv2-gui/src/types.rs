@@ -75,8 +75,8 @@ pub(crate) type DaoQueryResult = Result<DaoQueryEvent, String>;
 
 /// Streaming DAO query event from background thread.
 pub(crate) enum DaoQueryEvent {
-    Deposited(String, ckb_node::DepositedCell),
-    Prepared(String, ckb_node::PreparedCell),
+    Deposited(String, ckb_node::queries::DepositedCell),
+    Prepared(String, ckb_node::queries::PreparedCell),
     Done,
 }
 

@@ -117,9 +117,7 @@ impl App {
                 };
 
                 let (deposited, prepared) =
-                    match ckb_node::wallet_helpers::queries::categorize_dao_cells(
-                        &qp_client, &address,
-                    ) {
+                    match ckb_node::queries::categorize_dao_cells(&qp_client, &address) {
                         Ok(v) => v,
                         Err(e) => {
                             let msg = format!("Failed to query DAO cells: {}", e);
@@ -313,7 +311,7 @@ impl App {
                         after_block.map_or("none".to_string(), |b| b.to_string())
                     ),
                     || {
-                        ckb_node::wallet_helpers::queries::fetch_recent_transactions(
+                        ckb_node::queries::fetch_recent_transactions(
                             &qp_client,
                             lock_args,
                             after_block,
@@ -699,16 +697,14 @@ impl App {
 
         std::thread::spawn(move || {
             for lock_args in lock_args_list {
-                let total = ckb_node::wallet_helpers::queries::fetch_quantum_lock_balance(
-                    &qp_client, &lock_args,
-                )
-                .map_err(|e| e.to_string());
+                let total = ckb_node::queries::fetch_quantum_lock_balance(&qp_client, &lock_args)
+                    .map_err(|e| e.to_string());
 
                 // Independent RPC call: keep its error distinct from `total` so a
                 // transient failure here doesn't get masked as a real zero balance.
                 let spendable = (|| -> Result<u64, String> {
                     let address = crate::utils::lock_args_to_address(&lock_args, is_mainnet)?;
-                    ckb_node::wallet_helpers::queries::spendable_capacity(&qp_client, &address)
+                    ckb_node::queries::spendable_capacity(&qp_client, &address)
                         .map_err(|e| e.to_string())
                 })();
 
@@ -893,9 +889,8 @@ impl App {
         let (tx, rx) = mpsc::channel();
         self.qr_adoption_rx = Some(rx);
         std::thread::spawn(move || {
-            let result =
-                ckb_node::wallet_helpers::queries::fetch_qr_adoption_series(network, WEEKS)
-                    .map_err(|e| e.to_string());
+            let result = ckb_node::queries::fetch_qr_adoption_series(network, WEEKS)
+                .map_err(|e| e.to_string());
             let _ = tx.send(result);
         });
     }

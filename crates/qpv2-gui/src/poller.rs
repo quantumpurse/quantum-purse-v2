@@ -502,7 +502,7 @@ impl App {
             && self.qp_client.config().node_type == ckb_node::NodeType::LightClient
         {
             if !self.lc_qr_dep_warmup_done {
-                match ckb_node::wallet_helpers::lc::fetch_qr_lock_dep(&self.qp_client) {
+                match ckb_node::lc::fetch_qr_lock_dep(&self.qp_client) {
                     Ok(true) => self.lc_qr_dep_warmup_done = true,
                     Ok(false) => {} // pending — retry next tick
                     Err(e) => tracing::error!("lc warmup: fetch_qr_lock_dep: {}", e),
@@ -521,11 +521,8 @@ impl App {
                 let lock_args: Vec<String> =
                     self.accounts.iter().map(|a| a.lock_args.clone()).collect();
                 let start_block = self.qp_client.synced_block().ok().flatten().unwrap_or(0);
-                match ckb_node::wallet_helpers::lc::register_lock_scripts(
-                    &self.qp_client,
-                    &lock_args,
-                    start_block,
-                ) {
+                match ckb_node::lc::register_lock_scripts(&self.qp_client, &lock_args, start_block)
+                {
                     Ok(()) => self.lc_script_registration_reeval = true,
                     Err(e) => tracing::error!("lc warmup: register_lock_scripts: {}", e),
                 }

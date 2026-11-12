@@ -126,10 +126,7 @@ impl App {
                 if let Some(id) = delete_target {
                     let _ = keychain::delete_key(id);
                     let lock_args = KeyVault::get_all_lock_args(id).unwrap_or_default();
-                    let _ = ckb_node::wallet_helpers::lc::clear_wallet_scripts(
-                        &self.qp_client,
-                        &lock_args,
-                    );
+                    let _ = ckb_node::lc::clear_wallet_scripts(&self.qp_client, &lock_args);
 
                     match KeyVault::remove_wallet(id) {
                         Ok(()) => {

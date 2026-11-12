@@ -33,7 +33,7 @@ const MSG_CKB_TX_REQUEST: u16 = protos::MessageType::MessageType_CKBTxRequest as
 #[derive(Debug, Clone)]
 pub struct SignedWitness {
     /// The complete witness lock (`[0x80,0x00,0x01,0x01,flag] || pubkey || signature`),
-    /// ready to place into the signing witness via `ckb_node::fill_witness`.
+    /// ready to place into the signing witness via `ckb_node::tx_builder::fill_witness`.
     pub witness_lock: Vec<u8>,
     /// The transaction hash the device computed.
     pub tx_hash: H256,
@@ -46,7 +46,7 @@ impl TrezorSession {
     /// `signing_lock_size` is the final witness-lock length for the account's
     /// variant (`MultisigConfig::max_witness_lock_size()`); `prev_txs` maps each
     /// input's previous-output tx hash to its full transaction (see
-    /// `ckb_node::fetch_prev_txs`); `sign_group_input_indices` lists the inputs
+    /// `ckb_node::tx_builder::fetch_prev_txs`); `sign_group_input_indices` lists the inputs
     /// of the lock-script group being signed (all inputs, for a single-sig
     /// account). Returns the assembled witness lock.
     #[allow(clippy::too_many_arguments)]

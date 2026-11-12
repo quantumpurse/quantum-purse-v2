@@ -21,7 +21,7 @@ fn check_qr_lock_dep_ready(qp_client: &QpClient) -> Result<(), String> {
     if qp_client.config().node_type != NodeType::LightClient {
         return Ok(());
     }
-    match ckb_node::wallet_helpers::lc::fetch_qr_lock_dep(qp_client) {
+    match ckb_node::lc::fetch_qr_lock_dep(qp_client) {
         Ok(true) => Ok(()),
         Ok(false) => Err(
             "Light client hasn't fetched the lock-script cell dep yet. Try again in a moment."
@@ -61,7 +61,7 @@ fn sign_transaction(
         let signature = vault
             .ckb_sign(auth, account.lock_args.clone(), message.as_bytes().to_vec())
             .map_err(|e| format!("Signing failed: {}", e))?;
-        let signed_tx = ckb_node::fill_witness(unsigned_tx, 0, signature)
+        let signed_tx = ckb_node::tx_builder::fill_witness(unsigned_tx, 0, signature)
             .map_err(|e| format!("Failed to fill witness: {}", e))?;
         return Ok(SignedTx::SingleSig(signed_tx));
     }
@@ -250,7 +250,7 @@ impl App {
             let result = (|| -> Result<_, String> {
                 check_qr_lock_dep_ready(&qp_client)?;
 
-                let builder = ckb_node::QpTransferBuilder::new(&qp_client)
+                let builder = ckb_node::tx_builder::QpTransferBuilder::new(&qp_client)
                     .with_placeholder_lock_size(max_witness_lock_size);
 
                 let unsigned_tx = if send_all {
@@ -271,11 +271,8 @@ impl App {
                 };
 
                 // Fetch input cells for CKB_TX_MESSAGE_ALL
-                let input_cells = ckb_node::wallet_helpers::tx_builder::fetch_input_cells(
-                    &qp_client,
-                    &unsigned_tx,
-                )
-                .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
+                let input_cells = ckb_node::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
+                    .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
                 Ok((
                     TransactionKind::Transfer,
@@ -367,7 +364,7 @@ impl App {
             let result = (|| -> Result<_, String> {
                 check_qr_lock_dep_ready(&qp_client)?;
 
-                let builder = ckb_node::QpDaoDepositBuilder::new(&qp_client)
+                let builder = ckb_node::tx_builder::QpDaoDepositBuilder::new(&qp_client)
                     .with_placeholder_lock_size(max_witness_lock_size);
 
                 let unsigned_tx = if deposit_all {
@@ -381,11 +378,8 @@ impl App {
                         .map_err(|e| format!("Failed to build DAO deposit: {}", e))?
                 };
 
-                let input_cells = ckb_node::wallet_helpers::tx_builder::fetch_input_cells(
-                    &qp_client,
-                    &unsigned_tx,
-                )
-                .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
+                let input_cells = ckb_node::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
+                    .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
                 Ok((
                     TransactionKind::DaoDeposit,
@@ -445,7 +439,7 @@ impl App {
             let result = (|| -> Result<_, String> {
                 check_qr_lock_dep_ready(&qp_client)?;
 
-                let unsigned_tx = ckb_node::QpDaoPrepareBuilder::new(&qp_client)
+                let unsigned_tx = ckb_node::tx_builder::QpDaoPrepareBuilder::new(&qp_client)
                     .with_placeholder_lock_size(max_witness_lock_size)
                     .build_unsigned_dao_request_withdraw(
                         &from_address,
@@ -454,11 +448,8 @@ impl App {
                     )
                     .map_err(|e| format!("Failed to build DAO prepare: {}", e))?;
 
-                let input_cells = ckb_node::wallet_helpers::tx_builder::fetch_input_cells(
-                    &qp_client,
-                    &unsigned_tx,
-                )
-                .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
+                let input_cells = ckb_node::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
+                    .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
                 Ok((
                     TransactionKind::DaoPrepare,
@@ -518,22 +509,16 @@ impl App {
             let result = (|| -> Result<_, String> {
                 check_qr_lock_dep_ready(&qp_client)?;
 
-                let unsigned_tx = ckb_node::QpDaoWithdrawBuilder::new(&qp_client)
+                let unsigned_tx = ckb_node::tx_builder::QpDaoWithdrawBuilder::new(&qp_client)
                     .with_placeholder_lock_size(max_witness_lock_size)
                     .build_unsigned_dao_withdraw(&from_address, vec![prepared_out_point], fee_rate)
                     .map_err(|e| format!("Failed to build DAO withdraw: {}", e))?;
 
-                let input_cells = ckb_node::wallet_helpers::tx_builder::fetch_input_cells(
-                    &qp_client,
-                    &unsigned_tx,
-                )
-                .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
+                let input_cells = ckb_node::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
+                    .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
-                let headers = ckb_node::wallet_helpers::tx_builder::fetch_header_deps(
-                    &qp_client,
-                    &unsigned_tx,
-                )
-                .map_err(|e| format!("Failed to fetch header dependencies: {}", e))?;
+                let headers = ckb_node::tx_builder::fetch_header_deps(&qp_client, &unsigned_tx)
+                    .map_err(|e| format!("Failed to fetch header dependencies: {}", e))?;
 
                 Ok((
                     TransactionKind::DaoWithdraw,
@@ -601,11 +586,8 @@ impl App {
                 let sign_group: Vec<u32> = (0..unsigned_tx.inputs().len() as u32).collect();
 
                 let signing_context =
-                    ckb_node::wallet_helpers::tx_builder::fetch_hardware_signing_context(
-                        &qp_client,
-                        &unsigned_tx,
-                    )
-                    .map_err(|e| format!("Failed to fetch Trezor signing context: {}", e))?;
+                    ckb_node::tx_builder::fetch_hardware_signing_context(&qp_client, &unsigned_tx)
+                        .map_err(|e| format!("Failed to fetch Trezor signing context: {}", e))?;
 
                 let mut device = trezor_connect::open(&mut trezor_connect::PinentryPairing)
                     .map_err(|e| format!("Could not connect to Trezor: {}", e))?;
@@ -624,10 +606,11 @@ impl App {
                     )
                     .map_err(|e| format!("Trezor signing failed: {}", e))?;
 
-                let signed_tx = ckb_node::fill_witness(unsigned_tx, 0, signed.witness_lock)
-                    .map_err(|e| format!("Failed to fill witness: {}", e))?;
+                let signed_tx =
+                    ckb_node::tx_builder::fill_witness(unsigned_tx, 0, signed.witness_lock)
+                        .map_err(|e| format!("Failed to fill witness: {}", e))?;
 
-                ckb_node::wallet_helpers::tx_builder::send_transaction(&qp_client, &signed_tx)
+                ckb_node::tx_builder::send_transaction(&qp_client, &signed_tx)
                     .map(|hash| format!("{:#x}", hash))
                     .map_err(|e| format!("Failed to send transaction: {}", e))
             })();
@@ -762,11 +745,9 @@ impl App {
                 self.transaction_send_rx = Some(rx_send);
 
                 std::thread::spawn(move || {
-                    let result = ckb_node::wallet_helpers::tx_builder::send_transaction(
-                        &qp_client, &signed_tx,
-                    )
-                    .map(|hash| format!("{:#x}", hash))
-                    .map_err(|e| format!("Failed to send transaction: {}", e));
+                    let result = ckb_node::tx_builder::send_transaction(&qp_client, &signed_tx)
+                        .map(|hash| format!("{:#x}", hash))
+                        .map_err(|e| format!("Failed to send transaction: {}", e));
                     let _ = tx_send.send((kind, result));
                 });
             }
@@ -818,16 +799,19 @@ impl App {
             }
         };
 
-        let signed_tx =
-            match ckb_node::fill_witness(unsigned_tx, request.script_group_index(), witness_lock) {
-                Ok(tx) => tx,
-                Err(e) => {
-                    let msg = format!("Failed to fill witness: {}", e);
-                    tracing::error!("{}", msg);
-                    self.tx_status = TransactionStatus::Error(msg);
-                    return;
-                }
-            };
+        let signed_tx = match ckb_node::tx_builder::fill_witness(
+            unsigned_tx,
+            request.script_group_index(),
+            witness_lock,
+        ) {
+            Ok(tx) => tx,
+            Err(e) => {
+                let msg = format!("Failed to fill witness: {}", e);
+                tracing::error!("{}", msg);
+                self.tx_status = TransactionStatus::Error(msg);
+                return;
+            }
+        };
 
         tracing::info!("Multisig transaction assembled, sending to network.");
         self.tx_status = TransactionStatus::Sending;
@@ -836,10 +820,9 @@ impl App {
         self.transaction_send_rx = Some(rx_send);
 
         std::thread::spawn(move || {
-            let result =
-                ckb_node::wallet_helpers::tx_builder::send_transaction(&qp_client, &signed_tx)
-                    .map(|hash| format!("{:#x}", hash))
-                    .map_err(|e| format!("Failed to send transaction: {}", e));
+            let result = ckb_node::tx_builder::send_transaction(&qp_client, &signed_tx)
+                .map(|hash| format!("{:#x}", hash))
+                .map_err(|e| format!("Failed to send transaction: {}", e));
             let _ = tx_send.send((kind, result));
         });
     }

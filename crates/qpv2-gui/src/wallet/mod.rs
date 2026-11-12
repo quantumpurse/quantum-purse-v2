@@ -104,11 +104,9 @@ impl App {
                 }
             }
         };
-        if let Err(e) = ckb_node::wallet_helpers::lc::register_lock_scripts(
-            &self.qp_client,
-            lock_args_list,
-            start_block,
-        ) {
+        if let Err(e) =
+            ckb_node::lc::register_lock_scripts(&self.qp_client, lock_args_list, start_block)
+        {
             let msg = format!("Failed to register scripts: {}", e);
             tracing::error!("{}", msg);
             self.status = Status::Error(msg);
@@ -207,11 +205,9 @@ impl App {
             return;
         }
         let lock_args: Vec<String> = self.accounts.iter().map(|a| a.lock_args.clone()).collect();
-        if let Err(e) = ckb_node::wallet_helpers::lc::register_all_lock_scripts(
-            &self.qp_client,
-            &lock_args,
-            start_block,
-        ) {
+        if let Err(e) =
+            ckb_node::lc::register_all_lock_scripts(&self.qp_client, &lock_args, start_block)
+        {
             let msg = format!("Failed to set scan block: {}", e);
             tracing::error!("{}", msg);
             self.status = Status::Error(msg);

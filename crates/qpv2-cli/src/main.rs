@@ -692,9 +692,8 @@ fn handle_dao_list(
     let mut found_any = false;
     for account in &accounts {
         let address = lock_args_to_address(&account.lock_args, is_mainnet)?;
-        let (deposited, prepared) =
-            ckb_node::wallet_helpers::queries::categorize_dao_cells(&qp_client, &address)
-                .map_err(|e| format!("Failed to query DAO cells: {}", e))?;
+        let (deposited, prepared) = ckb_node::queries::categorize_dao_cells(&qp_client, &address)
+            .map_err(|e| format!("Failed to query DAO cells: {}", e))?;
 
         if deposited.is_empty() && prepared.is_empty() {
             continue;
@@ -769,7 +768,7 @@ fn handle_dao_deposit(
     let from_address = lock_args_to_address(lock_args, qp_client.is_mainnet())?;
 
     println!("Building DAO deposit...");
-    let unsigned_tx = ckb_node::QpDaoDepositBuilder::new(&qp_client)
+    let unsigned_tx = ckb_node::tx_builder::QpDaoDepositBuilder::new(&qp_client)
         .with_placeholder_lock_size(max_witness_lock_size)
         .build_unsigned_deposit(&from_address, capacity_sh, fee_rate)
         .map_err(|e| format!("Failed to build DAO deposit: {}", e))?;
@@ -778,9 +777,8 @@ fn handle_dao_deposit(
         sign_with_trezor(&account, &qp_client, unsigned_tx)?
     } else {
         println!("Fetching input cells...");
-        let input_cells =
-            ckb_node::wallet_helpers::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
-                .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
+        let input_cells = ckb_node::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
+            .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
         println!("Computing signing message...");
         let message = qpv2_core::utilities::compute_signing_message(&unsigned_tx, &input_cells, 0)
@@ -792,12 +790,12 @@ fn handle_dao_deposit(
         let signature_bytes =
             vault.ckb_sign(auth, lock_args.to_string(), message.as_bytes().to_vec())?;
 
-        ckb_node::fill_witness(unsigned_tx, 0, signature_bytes)
+        ckb_node::tx_builder::fill_witness(unsigned_tx, 0, signature_bytes)
             .map_err(|e| format!("Failed to fill witness: {}", e))?
     };
 
     println!("Submitting transaction...");
-    let tx_hash = ckb_node::wallet_helpers::tx_builder::send_transaction(&qp_client, &signed_tx)
+    let tx_hash = ckb_node::tx_builder::send_transaction(&qp_client, &signed_tx)
         .map_err(|e| format!("Failed to send transaction: {}", e))?;
     println!("DAO deposit submitted: {:#x}", tx_hash);
     Ok(())
@@ -827,7 +825,7 @@ fn handle_dao_prepare(
     let out_point = parse_out_point(tx_hash, index)?;
 
     println!("Building DAO prepare...");
-    let unsigned_tx = ckb_node::QpDaoPrepareBuilder::new(&qp_client)
+    let unsigned_tx = ckb_node::tx_builder::QpDaoPrepareBuilder::new(&qp_client)
         .with_placeholder_lock_size(max_witness_lock_size)
         .build_unsigned_dao_request_withdraw(&from_address, vec![out_point], fee_rate)
         .map_err(|e| format!("Failed to build DAO prepare: {}", e))?;
@@ -836,9 +834,8 @@ fn handle_dao_prepare(
         sign_with_trezor(&account, &qp_client, unsigned_tx)?
     } else {
         println!("Fetching input cells...");
-        let input_cells =
-            ckb_node::wallet_helpers::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
-                .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
+        let input_cells = ckb_node::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
+            .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
         println!("Computing signing message...");
         let message = qpv2_core::utilities::compute_signing_message(&unsigned_tx, &input_cells, 0)
@@ -850,12 +847,12 @@ fn handle_dao_prepare(
         let signature_bytes =
             vault.ckb_sign(auth, lock_args.to_string(), message.as_bytes().to_vec())?;
 
-        ckb_node::fill_witness(unsigned_tx, 0, signature_bytes)
+        ckb_node::tx_builder::fill_witness(unsigned_tx, 0, signature_bytes)
             .map_err(|e| format!("Failed to fill witness: {}", e))?
     };
 
     println!("Submitting transaction...");
-    let tx_hash = ckb_node::wallet_helpers::tx_builder::send_transaction(&qp_client, &signed_tx)
+    let tx_hash = ckb_node::tx_builder::send_transaction(&qp_client, &signed_tx)
         .map_err(|e| format!("Failed to send transaction: {}", e))?;
     println!("DAO prepare submitted: {:#x}", tx_hash);
     Ok(())
@@ -885,7 +882,7 @@ fn handle_dao_withdraw(
     let out_point = parse_out_point(tx_hash, index)?;
 
     println!("Building DAO withdraw...");
-    let unsigned_tx = ckb_node::QpDaoWithdrawBuilder::new(&qp_client)
+    let unsigned_tx = ckb_node::tx_builder::QpDaoWithdrawBuilder::new(&qp_client)
         .with_placeholder_lock_size(max_witness_lock_size)
         .build_unsigned_dao_withdraw(&from_address, vec![out_point], fee_rate)
         .map_err(|e| format!("Failed to build DAO withdraw: {}", e))?;
@@ -894,9 +891,8 @@ fn handle_dao_withdraw(
         sign_with_trezor(&account, &qp_client, unsigned_tx)?
     } else {
         println!("Fetching input cells...");
-        let input_cells =
-            ckb_node::wallet_helpers::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
-                .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
+        let input_cells = ckb_node::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
+            .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
         println!("Computing signing message...");
         let message = qpv2_core::utilities::compute_signing_message(&unsigned_tx, &input_cells, 0)
@@ -908,12 +904,12 @@ fn handle_dao_withdraw(
         let signature_bytes =
             vault.ckb_sign(auth, lock_args.to_string(), message.as_bytes().to_vec())?;
 
-        ckb_node::fill_witness(unsigned_tx, 0, signature_bytes)
+        ckb_node::tx_builder::fill_witness(unsigned_tx, 0, signature_bytes)
             .map_err(|e| format!("Failed to fill witness: {}", e))?
     };
 
     println!("Submitting transaction...");
-    let tx_hash = ckb_node::wallet_helpers::tx_builder::send_transaction(&qp_client, &signed_tx)
+    let tx_hash = ckb_node::tx_builder::send_transaction(&qp_client, &signed_tx)
         .map_err(|e| format!("Failed to send transaction: {}", e))?;
     println!("DAO withdraw submitted: {:#x}", tx_hash);
     Ok(())
@@ -963,7 +959,7 @@ fn handle_transfer(
     }
 
     println!("Building transaction...");
-    let builder = ckb_node::QpTransferBuilder::new(&qp_client)
+    let builder = ckb_node::tx_builder::QpTransferBuilder::new(&qp_client)
         .with_placeholder_lock_size(max_witness_lock_size);
     let unsigned_tx = builder
         .build_unsigned_transfer(&from_address, &to_address, capacity_sh, fee_rate, None)
@@ -973,9 +969,8 @@ fn handle_transfer(
         sign_with_trezor(&account, &qp_client, unsigned_tx)?
     } else {
         println!("Fetching input cells...");
-        let input_cells =
-            ckb_node::wallet_helpers::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
-                .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
+        let input_cells = ckb_node::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
+            .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
         println!("Computing signing message...");
         let message = qpv2_core::utilities::compute_signing_message(&unsigned_tx, &input_cells, 0)
@@ -986,12 +981,12 @@ fn handle_transfer(
         let vault = KeyVault::new(variant, wallet_id);
         let signature_bytes =
             vault.ckb_sign(auth, lock_args.to_string(), message.as_bytes().to_vec())?;
-        ckb_node::fill_witness(unsigned_tx, 0, signature_bytes)
+        ckb_node::tx_builder::fill_witness(unsigned_tx, 0, signature_bytes)
             .map_err(|e| format!("Failed to fill witness: {}", e))?
     };
 
     println!("Submitting transaction...");
-    let tx_hash = ckb_node::wallet_helpers::tx_builder::send_transaction(&qp_client, &signed_tx)
+    let tx_hash = ckb_node::tx_builder::send_transaction(&qp_client, &signed_tx)
         .map_err(|e| format!("Failed to send transaction: {}", e))?;
 
     println!("Transaction submitted: {:#x}", tx_hash);
@@ -1008,11 +1003,8 @@ fn sign_with_trezor(
     unsigned_tx: ckb_types::core::TransactionView,
 ) -> Result<ckb_types::core::TransactionView, String> {
     println!("Fetching previous transactions for the device...");
-    let context = ckb_node::wallet_helpers::tx_builder::fetch_hardware_signing_context(
-        qp_client,
-        &unsigned_tx,
-    )
-    .map_err(|e| format!("Failed to fetch Trezor signing context: {}", e))?;
+    let context = ckb_node::tx_builder::fetch_hardware_signing_context(qp_client, &unsigned_tx)
+        .map_err(|e| format!("Failed to fetch Trezor signing context: {}", e))?;
 
     let variant = account.config.signers()[0].variant();
     let sign_group: Vec<u32> = (0..unsigned_tx.inputs().len() as u32).collect();
@@ -1034,7 +1026,7 @@ fn sign_with_trezor(
         )
         .map_err(|e| format!("Trezor signing failed: {}", e))?;
 
-    ckb_node::fill_witness(unsigned_tx, 0, signed.witness_lock)
+    ckb_node::tx_builder::fill_witness(unsigned_tx, 0, signed.witness_lock)
         .map_err(|e| format!("Failed to fill witness: {}", e))
 }
 
@@ -1126,14 +1118,14 @@ fn handle_msig_build_dao(
             if capacity_sh == 0 {
                 return Err("Amount must be greater than zero.".to_string());
             }
-            ckb_node::QpDaoDepositBuilder::new(&qp_client)
+            ckb_node::tx_builder::QpDaoDepositBuilder::new(&qp_client)
                 .with_placeholder_lock_size(max_witness_lock_size)
                 .build_unsigned_deposit(&from_address, capacity_sh, fee_rate)
                 .map_err(|e| format!("Failed to build DAO deposit: {}", e))?
         }
         "prepare" => {
             let out_point = parse_out_point(tx_hash.ok_or("tx_hash required for prepare")?, index)?;
-            ckb_node::QpDaoPrepareBuilder::new(&qp_client)
+            ckb_node::tx_builder::QpDaoPrepareBuilder::new(&qp_client)
                 .with_placeholder_lock_size(max_witness_lock_size)
                 .build_unsigned_dao_request_withdraw(&from_address, vec![out_point], fee_rate)
                 .map_err(|e| format!("Failed to build DAO prepare: {}", e))?
@@ -1141,7 +1133,7 @@ fn handle_msig_build_dao(
         "withdraw" => {
             let out_point =
                 parse_out_point(tx_hash.ok_or("tx_hash required for withdraw")?, index)?;
-            ckb_node::QpDaoWithdrawBuilder::new(&qp_client)
+            ckb_node::tx_builder::QpDaoWithdrawBuilder::new(&qp_client)
                 .with_placeholder_lock_size(max_witness_lock_size)
                 .build_unsigned_dao_withdraw(&from_address, vec![out_point], fee_rate)
                 .map_err(|e| format!("Failed to build DAO withdraw: {}", e))?
@@ -1150,14 +1142,13 @@ fn handle_msig_build_dao(
     };
 
     println!("Fetching input cells...");
-    let input_cells =
-        ckb_node::wallet_helpers::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
-            .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
+    let input_cells = ckb_node::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
+        .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
     // Only completing a DAO withdrawal needs headers.
     let headers = if op == "withdraw" {
         println!("Fetching header dependencies...");
-        ckb_node::wallet_helpers::tx_builder::fetch_header_deps(&qp_client, &unsigned_tx)
+        ckb_node::tx_builder::fetch_header_deps(&qp_client, &unsigned_tx)
             .map_err(|e| format!("Failed to fetch header dependencies: {}", e))?
     } else {
         Vec::new()
@@ -1241,7 +1232,7 @@ fn handle_msig_build_transfer(ctx: &MsigBuildCtx, to: &str, amount: &str) -> Res
         return Err("Amount must be greater than zero.".to_string());
     }
 
-    let builder = ckb_node::QpTransferBuilder::new(&qp_client)
+    let builder = ckb_node::tx_builder::QpTransferBuilder::new(&qp_client)
         .with_placeholder_lock_size(max_witness_lock_size);
 
     println!("Building unsigned transaction...");
@@ -1250,9 +1241,8 @@ fn handle_msig_build_transfer(ctx: &MsigBuildCtx, to: &str, amount: &str) -> Res
         .map_err(|e| format!("Failed to build transaction: {}", e))?;
 
     println!("Fetching input cells...");
-    let input_cells =
-        ckb_node::wallet_helpers::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
-            .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
+    let input_cells = ckb_node::tx_builder::fetch_input_cells(&qp_client, &unsigned_tx)
+        .map_err(|e| format!("Failed to fetch input cells: {}", e))?;
 
     let metadata = qpv2_core::types::SigningMetadata {
         from_address: from_address.to_string(),
@@ -1426,13 +1416,14 @@ fn handle_msig_submit(
 
     let unsigned_tx = request.unsigned_tx().clone();
 
-    let signed_tx = ckb_node::fill_witness(unsigned_tx, request.script_group_index(), witness_lock)
-        .map_err(|e| format!("Failed to fill witness: {}", e))?;
+    let signed_tx =
+        ckb_node::tx_builder::fill_witness(unsigned_tx, request.script_group_index(), witness_lock)
+            .map_err(|e| format!("Failed to fill witness: {}", e))?;
 
     let qp_client = make_qp_client(network, rpc_url)?;
 
     println!("Submitting transaction...");
-    let tx_hash = ckb_node::wallet_helpers::tx_builder::send_transaction(&qp_client, &signed_tx)
+    let tx_hash = ckb_node::tx_builder::send_transaction(&qp_client, &signed_tx)
         .map_err(|e| format!("Failed to send transaction: {}", e))?;
 
     println!("Transaction submitted: {:#x}", tx_hash);

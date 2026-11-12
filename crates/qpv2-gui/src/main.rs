@@ -130,11 +130,11 @@ pub(crate) struct App {
     // DAO state.
     // Each cell is stored with the lock_args of the account that owns it.
     pub(crate) dao_view: DaoView,
-    pub(crate) dao_deposited_cells: Vec<(String, ckb_node::DepositedCell)>,
-    pub(crate) dao_prepared_cells: Vec<(String, ckb_node::PreparedCell)>,
+    pub(crate) dao_deposited_cells: Vec<(String, ckb_node::queries::DepositedCell)>,
+    pub(crate) dao_prepared_cells: Vec<(String, ckb_node::queries::PreparedCell)>,
     // Staging vectors: accumulated during polling, swapped into display on Done.
-    pub(crate) dao_deposited_staging: Vec<(String, ckb_node::DepositedCell)>,
-    pub(crate) dao_prepared_staging: Vec<(String, ckb_node::PreparedCell)>,
+    pub(crate) dao_deposited_staging: Vec<(String, ckb_node::queries::DepositedCell)>,
+    pub(crate) dao_prepared_staging: Vec<(String, ckb_node::queries::PreparedCell)>,
     pub(crate) dao_cells_query_rx: Option<mpsc::Receiver<DaoQueryResult>>,
     // Immutable deposit block headers for DAO interest estimation.
     // Keyed by block number; fetched once per deposit, never expires.
