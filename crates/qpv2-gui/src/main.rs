@@ -411,6 +411,9 @@ impl App {
         // Last-used wallet is remembered; falls back to the first in the
         // list. If no wallets exist at all, go straight to Setup.
         let wallets = KeyVault::list_wallets().unwrap_or_default();
+        // A wallet whose files can't be read must say so rather than open
+        // looking empty: the error becomes the first status message.
+        let mut load_wallet_error = None;
         let (screen, wallet_id, wallet_name, auth_method, accounts, needs_initial_fetch) =
             if wallets.is_empty() {
                 (Screen::Setup, 0, String::new(), None, Vec::new(), false)
@@ -424,11 +427,16 @@ impl App {
                 let wname = entry.name.clone();
                 save_last_wallet_id(wid);
 
-                let am = KeyVault::read_wallet_info(wid).ok().map(|w| w.auth_method);
                 // Every wallet type starts behind the cover (see
                 // `show_locked`), with its accounts loaded and the first
                 // fetch running behind it, so showing it is instant.
-                let accs = KeyVault::get_all_accounts(wid).unwrap_or_default();
+                let (am, accs) = match Self::load_wallet(wid) {
+                    Ok((auth_method, accounts)) => (Some(auth_method), accounts),
+                    Err(e) => {
+                        load_wallet_error = Some(e);
+                        (None, Vec::new())
+                    }
+                };
                 (Screen::Locked, wid, wname, am, accs, true)
             };
 
@@ -441,7 +449,7 @@ impl App {
         let mut local_node = LocalNodeProcess::new(node_config.clone());
         let qp_client = QpClient::new(node_config.clone());
 
-        let startup_status = match local_node.spawn() {
+        let mut startup_status = match local_node.spawn() {
             // The cover's NODING boot line says it; errors still show here.
             Ok(()) if screen == Screen::Locked => Status::None,
             Ok(()) => {
@@ -460,6 +468,12 @@ impl App {
                 Status::Error(msg)
             }
         };
+        // A wallet that can't be read matters more than the node's status.
+        if let Some(e) = load_wallet_error {
+            let msg = format!("Can't open wallet '{}': {}", wallet_name, e);
+            tracing::error!("{}", msg);
+            startup_status = Status::Error(msg);
+        }
 
         let settings_rpc_url = node_config.rpc_url.clone();
         let settings_binary_path = node_config

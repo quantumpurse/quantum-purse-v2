@@ -1,6 +1,6 @@
 //! Wallet lifecycle: create, unlock, lock, new account, config.
 
-use qpv2_core::types::{AuthKey, AuthMethod};
+use qpv2_core::types::{AuthKey, AuthMethod, SphincsPlusAccount};
 use qpv2_core::{KeyVault, SecureString};
 
 use crate::tx_history::TxHistoryStore;
@@ -54,6 +54,20 @@ impl App {
     /// Refresh the in-memory wallet cache from disk.
     pub(crate) fn refresh_wallet_cache(&mut self) {
         self.wallet_cache = Self::current_wallet_cache();
+    }
+
+    /// Reads what opening a wallet needs: its auth method and accounts. The
+    /// first file that can't be read names the failure, so callers can say
+    /// why instead of showing an empty wallet with a zero balance and no auth
+    /// method.
+    pub(crate) fn load_wallet(
+        wallet_id: u32,
+    ) -> Result<(AuthMethod, Vec<SphincsPlusAccount>), String> {
+        let info = KeyVault::read_wallet_info(wallet_id)
+            .map_err(|e| format!("Failed to read wallet info: {}", e))?;
+        let accounts = KeyVault::get_all_accounts(wallet_id)
+            .map_err(|e| format!("Failed to read accounts: {}", e))?;
+        Ok((info.auth_method, accounts))
     }
 
     /// Tells the running light client to start indexing the given
@@ -342,23 +356,33 @@ impl App {
 
     /// Switch the active wallet. Clears previous wallet state, loads
     /// the new wallet's metadata, and transitions directly to Unlocked.
+    ///
+    /// A wallet whose files can't be read is not opened: the error goes to
+    /// the status line and the current wallet stays.
     pub(crate) fn switch_wallet(&mut self, wallet_id: u32, wallet_name: &str) {
         tracing::info!(
             "Switching wallet (wallet_id={}, name={})",
             wallet_id,
             wallet_name
         );
+        let (auth_method, accounts) = match Self::load_wallet(wallet_id) {
+            Ok(loaded) => loaded,
+            Err(e) => {
+                let msg = format!("Can't open wallet '{}': {}", wallet_name, e);
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
+                self.wallet_selector_open = false;
+                return;
+            }
+        };
+
         self.clear_wallet_state();
         self.wallet_id = wallet_id;
         self.wallet_name = wallet_name.to_string();
         save_last_wallet_id(wallet_id);
-
-        self.auth_method = KeyVault::read_wallet_info(wallet_id)
-            .ok()
-            .map(|w| w.auth_method);
-
+        self.auth_method = Some(auth_method);
         self.lc_script_registration_reeval = false;
-        self.accounts = KeyVault::get_all_accounts(wallet_id).unwrap_or_default();
+        self.accounts = accounts;
         self.screen = Screen::Unlocked;
         self.needs_initial_fetch = true;
         self.wallet_selector_open = false;
