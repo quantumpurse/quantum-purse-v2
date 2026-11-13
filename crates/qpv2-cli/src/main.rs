@@ -164,19 +164,18 @@ enum AccountCommands {
         #[arg(long, default_value = "testnet")]
         network: String,
     },
-    /// Create a multisig account with co-signers
+    /// Create a multisig account from its signers, your own key included
     NewMultisig {
-        /// Lock args of the single-sig account to use as local signer (from `account list`)
-        #[arg(short = 'a', long)]
-        singlesig_lock_args: String,
         /// Threshold: minimum signatures required (M in M-of-N)
         #[arg(short = 'm', long)]
         threshold: u8,
         /// Required first N signers that must always sign (0 = no mandatory signers)
         #[arg(short = 'r', long, default_value = "0")]
         required_first_n: u8,
-        /// Co-signer entries as "variant:hex_pubkey" (e.g. "Sha2256S:abcd..."). Repeat for each co-signer
-        #[arg(short, long, num_args = 1..)]
+        /// One signer as "variant:hex_pubkey" (e.g. "Sha2256S:abcd..."), your own key
+        /// included as `account list` prints it. Repeat the flag for each signer; the
+        /// order of the flags is the signers' order, and the first R of them must always sign
+        #[arg(short, long)]
         signer: Vec<String>,
     },
     /// List all SPHINCS+ accounts
@@ -1617,14 +1616,17 @@ fn main() -> Result<(), String> {
                 }
 
                 AccountCommands::NewMultisig {
-                    singlesig_lock_args,
                     threshold,
                     required_first_n,
                     signer,
                 } => {
-                    let co_signers: Vec<qpv2_core::types::Signer> = signer
+                    // The flags' order is the signers' order.
+                    let signers: Vec<qpv2_core::types::Signer> = signer
                         .iter()
-                        .map(|s| {
+                        .enumerate()
+                        .map(|(k, s)| {
+                            let index = u8::try_from(k)
+                                .map_err(|_| "A multisig takes at most 255 signers.".to_string())?;
                             let (var_str, hex) = s.split_once(':').ok_or_else(|| {
                                 format!(
                                     "Invalid signer format '{}'. Expected 'Variant:hex_pubkey'.",
@@ -1634,14 +1636,13 @@ fn main() -> Result<(), String> {
                             let v = parse_variant(var_str)?;
                             let pubkey = hex::decode(hex)
                                 .map_err(|e| format!("Invalid pubkey hex '{}': {}", hex, e))?;
-                            qpv2_core::types::Signer::new(v, pubkey)
+                            qpv2_core::types::Signer::new(index, v, pubkey)
                         })
                         .collect::<Result<Vec<_>, String>>()?;
 
                     let account = KeyVault::gen_multisig_account(
                         wallet_id,
-                        &singlesig_lock_args,
-                        co_signers,
+                        signers,
                         threshold,
                         required_first_n,
                     )?;

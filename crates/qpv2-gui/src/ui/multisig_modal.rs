@@ -107,54 +107,8 @@ impl App {
         );
         ui.add_space(14.0);
 
-        // ── 01 / Local Signer ──
-        section_header(ui, &self.colors, "01", "Local Signer");
-        ui.add_space(6.0);
-
-        let singlesig: Vec<_> = self
-            .accounts
-            .iter()
-            .enumerate()
-            .filter(|(_, a)| a.config.signers().len() == 1)
-            .collect();
-
-        let selected_text = if singlesig.is_empty() {
-            "NO SINGLE-SIG ACCOUNTS".to_string()
-        } else {
-            let idx = self.multisig_local_signer_idx.min(singlesig.len() - 1);
-            let (orig_i, _) = singlesig[idx];
-            format!("ACCOUNT #{}", orig_i)
-        };
-        let selected_color = if singlesig.is_empty() {
-            c_muted
-        } else {
-            c_accent
-        };
-        let signer_combo = egui::ComboBox::from_id_salt("ms_local_signer")
-            .selected_text(
-                egui::RichText::new(&selected_text)
-                    .size(12.0)
-                    .color(selected_color),
-            )
-            .width(ui.available_width())
-            .show_ui(ui, |ui| {
-                for (pos, (orig_i, _)) in singlesig.iter().enumerate() {
-                    let text = egui::RichText::new(format!("ACCOUNT #{}", orig_i))
-                        .size(12.0)
-                        .color(if self.multisig_local_signer_idx == pos {
-                            c_accent
-                        } else {
-                            c_text
-                        });
-                    ui.selectable_value(&mut self.multisig_local_signer_idx, pos, text);
-                }
-            });
-        pin_popup_above_modal(ui, &signer_combo.response);
-
-        ui.add_space(14.0);
-
-        // ── 02 / Signing Policy ──
-        section_header(ui, &self.colors, "02", "Signing Policy");
+        // ── 01 / Signing Policy ──
+        section_header(ui, &self.colors, "01", "Signing Policy");
         ui.add_space(6.0);
 
         ui.horizontal(|ui| {
@@ -184,8 +138,10 @@ impl App {
 
         ui.add_space(14.0);
 
-        // ── 03 / Co-Signers ──
-        section_header(ui, &self.colors, "03", "Co-Signers");
+        // ── 02 / Signers ──
+        // Every signer is a key, your own included: paste it from the
+        // Accounts tab. The card order is the signers' order.
+        section_header(ui, &self.colors, "02", "Signers");
         ui.add_space(6.0);
 
         let mut remove_index: Option<usize> = None;
@@ -254,7 +210,7 @@ impl App {
         if ui
             .add(ghost_button(
                 &self.colors,
-                "+ Add Co-Signer",
+                "+ Add Signer",
                 egui::vec2(ui.available_width(), 28.0),
             ))
             .clicked()
@@ -275,12 +231,12 @@ impl App {
 
         ui.horizontal(|ui| {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                // No co-signers means a single-sig account, which this
-                // modal must not create — core rejects it too.
-                let has_co_signers = !self.multisig_co_signers.is_empty();
+                // One signer means a single-sig account, which this modal
+                // must not create — core rejects it too.
+                let enough_signers = self.multisig_co_signers.len() >= 2;
                 if ui
                     .add_enabled(
-                        has_co_signers,
+                        enough_signers,
                         accent_button(&self.colors, "Create", egui::vec2(110.0, 30.0)),
                     )
                     .clicked()

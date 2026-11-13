@@ -279,7 +279,6 @@ impl App {
         self.transfer_amount.clear();
         self.transfer_all = false;
         self.transfer_from_account = 0;
-        self.multisig_local_signer_idx = 0;
         self.dao_deposit_amount.clear();
         self.dao_deposit_all = false;
         self.dao_deposit_from_account = 0;
@@ -661,28 +660,21 @@ impl App {
 
     /// Create a multisig account from the modal form state.
     pub(crate) fn create_multisig_account(&mut self) {
-        let singlesig: Vec<_> = self
-            .accounts
-            .iter()
-            .filter(|a| a.config.signers().len() == 1)
-            .collect();
-
-        let local_lock_args = match singlesig.get(self.multisig_local_signer_idx) {
-            Some(a) => a.lock_args.clone(),
-            None => {
-                self.status = Status::Error("No single-sig account selected.".to_string());
-                return;
-            }
-        };
-
-        let co_signers: Vec<qpv2_core::types::Signer> = match self
+        // The card order is the signers' order.
+        let signers: Vec<qpv2_core::types::Signer> = match self
             .multisig_co_signers
             .iter()
             .enumerate()
             .map(|(i, (hex, variant))| {
-                hex::decode(hex.trim())
-                    .map_err(|e| format!("Invalid pubkey hex: {}", e))
-                    .and_then(|pubkey| qpv2_core::types::Signer::new(*variant, pubkey))
+                u8::try_from(i)
+                    .map_err(|_| "A multisig takes at most 255 signers.".to_string())
+                    .and_then(|index| {
+                        hex::decode(hex.trim())
+                            .map_err(|e| format!("Invalid pubkey hex: {}", e))
+                            .and_then(|pubkey| {
+                                qpv2_core::types::Signer::new(index, *variant, pubkey)
+                            })
+                    })
                     // Numbered as the dialog's cards are.
                     .map_err(|e| format!("Signer {:02}: {}", i + 1, e))
             })
@@ -697,8 +689,7 @@ impl App {
 
         match KeyVault::gen_multisig_account(
             self.wallet_id,
-            &local_lock_args,
-            co_signers,
+            signers,
             self.multisig_threshold,
             self.multisig_required_first_n,
         ) {

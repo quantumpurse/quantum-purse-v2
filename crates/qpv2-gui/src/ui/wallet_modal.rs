@@ -142,7 +142,7 @@ impl App {
                 );
                 // Right to left, so the modes are listed in reverse.
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    for (label, import) in [("IMPORT", true), ("CREATE", false)] {
+                    for (label, import) in [("IMPORT", true), ("CREATION", false)] {
                         let mut cell = ghost_button(&self.colors, label, toggle_size);
                         if import == is_import {
                             cell = cell

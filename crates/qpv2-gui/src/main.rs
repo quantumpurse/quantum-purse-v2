@@ -258,7 +258,6 @@ pub(crate) struct App {
 
     // ── Multisig account creation modal ──
     pub(crate) multisig_modal_open: bool,
-    pub(crate) multisig_local_signer_idx: usize,
     pub(crate) multisig_threshold: u8,
     pub(crate) multisig_required_first_n: u8,
     pub(crate) multisig_co_signers: Vec<(String, qpv2_core::types::SpxVariant)>,
@@ -568,7 +567,6 @@ impl App {
             device_popup_rect: None,
             needs_initial_fetch,
             multisig_modal_open: false,
-            multisig_local_signer_idx: 0,
             multisig_threshold: 1,
             multisig_required_first_n: 0,
             multisig_co_signers: vec![],

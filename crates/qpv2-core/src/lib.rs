@@ -166,10 +166,10 @@ impl KeyVault {
     }
 
     /// Finds which of this wallet's single-sig accounts are signers of a
-    /// multisig. Returns each one's position in `config`'s signer list with
-    /// the account's lock args, in signer-list order: a wallet holding several
-    /// of the keys gets one entry per key, to sign with each. The GUI and the
-    /// CLI both use it to sign and to co-sign.
+    /// multisig. Returns each one's signer index in `config` with the
+    /// account's lock args, in index order: a wallet holding several of the
+    /// keys gets one entry per key, to sign with each. The GUI and the CLI
+    /// both use it to sign and to co-sign.
     pub fn find_local_signers(
         wallet_id: u32,
         config: &MultisigConfig,
@@ -178,15 +178,14 @@ impl KeyVault {
         let found: Vec<(usize, String)> = config
             .signers()
             .iter()
-            .enumerate()
-            .filter_map(|(index, signer)| {
+            .filter_map(|signer| {
                 accounts
                     .iter()
                     .find(|a| {
                         let own = &a.config.signers()[0];
                         own.pubkey() == signer.pubkey() && own.variant() == signer.variant()
                     })
-                    .map(|a| (index, a.lock_args.clone()))
+                    .map(|a| (usize::from(signer.index()), a.lock_args.clone()))
             })
             .collect();
         if found.is_empty() {
@@ -362,16 +361,18 @@ impl KeyVault {
         Ok(account)
     }
 
-    /// Creates a multisig account using an existing single-sig account as
-    /// the local signer, combined with external co-signers. All signers
-    /// are sorted by pubkey bytes to produce a deterministic address.
+    /// Creates a multisig account from its signers. Every signer comes with
+    /// its index, and the signers are placed in index order: that order is
+    /// hashed into the address, and the first R of it must always sign. Your
+    /// own key is one of the signers like any other; at least one signer must
+    /// be a key this wallet holds, or the wallet could never sign for the
+    /// account.
     ///
     /// **Parameters**:
-    /// - `wallet_id` - The wallet containing the single-sig account.
-    /// - `singlesig_lock_args` - Lock args of the single-sig account to use as local signer.
-    /// - `co_signers` - External signers (variant + pubkey) to include.
+    /// - `wallet_id` - The wallet that holds at least one of the signers' keys.
+    /// - `signers` - All signers (index + variant + pubkey), your own included.
     /// - `threshold` - Minimum signatures required to unlock (M).
-    /// - `required_first_n` - How many of the first N sorted signers must always sign (R).
+    /// - `required_first_n` - How many signers, from index 0, must always sign (R).
     ///
     /// **Returns**:
     /// - The new multisig account on success, or an error on failure.
@@ -381,8 +382,7 @@ impl KeyVault {
     /// funds this wallet can never spend.
     pub fn gen_multisig_account(
         wallet_id: u32,
-        singlesig_lock_args: &str,
-        co_signers: Vec<types::Signer>,
+        signers: Vec<types::Signer>,
         threshold: u8,
         required_first_n: u8,
     ) -> Result<SphincsPlusAccount, String> {
@@ -392,29 +392,15 @@ impl KeyVault {
             );
         }
 
-        let singlesig = db::get_singlesig_account(wallet_id, singlesig_lock_args)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| {
-                tracing::error!(
-                    "Single-sig account not found (lock_args={})",
-                    singlesig_lock_args
-                );
-                "Single-sig account not found.".to_string()
-            })?;
-
-        let local_signer = singlesig.config.signers()[0].clone();
         tracing::info!(
-            "Creating multisig account (wallet_id={}, local_signer={}..., co_signers={})",
+            "Creating multisig account (wallet_id={}, signers={})",
             wallet_id,
-            &singlesig_lock_args[..8.min(singlesig_lock_args.len())],
-            co_signers.len()
+            signers.len()
         );
 
-        let mut signers = co_signers;
-        signers.push(local_signer);
-        signers.sort_by(|a, b| a.pubkey().cmp(b.pubkey()));
-
         let config = MultisigConfig::new(required_first_n, threshold, signers)?;
+        // Refuses a multisig this wallet holds no key for.
+        Self::find_local_signers(wallet_id, &config)?;
         let lock_script_args = config.lock_script_args();
 
         let account = SphincsPlusAccount {

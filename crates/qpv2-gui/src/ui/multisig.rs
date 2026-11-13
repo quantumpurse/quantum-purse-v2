@@ -80,8 +80,7 @@ impl App {
                             .config
                             .signers()
                             .iter()
-                            .enumerate()
-                            .map(|(si, s)| {
+                            .map(|s| {
                                 let pk_hex = hex::encode(s.pubkey());
                                 // A signer is "local" when one of this wallet's
                                 // single-sig accounts carries the same pubkey.
@@ -90,9 +89,10 @@ impl App {
                                         && x.config.signers()[0].pubkey() == s.pubkey()
                                 });
                                 SignerLine {
+                                    // Counted from 1 on screen.
                                     text: format!(
                                         "S{} {} {}",
-                                        si,
+                                        usize::from(s.index()) + 1,
                                         s.variant(),
                                         truncate_middle(&pk_hex, 20, 20)
                                     ),
@@ -139,12 +139,15 @@ impl App {
                         let btn =
                             accent_button(&self.colors, "NEW MULTISIG", egui::vec2(btn_w, 24.0));
                         if ui.add(btn).clicked() {
-                            self.multisig_local_signer_idx = 0;
                             self.multisig_threshold = 1;
                             self.multisig_required_first_n = 0;
-                            // A multisig needs at least one co-signer, so
-                            // the first card is there to fill in.
-                            self.multisig_co_signers = vec![(String::new(), NEW_CO_SIGNER_VARIANT)];
+                            // A multisig needs at least two signers, your
+                            // own key and one more, so two cards are there
+                            // to fill in.
+                            self.multisig_co_signers = vec![
+                                (String::new(), NEW_CO_SIGNER_VARIANT),
+                                (String::new(), NEW_CO_SIGNER_VARIANT),
+                            ];
                             self.multisig_modal_open = true;
                         }
                     });

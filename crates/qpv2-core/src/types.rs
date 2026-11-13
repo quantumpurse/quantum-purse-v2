@@ -38,23 +38,28 @@ pub struct CipherPayload {
     pub cipher_text: String,
 }
 
-/// A signer in a multisig group: their SPHINCS+ variant and public key.
+/// A signer in a multisig group: their place in it, SPHINCS+ variant and
+/// public key.
 ///
 /// The fields are private so that a signer from outside this crate can only
 /// come from [`Signer::new`], which checks the key's length. Saved accounts
 /// and signing requests are loaded back as they were written.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Signer {
+    /// This signer's place in its multisig, counting from 0. The signers at
+    /// places below `required_first_n` must always sign.
+    index: u8,
     variant: SpxVariant,
     #[serde(with = "hex::serde")]
     pubkey: Vec<u8>,
 }
 
 impl Signer {
-    /// A signer from its parameter set and public key. A key of the wrong
-    /// length is refused: the account's address would be built from it, and
-    /// no signature could ever unlock what is sent there.
-    pub fn new(variant: SpxVariant, pubkey: Vec<u8>) -> Result<Self, String> {
+    /// A signer at `index` in its multisig, with its parameter set and public
+    /// key. A key of the wrong length is refused: the account's address
+    /// would be built from it, and no signature could ever unlock what is
+    /// sent there.
+    pub fn new(index: u8, variant: SpxVariant, pubkey: Vec<u8>) -> Result<Self, String> {
         let param_id: ckb_fips205_utils::ParamId = (variant as u8)
             .try_into()
             .expect("SpxVariant and ParamId share discriminants");
@@ -67,7 +72,15 @@ impl Signer {
                 pubkey.len()
             ));
         }
-        Ok(Signer { variant, pubkey })
+        Ok(Signer {
+            index,
+            variant,
+            pubkey,
+        })
+    }
+
+    pub fn index(&self) -> u8 {
+        self.index
     }
 
     pub fn variant(&self) -> SpxVariant {
@@ -135,18 +148,62 @@ impl fmt::Display for SingleSigConvention {
 ///
 /// The fields are private so that a config can only be built by [`Self::new`],
 /// a checked multisig of 2 or more signers, or [`Self::single_sig`], a 1-of-1.
-/// Saved accounts and signing requests are loaded back as they were written.
+/// Saved accounts and signing requests are loaded back through the same
+/// placing of signers by index that [`Self::new`] does.
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(try_from = "ReprMultisigConfig")]
 pub struct MultisigConfig {
     /// How many of the first N signers must always provide a signature.
     required_first_n: u8,
     /// Minimum number of valid signatures required to unlock (M in M-of-N).
     threshold: u8,
-    /// All signers in deterministic order, each with their own SPHINCS+ variant.
+    /// All signers in index order, each with their own SPHINCS+ variant.
     signers: Vec<Signer>,
 }
 
+/// A `MultisigConfig` as written in JSON. Reading one goes through the
+/// `TryFrom` below, which places the signers by index and refuses an
+/// incomplete numbering, the same as [`MultisigConfig::new`].
+#[derive(Deserialize)]
+struct ReprMultisigConfig {
+    required_first_n: u8,
+    threshold: u8,
+    signers: Vec<Signer>,
+}
+
+impl TryFrom<ReprMultisigConfig> for MultisigConfig {
+    type Error = String;
+
+    fn try_from(repr: ReprMultisigConfig) -> Result<Self, String> {
+        Ok(MultisigConfig {
+            required_first_n: repr.required_first_n,
+            threshold: repr.threshold,
+            signers: MultisigConfig::order_signers(repr.signers)?,
+        })
+    }
+}
+
 impl MultisigConfig {
+    /// Sorts the signers by index, so the order they arrive in doesn't
+    /// matter, and refuses a numbering that doesn't cover 0 to N − 1 exactly
+    /// once. The sorted order is what's hashed into the address and what
+    /// `required_first_n` counts from, so a gap or repeat would leave who
+    /// sits where, and so who is required, undefined.
+    fn order_signers(mut signers: Vec<Signer>) -> Result<Vec<Signer>, String> {
+        signers.sort_by_key(|signer| signer.index);
+        for (place, signer) in signers.iter().enumerate() {
+            if usize::from(signer.index) != place {
+                return Err(format!(
+                    "Signer indices must run from 0 to {}, each used once; got index {} where {} was expected.",
+                    signers.len().saturating_sub(1),
+                    signer.index,
+                    place
+                ));
+            }
+        }
+        Ok(signers)
+    }
+
     /// Validate multisig parameters.
     fn pre_validate(signers: &[Signer], threshold: u8, required_first_n: u8) -> Result<(), String> {
         let total_signers = signers.len();
@@ -184,8 +241,12 @@ impl MultisigConfig {
         Ok(())
     }
 
-    /// Validated constructor. Returns an error if the config violates on-chain constraints.
+    /// Validated constructor. Places the signers by their indices, which must
+    /// run from 0 to N − 1 with no gap or repeat, so the order they arrive
+    /// in doesn't matter. Returns an error if the config violates on-chain
+    /// constraints.
     pub fn new(required_first_n: u8, threshold: u8, signers: Vec<Signer>) -> Result<Self, String> {
+        let signers = Self::order_signers(signers)?;
         Self::pre_validate(&signers, threshold, required_first_n)?;
         Ok(MultisigConfig {
             required_first_n,
@@ -209,7 +270,11 @@ impl MultisigConfig {
         MultisigConfig {
             required_first_n: convention.required_first_n(),
             threshold: 1,
-            signers: vec![Signer { variant, pubkey }],
+            signers: vec![Signer {
+                index: 0,
+                variant,
+                pubkey,
+            }],
         }
     }
 
@@ -223,7 +288,7 @@ impl MultisigConfig {
         self.threshold
     }
 
-    /// All signers in deterministic order (N is the count).
+    /// All signers in index order (N is the count).
     pub fn signers(&self) -> &[Signer] {
         &self.signers
     }
@@ -356,7 +421,8 @@ impl MultisigConfig {
         let mut lock = Vec::new();
         lock.extend_from_slice(&self.header_bytes());
 
-        for (i, signer) in self.signers().iter().enumerate() {
+        for signer in self.signers() {
+            let i = usize::from(signer.index());
             let param_id: ckb_fips205_utils::ParamId = (signer.variant() as u8)
                 .try_into()
                 .expect("SpxVariant and ParamId share discriminants");
@@ -504,7 +570,7 @@ impl TryFrom<ReprSigningRequest> for SigningRequest {
         let multisig_config = given
             .signers
             .iter()
-            .map(|s| Signer::new(s.variant, s.pubkey.clone()))
+            .map(|s| Signer::new(s.index, s.variant, s.pubkey.clone()))
             .collect::<Result<Vec<_>, _>>()
             .and_then(|signers| {
                 MultisigConfig::new(given.required_first_n, given.threshold, signers)
@@ -1223,22 +1289,71 @@ mod tests {
     /// SPHINCS+-128 public keys are 32 bytes.
     const SHA2_128S_PK_LEN: usize = 32;
 
+    /// A signer at `index` whose public key is `fill` repeated.
+    fn key(index: u8, fill: u8) -> Signer {
+        Signer::new(index, SpxVariant::Sha2128S, vec![fill; SHA2_128S_PK_LEN]).unwrap()
+    }
+
     #[test]
     fn signer_needs_a_key_of_its_variants_length() {
-        assert!(Signer::new(SpxVariant::Sha2128S, vec![0; SHA2_128S_PK_LEN]).is_ok());
+        assert!(Signer::new(0, SpxVariant::Sha2128S, vec![0; SHA2_128S_PK_LEN]).is_ok());
         for len in [0, SHA2_128S_PK_LEN - 1, SHA2_128S_PK_LEN + 1] {
-            let err = Signer::new(SpxVariant::Sha2128S, vec![0; len]).unwrap_err();
+            let err = Signer::new(0, SpxVariant::Sha2128S, vec![0; len]).unwrap_err();
             assert!(err.contains(&format!("got {}", len)), "{err}");
         }
     }
 
     #[test]
     fn multisig_needs_at_least_two_signers() {
-        let one = Signer::new(SpxVariant::Sha2128S, vec![1; SHA2_128S_PK_LEN]).unwrap();
-        let err = MultisigConfig::new(0, 1, vec![one.clone()]).unwrap_err();
+        let err = MultisigConfig::new(0, 1, vec![key(0, 1)]).unwrap_err();
         assert!(err.contains("at least one co-signer"), "{err}");
-        let two = Signer::new(SpxVariant::Sha2128S, vec![2; SHA2_128S_PK_LEN]).unwrap();
-        assert!(MultisigConfig::new(0, 1, vec![one, two]).is_ok());
+        assert!(MultisigConfig::new(0, 1, vec![key(0, 1), key(1, 2)]).is_ok());
+    }
+
+    /// The indices must name every place once. A gap, a repeat or a missing
+    /// 0 would leave the order, and so who is required, undefined.
+    #[test]
+    fn multisig_refuses_a_gap_or_repeat_in_signer_indices() {
+        for [first, second] in [[0, 2], [0, 0], [1, 2]] {
+            let err = MultisigConfig::new(0, 1, vec![key(first, 1), key(second, 2)]).unwrap_err();
+            assert!(
+                err.contains("Signer indices must run from 0 to 1"),
+                "{first}, {second}: {err}"
+            );
+        }
+    }
+
+    /// Signers are placed by index, not by the order they arrive in or by
+    /// their keys, so the same indices always give the same address.
+    #[test]
+    fn multisig_places_signers_by_index() {
+        let given = MultisigConfig::new(1, 2, vec![key(0, 9), key(1, 1), key(2, 5)]).unwrap();
+        let shuffled = MultisigConfig::new(1, 2, vec![key(2, 5), key(0, 9), key(1, 1)]).unwrap();
+        assert_eq!(given.lock_script_args(), shuffled.lock_script_args());
+        assert_eq!(
+            shuffled.signers()[0].pubkey(),
+            vec![9; SHA2_128S_PK_LEN].as_slice()
+        );
+    }
+
+    /// A saved or received config is placed by index when read, like one
+    /// built here, so the order its file lists the signers in doesn't matter
+    /// and the address stays the same. An incomplete numbering is refused.
+    #[test]
+    fn config_reads_back_placed_by_index() {
+        let config = MultisigConfig::new(1, 2, vec![key(0, 1), key(1, 2)]).unwrap();
+        let mut json = serde_json::to_value(&config).unwrap();
+        json["signers"].as_array_mut().unwrap().swap(0, 1);
+        let read: MultisigConfig = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(read.lock_script_args(), config.lock_script_args());
+        assert_eq!(read.signers()[0].index(), 0);
+
+        json["signers"][0]["index"] = serde_json::json!(2);
+        let err = serde_json::from_value::<MultisigConfig>(json).unwrap_err();
+        assert!(
+            err.to_string().contains("got index 2 where 1 was expected"),
+            "{err}"
+        );
     }
 
     mod signing_request {
@@ -1253,11 +1368,7 @@ mod tests {
         const CKB: u64 = 100_000_000;
 
         fn multisig() -> MultisigConfig {
-            let signers = vec![
-                Signer::new(SpxVariant::Sha2128S, vec![1; SHA2_128S_PK_LEN]).unwrap(),
-                Signer::new(SpxVariant::Sha2128S, vec![2; SHA2_128S_PK_LEN]).unwrap(),
-            ];
-            MultisigConfig::new(0, 1, signers).unwrap()
+            MultisigConfig::new(0, 1, vec![key(0, 1), key(1, 2)]).unwrap()
         }
 
         /// The multisig's lock on testnet.
@@ -1511,7 +1622,7 @@ mod tests {
 
         /// A friend's single-sig lock, for outputs that leave the multisig.
         fn friend() -> Script {
-            let key = Signer::new(SpxVariant::Sha2128S, vec![3; SHA2_128S_PK_LEN]).unwrap();
+            let key = key(0, 3);
             lock_of(&MultisigConfig::single_sig(
                 key.variant,
                 key.pubkey,
