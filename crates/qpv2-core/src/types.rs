@@ -43,8 +43,9 @@ pub struct CipherPayload {
 ///
 /// The fields are private so that a signer from outside this crate can only
 /// come from [`Signer::new`], which checks the key's length. Saved accounts
-/// and signing requests are loaded back as they were written.
+/// and signing requests are read back through the same check.
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(try_from = "ReprSigner")]
 pub struct Signer {
     /// This signer's place in its multisig, counting from 0. The signers at
     /// places below `required_first_n` must always sign.
@@ -52,6 +53,24 @@ pub struct Signer {
     variant: SpxVariant,
     #[serde(with = "hex::serde")]
     pubkey: Vec<u8>,
+}
+
+/// A `Signer` as written in JSON. Reading one goes through [`Signer::new`],
+/// so a saved key of the wrong length is refused like a typed one.
+#[derive(Deserialize)]
+struct ReprSigner {
+    index: u8,
+    variant: SpxVariant,
+    #[serde(with = "hex::serde")]
+    pubkey: Vec<u8>,
+}
+
+impl TryFrom<ReprSigner> for Signer {
+    type Error = String;
+
+    fn try_from(repr: ReprSigner) -> Result<Self, String> {
+        Signer::new(repr.index, repr.variant, repr.pubkey)
+    }
 }
 
 impl Signer {
@@ -148,8 +167,10 @@ impl fmt::Display for SingleSigConvention {
 ///
 /// The fields are private so that a config can only be built by [`Self::new`],
 /// a checked multisig of 2 or more signers, or [`Self::single_sig`], a 1-of-1.
-/// Saved accounts and signing requests are loaded back through the same
-/// placing of signers by index that [`Self::new`] does.
+/// Saved accounts and signing requests are read back through the same
+/// placing of signers by index and the same checks of the lock script's rules
+/// that [`Self::new`] does. Only the one-co-signer rule is left to
+/// [`Self::new`], since a single-sig account is saved as a 1-of-1.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(try_from = "ReprMultisigConfig")]
 pub struct MultisigConfig {
@@ -162,8 +183,9 @@ pub struct MultisigConfig {
 }
 
 /// A `MultisigConfig` as written in JSON. Reading one goes through the
-/// `TryFrom` below, which places the signers by index and refuses an
-/// incomplete numbering, the same as [`MultisigConfig::new`].
+/// `TryFrom` below, which places the signers by index and checks the lock
+/// script's rules, the same as [`MultisigConfig::new`]. One signer is
+/// accepted here: a single-sig account is saved as a 1-of-1.
 #[derive(Deserialize)]
 struct ReprMultisigConfig {
     required_first_n: u8,
@@ -175,10 +197,12 @@ impl TryFrom<ReprMultisigConfig> for MultisigConfig {
     type Error = String;
 
     fn try_from(repr: ReprMultisigConfig) -> Result<Self, String> {
+        let signers = MultisigConfig::order_signers(repr.signers)?;
+        MultisigConfig::pre_validate(&signers, repr.threshold, repr.required_first_n)?;
         Ok(MultisigConfig {
             required_first_n: repr.required_first_n,
             threshold: repr.threshold,
-            signers: MultisigConfig::order_signers(repr.signers)?,
+            signers,
         })
     }
 }
@@ -204,13 +228,15 @@ impl MultisigConfig {
         Ok(signers)
     }
 
-    /// Validate multisig parameters.
+    /// Checks what the lock script requires of any config, a single-sig
+    /// 1-of-1 included: 1 to 255 signers (N is one byte), a threshold of 1 to
+    /// N, and `required_first_n` at most the threshold. Also refuses a key
+    /// listed twice, which would let one person sign as two.
     fn pre_validate(signers: &[Signer], threshold: u8, required_first_n: u8) -> Result<(), String> {
         let total_signers = signers.len();
-        // total signer must not be 0(impossible), 1(single sig), and ^255(hardcap)
-        if !(2..=255).contains(&total_signers) {
+        if !(1..=255).contains(&total_signers) {
             return Err(format!(
-                "A multisig account needs 2..=255 signers (at least one co-signer), got {}.",
+                "A config needs 1..=255 signers, got {}.",
                 total_signers
             ));
         }
@@ -219,10 +245,8 @@ impl MultisigConfig {
         }
         if threshold as usize > total_signers {
             return Err(format!(
-                "Threshold ({}) exceeds total signers ({}: {} co-signer(s) + your wallet's key).",
-                threshold,
-                total_signers,
-                total_signers - 1
+                "Threshold ({}) exceeds the number of signers ({}).",
+                threshold, total_signers
             ));
         }
         if required_first_n > threshold {
@@ -244,8 +268,16 @@ impl MultisigConfig {
     /// Validated constructor. Places the signers by their indices, which must
     /// run from 0 to N − 1 with no gap or repeat, so the order they arrive
     /// in doesn't matter. Returns an error if the config violates on-chain
-    /// constraints.
+    /// constraints, or has no co-signer: a multisig account with one signer
+    /// would be a single-sig account at another address, which
+    /// [`Self::single_sig`] makes.
     pub fn new(required_first_n: u8, threshold: u8, signers: Vec<Signer>) -> Result<Self, String> {
+        if signers.len() < 2 {
+            return Err(format!(
+                "A multisig account needs 2..=255 signers (at least one co-signer), got {}.",
+                signers.len()
+            ));
+        }
         let signers = Self::order_signers(signers)?;
         Self::pre_validate(&signers, threshold, required_first_n)?;
         Ok(MultisigConfig {
@@ -1354,6 +1386,50 @@ mod tests {
             err.to_string().contains("got index 2 where 1 was expected"),
             "{err}"
         );
+    }
+
+    /// A saved or received config must satisfy the lock script's rules when
+    /// read, not only when built: a file edited to a threshold above its
+    /// signer count, or a key cut short, is refused on load.
+    #[test]
+    fn config_read_back_is_checked_like_a_new_one() {
+        let config = MultisigConfig::new(1, 2, vec![key(0, 1), key(1, 2)]).unwrap();
+        let json = serde_json::to_value(&config).unwrap();
+
+        let mut edited = json.clone();
+        edited["threshold"] = serde_json::json!(3);
+        let err = serde_json::from_value::<MultisigConfig>(edited).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Threshold (3) exceeds the number of signers (2)"),
+            "{err}"
+        );
+
+        let mut edited = json;
+        edited["signers"][0]["pubkey"] =
+            serde_json::json!(hex::encode(vec![1; SHA2_128S_PK_LEN - 1]));
+        let err = serde_json::from_value::<MultisigConfig>(edited).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains(&format!("got {}", SHA2_128S_PK_LEN - 1)),
+            "{err}"
+        );
+    }
+
+    /// Single-sig accounts are saved as 1-of-1 configs, in either
+    /// convention, and read back through the same checks as a multisig.
+    #[test]
+    fn single_sig_config_reads_back() {
+        for convention in [SingleSigConvention::Standard, SingleSigConvention::V1] {
+            let config = MultisigConfig::single_sig(
+                SpxVariant::Sha2128S,
+                vec![1; SHA2_128S_PK_LEN],
+                convention,
+            );
+            let json = serde_json::to_value(&config).unwrap();
+            let read: MultisigConfig = serde_json::from_value(json).unwrap();
+            assert_eq!(read.lock_script_args(), config.lock_script_args());
+        }
     }
 
     mod signing_request {
