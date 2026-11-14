@@ -435,8 +435,9 @@ impl MultisigConfig {
         for i in 0..r {
             if !sig_indices.contains(&i) {
                 return Err(format!(
-                    "Signer {} is required (required_first_n={}) but has no signature.",
-                    i, r
+                    "S{} is required (required_first_n={}) but has no signature.",
+                    i + 1,
+                    r
                 ));
             }
         }
@@ -444,7 +445,7 @@ impl MultisigConfig {
         for sig in signatures {
             if sig.signer_index >= n {
                 return Err(format!(
-                    "Signer index {} out of range (N={}).",
+                    "Signer index {} is out of range: the multisig has {} signers.",
                     sig.signer_index, n
                 ));
             }
@@ -463,8 +464,8 @@ impl MultisigConfig {
                 let (_, expected_sig_len) = ckb_fips205_utils::verifying::lengths(param_id);
                 if sig.signature.len() != expected_sig_len {
                     return Err(format!(
-                        "Signer {} signature length mismatch: expected {}, got {}.",
-                        i,
+                        "S{} signature length mismatch: expected {}, got {}.",
+                        i + 1,
                         expected_sig_len,
                         sig.signature.len()
                     ));
@@ -1154,14 +1155,14 @@ impl SigningResponse {
         for (i, sig) in self.signed.iter().enumerate() {
             if sig.signer_index >= n_signers {
                 return Err(format!(
-                    "Signer index {} out of range (N={}).",
+                    "Signer index {} is out of range: the multisig has {} signers.",
                     sig.signer_index, n_signers
                 ));
             }
             if collected.iter().any(|s| s.signer_index == sig.signer_index) {
                 return Err(format!(
-                    "Signer {} already provided a signature.",
-                    sig.signer_index
+                    "S{} already provided a signature.",
+                    sig.signer_index + 1
                 ));
             }
             if self.signed[..i]
@@ -1169,8 +1170,8 @@ impl SigningResponse {
                 .any(|s| s.signer_index == sig.signer_index)
             {
                 return Err(format!(
-                    "The response holds signer {} twice.",
-                    sig.signer_index
+                    "The response holds S{} twice.",
+                    sig.signer_index + 1
                 ));
             }
         }

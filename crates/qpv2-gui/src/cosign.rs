@@ -63,12 +63,12 @@ impl App {
         let signer_positions: Vec<String> = response
             .signed
             .iter()
-            .map(|s| s.signer_index.to_string())
+            .map(|s| format!("S{}", s.signer_index + 1))
             .collect();
         signatures.extend(response.signed);
         import_response_json.clear();
         self.status = crate::types::Status::Info(format!(
-            "Signature from signer {} imported.",
+            "Signature from {} imported.",
             signer_positions.join(", ")
         ));
     }

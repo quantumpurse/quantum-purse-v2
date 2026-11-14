@@ -1339,10 +1339,7 @@ fn handle_msig_sign(
         } else {
             format!(" (key {} of {})", k + 1, total)
         };
-        println!(
-            "Matched local account as signer index {}{}.",
-            signer_index, key
-        );
+        println!("Matched local account as S{}{}.", signer_index + 1, key);
 
         let auth = resolve_auth_key(wallet_id, &format!("co-sign a multisig transaction{}", key))?;
         let (signature, _pubkey) =
