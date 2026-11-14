@@ -367,8 +367,8 @@ enum MsigCommands {
         /// Path to the signing request JSON file
         #[arg(short = 'q', long)]
         request: String,
-        /// Paths to signing response JSON files (repeat for each response)
-        #[arg(short, long, num_args = 1..)]
+        /// Path to one signing response JSON file. Repeat the flag for each response
+        #[arg(short, long)]
         response: Vec<String>,
     },
 }
