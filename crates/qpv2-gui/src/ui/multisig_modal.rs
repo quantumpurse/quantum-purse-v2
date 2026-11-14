@@ -144,6 +144,9 @@ impl App {
         section_header(ui, &self.colors, "02", "Signers");
         ui.add_space(6.0);
 
+        // A multisig needs at least two signers, so the last two cards can't
+        // be removed.
+        let can_remove = self.multisig_co_signers.len() > 2;
         let mut remove_index: Option<usize> = None;
         for (i, (pubkey_hex, variant)) in self.multisig_co_signers.iter_mut().enumerate() {
             egui::Frame::new()
@@ -174,17 +177,22 @@ impl App {
                                 }
                             });
                         pin_popup_above_modal(ui, &variant_combo.response);
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let remove = egui::Button::new(
-                                egui::RichText::new("\u{2715}").size(11.0).color(c_danger),
-                            )
-                            .fill(egui::Color32::TRANSPARENT)
-                            .stroke(egui::Stroke::new(1.0, c_border))
-                            .corner_radius(0.0);
-                            if ui.add(remove).clicked() {
-                                remove_index = Some(i);
-                            }
-                        });
+                        if can_remove {
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    let remove = egui::Button::new(
+                                        egui::RichText::new("\u{2715}").size(11.0).color(c_danger),
+                                    )
+                                    .fill(egui::Color32::TRANSPARENT)
+                                    .stroke(egui::Stroke::new(1.0, c_border))
+                                    .corner_radius(0.0);
+                                    if ui.add(remove).clicked() {
+                                        remove_index = Some(i);
+                                    }
+                                },
+                            );
+                        }
                     });
                     ui.add_space(6.0);
                     ui.label(
