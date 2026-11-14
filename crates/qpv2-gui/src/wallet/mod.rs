@@ -686,7 +686,7 @@ impl App {
     pub(crate) fn create_multisig_account(&mut self) {
         // The card order is the signers' order.
         let signers: Vec<qpv2_core::types::Signer> = match self
-            .multisig_co_signers
+            .multisig_signers
             .iter()
             .enumerate()
             .map(|(i, (hex, variant))| {

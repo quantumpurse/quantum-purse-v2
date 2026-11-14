@@ -3,7 +3,7 @@
 use eframe::egui;
 
 use super::accounts::{header_cell, table_rule};
-use super::multisig_modal::NEW_CO_SIGNER_VARIANT;
+use super::multisig_modal::NEW_SIGNER_VARIANT;
 use super::utils::truncate_middle;
 use super::utils::{
     accent_button, badge, ckb_split, ghost_button, panel_frame, row_hover, section_header,
@@ -144,9 +144,9 @@ impl App {
                             // A multisig needs at least two signers, your
                             // own key and one more, so two cards are there
                             // to fill in.
-                            self.multisig_co_signers = vec![
-                                (String::new(), NEW_CO_SIGNER_VARIANT),
-                                (String::new(), NEW_CO_SIGNER_VARIANT),
+                            self.multisig_signers = vec![
+                                (String::new(), NEW_SIGNER_VARIANT),
+                                (String::new(), NEW_SIGNER_VARIANT),
                             ];
                             self.multisig_modal_open = true;
                         }

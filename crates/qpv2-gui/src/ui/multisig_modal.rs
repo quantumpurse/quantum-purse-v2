@@ -1,6 +1,6 @@
 //! Modal for creating a multisig account, in the Flight Deck idiom:
-//! sharp hairline-framed surface with indexed sections for the local
-//! signer, the M/R signing policy, and the co-signer roster.
+//! sharp hairline-framed surface with indexed sections for the M/R signing
+//! policy and the signers.
 
 use eframe::egui;
 use qpv2_core::types::SpxVariant;
@@ -10,9 +10,9 @@ use crate::ui::utils::{accent_button, ghost_button, pin_popup_above_modal, secti
 use crate::App;
 
 const MODAL_W: f32 = 480.0;
-/// The parameter set a new co-signer card starts on.
-pub(crate) const NEW_CO_SIGNER_VARIANT: SpxVariant = SpxVariant::Sha2128F;
-/// Tall enough for two co-signer cards; a third starts the scrolling.
+/// The parameter set a new signer card starts on.
+pub(crate) const NEW_SIGNER_VARIANT: SpxVariant = SpxVariant::Sha2128F;
+/// Tall enough for two signer cards; a third starts the scrolling.
 const MODAL_BODY_MAX_H: f32 = 5400.0;
 
 impl App {
@@ -43,7 +43,7 @@ impl App {
             screen_rect.height() * 0.1,
         );
         let margin = egui::Margin::symmetric(20, 18);
-        // Each co-signer adds a card, so past this height the dialog scrolls.
+        // Each signer adds a card, so past this height the dialog scrolls.
         // The window caps it too, ending the dialog as far from the bottom as
         // it starts from the top, since zooming in shrinks the window.
         let max_body_h = MODAL_BODY_MAX_H.min(screen_rect.height() * 0.8 - margin.sum().y);
@@ -61,7 +61,7 @@ impl App {
                             .max_height(max_body_h)
                             // An area offers its contents only last frame's
                             // height, so without this the dialog stays as
-                            // short as it opened, with no co-signers.
+                            // short as it opened, with two signers.
                             .min_scrolled_height(max_body_h)
                             // A card added from the bottom stays in view.
                             .stick_to_bottom(true)
@@ -146,9 +146,9 @@ impl App {
 
         // A multisig needs at least two signers, so the last two cards can't
         // be removed.
-        let can_remove = self.multisig_co_signers.len() > 2;
+        let can_remove = self.multisig_signers.len() > 2;
         let mut remove_index: Option<usize> = None;
-        for (i, (pubkey_hex, variant)) in self.multisig_co_signers.iter_mut().enumerate() {
+        for (i, (pubkey_hex, variant)) in self.multisig_signers.iter_mut().enumerate() {
             egui::Frame::new()
                 .fill(self.colors.surface2)
                 .stroke(egui::Stroke::new(1.0, c_border))
@@ -212,7 +212,7 @@ impl App {
         }
 
         if let Some(idx) = remove_index {
-            self.multisig_co_signers.remove(idx);
+            self.multisig_signers.remove(idx);
         }
 
         if ui
@@ -223,8 +223,8 @@ impl App {
             ))
             .clicked()
         {
-            self.multisig_co_signers
-                .push((String::new(), NEW_CO_SIGNER_VARIANT));
+            self.multisig_signers
+                .push((String::new(), NEW_SIGNER_VARIANT));
         }
 
         ui.add_space(14.0);
@@ -241,7 +241,7 @@ impl App {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // One signer means a single-sig account, which this modal
                 // must not create — core rejects it too.
-                let enough_signers = self.multisig_co_signers.len() >= 2;
+                let enough_signers = self.multisig_signers.len() >= 2;
                 if ui
                     .add_enabled(
                         enough_signers,
