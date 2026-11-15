@@ -524,6 +524,14 @@ impl TryFrom<ReprSphincsPlusAccount> for SphincsPlusAccount {
     }
 }
 
+/// A signer of a multisig whose key this wallet holds, with the lock args of
+/// the single-sig account holding that key, which signing unlocks.
+#[derive(Debug, Clone)]
+pub struct LocalSigner {
+    pub signer: Signer,
+    pub lock_args: String,
+}
+
 /// One signature in a [`super::SigningResponse`].
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MsigSignature {

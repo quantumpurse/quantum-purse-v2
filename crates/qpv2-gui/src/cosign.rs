@@ -3,23 +3,13 @@
 //! co-signing side. The screens that drive it are in `ui/cosigner.rs`.
 
 use qpv2_core::types::{
-    AuthKey, AuthMethod, MsigSignature, SigningRequest, SigningResponse, SpxVariant,
+    AuthKey, AuthMethod, LocalSigner, MsigSignature, SigningRequest, SigningResponse,
 };
 use qpv2_core::KeyVault;
 
 use crate::types::{Status, TransactionStatus};
 use crate::wallet::{get_fido2_dek, spawn_fido2_job};
 use crate::App;
-
-/// Who in this wallet signs a co-signer's request, and what.
-struct CosignSigner {
-    variant: SpxVariant,
-    /// This wallet's keys among the request's signers: each one's position,
-    /// and the single-sig account holding it.
-    keys: Vec<(usize, String)>,
-    /// The message to sign, decoded from the request.
-    message: Vec<u8>,
-}
 
 impl App {
     /// Parse and validate the import buffer as a `SigningResponse`, then add
@@ -73,33 +63,18 @@ impl App {
         ));
     }
 
-    /// Checks a co-signer's request against THIS wallet's accounts: which
-    /// accounts sign, at which positions among the signers, and the message.
-    fn find_local_signer(&self, request: &SigningRequest) -> Result<CosignSigner, String> {
-        let variant = KeyVault::get_spx_variant(self.wallet_id)
-            .map_err(|e| format!("Failed to read variant: {}", e))?;
-        let keys = KeyVault::find_local_signers(self.wallet_id, request.multisig_config())?;
-
-        let message = request.signing_message().as_bytes().to_vec();
-
-        Ok(CosignSigner {
-            variant,
-            keys,
-            message,
-        })
-    }
-
     /// Co-signs on a password or Touch ID wallet: checks the request, asks
     /// for the key as it signs, once per key this wallet holds, then shows
     /// the response.
     pub(crate) fn co_sign(&mut self, request: SigningRequest) {
-        let signer = match self.find_local_signer(&request) {
-            Ok(s) => s,
-            Err(e) => {
-                self.status = Status::Error(e);
-                return;
-            }
-        };
+        let local_signers =
+            match KeyVault::find_local_signers(self.wallet_id, request.multisig_config()) {
+                Ok(found) => found,
+                Err(e) => {
+                    self.status = Status::Error(e);
+                    return;
+                }
+            };
 
         // Authenticate. Trezor is refused up front — the firmware only signs
         // a transaction locked by its own single-sig lock, so there is no
@@ -112,7 +87,7 @@ impl App {
             return;
         }
 
-        let signed = sign(self.wallet_id, &request, signer, |purpose| {
+        let signed = sign(self.wallet_id, &request, local_signers, |purpose| {
             self.resolve_auth_key(purpose)
                 .map_err(|e| format!("Auth failed: {}", e))
         });
@@ -127,13 +102,14 @@ impl App {
     /// the key waits for a touch, one per key this wallet holds;
     /// `poll_fido2_cosign` shows the response.
     pub(crate) fn co_sign_with_fido2(&mut self, request: SigningRequest) {
-        let signer = match self.find_local_signer(&request) {
-            Ok(s) => s,
-            Err(e) => {
-                self.status = Status::Error(e);
-                return;
-            }
-        };
+        let local_signers =
+            match KeyVault::find_local_signers(self.wallet_id, request.multisig_config()) {
+                Ok(found) => found,
+                Err(e) => {
+                    self.status = Status::Error(e);
+                    return;
+                }
+            };
         let credential_id = match self.get_fido2_credential() {
             Ok(c) => c,
             Err(e) => {
@@ -143,7 +119,7 @@ impl App {
         };
         let wallet_id = self.wallet_id;
         let job = move || {
-            sign(wallet_id, &request, signer, |purpose| {
+            sign(wallet_id, &request, local_signers, |purpose| {
                 get_fido2_dek(&credential_id, purpose).map_err(|e| format!("Auth failed: {}", e))
             })
         };
@@ -160,35 +136,39 @@ impl App {
     }
 }
 
-/// Signs a co-signer's request with each key this wallet holds in it,
-/// unlocking the wallet with `unlock` for each, and returns the response to
-/// send back. Touches no UI state, so it can run on a worker.
+/// Signs a co-signer's request as each of `local_signers`, the signers whose
+/// keys this wallet holds, unlocking the wallet with `unlock` for each, and
+/// returns the response to send back. Touches no UI state, so it can run on
+/// a worker.
 fn sign(
     wallet_id: u32,
     request: &SigningRequest,
-    signer: CosignSigner,
+    local_signers: Vec<LocalSigner>,
     mut unlock: impl FnMut(&str) -> Result<AuthKey, String>,
 ) -> Result<String, String> {
-    let vault = KeyVault::new(signer.variant, wallet_id);
-    let total = signer.keys.len();
+    let variant = KeyVault::get_spx_variant(wallet_id)
+        .map_err(|e| format!("Failed to read variant: {}", e))?;
+    let vault = KeyVault::new(variant, wallet_id);
+    let message = request.signing_message().as_bytes().to_vec();
+    let total = local_signers.len();
     let mut signed = Vec::with_capacity(total);
-    for (k, (signer_index, lock_args)) in signer.keys.into_iter().enumerate() {
+    for (i, local_signer) in local_signers.into_iter().enumerate() {
         // The unlock dialog names the key, so signing twice isn't a surprise.
         let purpose = if total == 1 {
             "co-sign a multisig transaction".to_string()
         } else {
             format!(
                 "co-sign a multisig transaction (key {} of {})",
-                k + 1,
+                i + 1,
                 total
             )
         };
         let auth = unlock(&purpose)?;
         let (signature, _pubkey) = vault
-            .raw_sign(auth, lock_args, signer.message.clone())
+            .raw_sign(auth, local_signer.lock_args, message.clone())
             .map_err(|e| format!("Signing failed: {}", e))?;
         signed.push(MsigSignature {
-            signer_index,
+            signer_index: usize::from(local_signer.signer.index()),
             signature,
         });
     }

@@ -1324,26 +1324,27 @@ fn handle_msig_sign(
     );
 
     let variant = KeyVault::get_spx_variant(wallet_id)?;
-    let signers = KeyVault::find_local_signers(wallet_id, request.multisig_config())?;
+    let local_signers = KeyVault::find_local_signers(wallet_id, request.multisig_config())?;
 
     let message_bytes = request.signing_message().as_bytes().to_vec();
     let vault = KeyVault::new(variant, wallet_id);
 
     // One unlock per key this wallet holds in the request, so every
     // signature is approved on its own; all of them go in one response.
-    let total = signers.len();
+    let total = local_signers.len();
     let mut signed = Vec::with_capacity(total);
-    for (k, (signer_index, singlesig_lock_args)) in signers.into_iter().enumerate() {
+    for (i, local_signer) in local_signers.into_iter().enumerate() {
+        let signer_index = usize::from(local_signer.signer.index());
         let key = if total == 1 {
             String::new()
         } else {
-            format!(" (key {} of {})", k + 1, total)
+            format!(" (key {} of {})", i + 1, total)
         };
         println!("Matched local account as S{}{}.", signer_index + 1, key);
 
         let auth = resolve_auth_key(wallet_id, &format!("co-sign a multisig transaction{}", key))?;
         let (signature, _pubkey) =
-            vault.raw_sign(auth, singlesig_lock_args, message_bytes.clone())?;
+            vault.raw_sign(auth, local_signer.lock_args, message_bytes.clone())?;
         signed.push(qpv2_core::types::MsigSignature {
             signer_index,
             signature,

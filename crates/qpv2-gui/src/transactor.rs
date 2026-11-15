@@ -69,23 +69,23 @@ fn sign_transaction(
     // ── Multisig: sign with each of this wallet's keys in it, up to the
     // threshold, one unlock per key so each signature is approved on its
     // own, then build the co-signer request ──
-    let mut keys = KeyVault::find_local_signers(vault.wallet_id, &account.config)?;
-    keys.truncate(account.config.threshold() as usize);
-    let total = keys.len();
+    let mut local_signers = KeyVault::find_local_signers(vault.wallet_id, &account.config)?;
+    local_signers.truncate(account.config.threshold() as usize);
+    let total = local_signers.len();
     let mut signatures = Vec::with_capacity(total);
-    for (k, (signer_index, lock_args)) in keys.into_iter().enumerate() {
+    for (i, local_signer) in local_signers.into_iter().enumerate() {
         // The unlock dialog names the key, so signing twice isn't a surprise.
         let purpose = if total == 1 {
             "sign and send the TX".to_string()
         } else {
-            format!("sign and send the TX (key {} of {})", k + 1, total)
+            format!("sign and send the TX (key {} of {})", i + 1, total)
         };
         let auth = unlock(&purpose)?;
         let (signature, _pubkey) = vault
-            .raw_sign(auth, lock_args, message.as_bytes().to_vec())
+            .raw_sign(auth, local_signer.lock_args, message.as_bytes().to_vec())
             .map_err(|e| format!("Signing failed: {}", e))?;
         signatures.push(MsigSignature {
-            signer_index,
+            signer_index: usize::from(local_signer.signer.index()),
             signature,
         });
     }

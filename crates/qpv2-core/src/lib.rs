@@ -166,16 +166,16 @@ impl KeyVault {
     }
 
     /// Finds which of this wallet's single-sig accounts are signers of a
-    /// multisig. Returns each one's signer index in `config` with the
-    /// account's lock args, in index order: a wallet holding several of the
-    /// keys gets one entry per key, to sign with each. The GUI and the CLI
-    /// both use it to sign and to co-sign.
+    /// multisig. Returns each such signer with the account's lock args, in
+    /// index order: a wallet holding several of the keys gets one entry per
+    /// key, to sign with each. The GUI and the CLI both use it to sign and to
+    /// co-sign.
     pub fn find_local_signers(
         wallet_id: u32,
         config: &MultisigConfig,
-    ) -> Result<Vec<(usize, String)>, String> {
+    ) -> Result<Vec<LocalSigner>, String> {
         let accounts = Self::get_singlesig_accounts(wallet_id)?;
-        let found: Vec<(usize, String)> = config
+        let found: Vec<LocalSigner> = config
             .signers()
             .iter()
             .filter_map(|signer| {
@@ -185,7 +185,10 @@ impl KeyVault {
                         let own = &a.config.signers()[0];
                         own.pubkey() == signer.pubkey() && own.variant() == signer.variant()
                     })
-                    .map(|a| (usize::from(signer.index()), a.lock_args.clone()))
+                    .map(|a| LocalSigner {
+                        signer: signer.clone(),
+                        lock_args: a.lock_args.clone(),
+                    })
             })
             .collect();
         if found.is_empty() {
