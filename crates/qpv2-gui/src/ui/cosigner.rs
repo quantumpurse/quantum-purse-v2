@@ -246,13 +246,13 @@ impl App {
             let mut import_clicked = false;
             step_zone(ui, step2_open, true, |ui| {
                 if let TransactionStatus::AwaitingCoSigners {
-                    ref mut import_response_json,
+                    ref mut signing_response_json,
                     ..
                 } = self.tx_status
                 {
                     json_frame(&self.colors).show(ui, |ui| {
                         ui.add(
-                            egui::TextEdit::multiline(import_response_json)
+                            egui::TextEdit::multiline(signing_response_json)
                                 .hint_text(hint)
                                 .desired_width(ui.available_width())
                                 .desired_rows(3)

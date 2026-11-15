@@ -758,7 +758,7 @@ impl App {
                     kind,
                     request,
                     signatures,
-                    import_response_json: String::new(),
+                    signing_response_json: String::new(),
                     step1_done: false,
                 };
             }

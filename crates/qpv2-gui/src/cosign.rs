@@ -17,20 +17,20 @@ impl App {
     pub(crate) fn import_cosigner_response(&mut self) {
         tracing::info!("Import cosigner response triggered.");
 
-        let (request, signatures, import_response_json) = match &mut self.tx_status {
+        let (request, signatures, signing_response_json) = match &mut self.tx_status {
             TransactionStatus::AwaitingCoSigners {
                 request,
                 signatures,
-                import_response_json,
+                signing_response_json,
                 ..
-            } => (request, signatures, import_response_json),
+            } => (request, signatures, signing_response_json),
             _ => {
                 tracing::error!("import_cosigner_response: not in AwaitingCoSigners state.");
                 return;
             }
         };
 
-        let buf = import_response_json.trim().to_string();
+        let buf = signing_response_json.trim().to_string();
         tracing::info!("Import buffer length: {} chars.", buf.len());
         if buf.is_empty() {
             self.status = crate::types::Status::Error("Paste a response first.".to_string());
@@ -56,7 +56,7 @@ impl App {
             .map(|s| format!("S{}", s.signer_index + 1))
             .collect();
         signatures.extend(response.signed);
-        import_response_json.clear();
+        signing_response_json.clear();
         self.status = crate::types::Status::Info(format!(
             "Signature from {} imported.",
             signer_positions.join(", ")

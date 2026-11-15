@@ -382,7 +382,7 @@ pub(crate) enum TransactionStatus {
         /// Signatures collected so far, each at its signer's position.
         signatures: Vec<qpv2_core::types::MsigSignature>,
         /// Clipboard/paste buffer for importing a co-signer response.
-        import_response_json: String,
+        signing_response_json: String,
         /// Step 01 done: the request has been copied. Recorded because a
         /// clipboard write leaves no other trace — step 02 derives its
         /// completion from `signatures`.
