@@ -1,6 +1,6 @@
 //! Modal for creating a multisig account, in the Flight Deck idiom:
 //! sharp hairline-framed surface with indexed sections for the M/R signing
-//! policy and the signers.
+//! policy and the signers, whose cards show who that policy requires.
 
 use eframe::egui;
 use qpv2_core::types::SpxVariant;
@@ -144,10 +144,16 @@ impl App {
         section_header(ui, &self.colors, "02", "Signers");
         ui.add_space(6.0);
 
+        // The number above counts the required signers from the top, so the
+        // cards at the first places are marked as the ones it means.
+        let required = usize::from(self.multisig_required_first_n);
+        let signer_count = self.multisig_signers.len();
+
         // A multisig needs at least two signers, so the last two cards can't
         // be removed.
-        let can_remove = self.multisig_signers.len() > 2;
+        let can_remove = signer_count > 2;
         let mut remove_index: Option<usize> = None;
+        let mut swap: Option<(usize, usize)> = None;
         for (i, (pubkey_hex, variant)) in self.multisig_signers.iter_mut().enumerate() {
             egui::Frame::new()
                 .fill(self.colors.surface2)
@@ -155,8 +161,10 @@ impl App {
                 .inner_margin(egui::Margin::symmetric(10, 8))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
+                        // The label the Multisig tab and every message
+                        // give this signer.
                         ui.label(
-                            egui::RichText::new(format!("SIGNER {:02}", i + 1))
+                            egui::RichText::new(format!("S{}", i + 1))
                                 .font(label_font(9.5))
                                 .color(c_accent),
                         );
@@ -177,22 +185,40 @@ impl App {
                                 }
                             });
                         pin_popup_above_modal(ui, &variant_combo.response);
-                        if can_remove {
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    let remove = egui::Button::new(
-                                        egui::RichText::new("\u{2715}").size(11.0).color(c_danger),
-                                    )
-                                    .fill(egui::Color32::TRANSPARENT)
-                                    .stroke(egui::Stroke::new(1.0, c_border))
-                                    .corner_radius(0.0);
-                                    if ui.add(remove).clicked() {
-                                        remove_index = Some(i);
-                                    }
-                                },
+                        if i < required {
+                            ui.add_space(6.0);
+                            ui.label(
+                                egui::RichText::new("REQUIRED")
+                                    .font(label_font(9.5))
+                                    .color(c_text),
                             );
                         }
+
+                        // Laid out from the right: remove, down, up.
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if can_remove {
+                                let remove = egui::Button::new(
+                                    egui::RichText::new("\u{2715}").size(11.0).color(c_danger),
+                                )
+                                .fill(egui::Color32::TRANSPARENT)
+                                .stroke(egui::Stroke::new(1.0, c_border))
+                                .corner_radius(0.0);
+                                if ui.add(remove).clicked() {
+                                    remove_index = Some(i);
+                                }
+                            }
+                            // The end cards keep their dead arrow, greyed,
+                            // so the buttons line up down the list.
+                            let down =
+                                arrow_button(ui, false, i + 1 < signer_count, c_text, c_border);
+                            if down.clicked() {
+                                swap = Some((i, i + 1));
+                            }
+                            let up = arrow_button(ui, true, i > 0, c_text, c_border);
+                            if up.clicked() {
+                                swap = Some((i - 1, i));
+                            }
+                        });
                     });
                     ui.add_space(6.0);
                     ui.label(
@@ -211,6 +237,11 @@ impl App {
             ui.add_space(6.0);
         }
 
+        // A moved card takes the place it lands on, required or not: being
+        // required belongs to the place, not to the key.
+        if let Some((a, b)) = swap {
+            self.multisig_signers.swap(a, b);
+        }
         if let Some(idx) = remove_index {
             self.multisig_signers.remove(idx);
         }
@@ -262,6 +293,38 @@ impl App {
             });
         });
     }
+}
+
+/// A small square button with a triangle pointing up or down, for moving a
+/// signer card. The triangle is painted, so it doesn't depend on the font
+/// having arrows. A disabled one is drawn in the border's colour.
+fn arrow_button(
+    ui: &mut egui::Ui,
+    up: bool,
+    enabled: bool,
+    color: egui::Color32,
+    border: egui::Color32,
+) -> egui::Response {
+    let button = egui::Button::new("")
+        .fill(egui::Color32::TRANSPARENT)
+        .stroke(egui::Stroke::new(1.0, border))
+        .corner_radius(0.0)
+        .min_size(egui::vec2(20.0, 18.0));
+    let response = ui.add_enabled(enabled, button);
+
+    let center = response.rect.center();
+    let tip = if up { -3.5 } else { 3.5 };
+    let triangle = vec![
+        egui::pos2(center.x, center.y + tip),
+        egui::pos2(center.x - 4.0, center.y - tip),
+        egui::pos2(center.x + 4.0, center.y - tip),
+    ];
+    ui.painter().add(egui::Shape::convex_polygon(
+        triangle,
+        if enabled { color } else { border },
+        egui::Stroke::NONE,
+    ));
+    response
 }
 
 const ALL_VARIANTS: &[SpxVariant] = &[

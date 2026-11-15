@@ -700,7 +700,7 @@ impl App {
                             })
                     })
                     // Numbered as the dialog's cards are.
-                    .map_err(|e| format!("Signer {:02}: {}", i + 1, e))
+                    .map_err(|e| format!("S{}: {}", i + 1, e))
             })
             .collect::<Result<Vec<_>, String>>()
         {
