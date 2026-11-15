@@ -189,13 +189,3 @@ clap args from `f64` to `String`.
 A malicious co-signer could repeatedly submit invalid signatures to delay a legitimate transaction. In time-sensitive scenarios (e.g., DAO withdrawal before maturity deadline), this could cause the user to miss the window and lose DAO interest.
 
 **Fix:** Before assembling the witness, verify each `(signer_index, signature)` pair against the signer's public key from `multisig_config.signers[signer_index]` using `KeyVault::raw_verify`. Reject invalid signatures before broadcasting.
-
-## Saved lock args are not checked against the saved config
-
-**Status:** Open
-
-**Problem:** A saved account (`SphincsPlusAccount`) holds both its `lock_args` and the `MultisigConfig` those args are the hash of. Loading checks the config on its own (signer indices, key lengths, the lock script's rules) but never that the two still agree. An account file whose config was edited or damaged, yet still passes those checks, loads with an address that no longer belongs to its config: balances are read from the saved `lock_args`, while signing builds the lock from the config. A multisig file cut down to one signer would even load as a valid single-sig config.
-
-Nothing can be stolen this way: a transaction signed for the wrong config is rejected on chain. The cost is a wallet that shows funds it can't spend, with an error that surfaces only when sending.
-
-**Fix:** When accounts are loaded (`load_singlesig` and `load_multisig` in `crates/qpv2-core/src/db/mod.rs`), refuse any account whose `lock_args` differ from `config.lock_script_args()`, naming the account in the error.

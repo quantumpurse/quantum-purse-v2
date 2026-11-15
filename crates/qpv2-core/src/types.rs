@@ -485,6 +485,7 @@ impl MultisigConfig {
 
 /// Represents a SPHINCS+ account within the quantum-resistant lock script.
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(try_from = "ReprSphincsPlusAccount")]
 pub struct SphincsPlusAccount {
     /// Derivation index — used to derive this wallet's SPHINCS+ key pair from the master seed.
     pub index: u32,
@@ -492,6 +493,37 @@ pub struct SphincsPlusAccount {
     pub lock_args: String,
     /// Lock script multisig configuration.
     pub config: MultisigConfig,
+}
+
+/// A `SphincsPlusAccount` as written in JSON. Reading one goes through the
+/// `TryFrom` below, which refuses an account whose lock args are not the hash
+/// of its config. Balances are read by the lock args while signing builds
+/// the lock from the config, so such an account would show funds it can't
+/// spend.
+#[derive(Deserialize)]
+struct ReprSphincsPlusAccount {
+    index: u32,
+    lock_args: String,
+    config: MultisigConfig,
+}
+
+impl TryFrom<ReprSphincsPlusAccount> for SphincsPlusAccount {
+    type Error = String;
+
+    fn try_from(repr: ReprSphincsPlusAccount) -> Result<Self, String> {
+        let expected = repr.config.lock_script_args().to_string();
+        if repr.lock_args != expected {
+            return Err(format!(
+                "Account {} is saved with lock args {}, but its config hashes to {}.",
+                repr.index, repr.lock_args, expected
+            ));
+        }
+        Ok(SphincsPlusAccount {
+            index: repr.index,
+            lock_args: repr.lock_args,
+            config: repr.config,
+        })
+    }
 }
 
 /// The requester's own description of a transaction, which nothing checks.
@@ -1431,6 +1463,31 @@ mod tests {
             let read: MultisigConfig = serde_json::from_value(json).unwrap();
             assert_eq!(read.lock_script_args(), config.lock_script_args());
         }
+    }
+
+    /// A saved account's lock args must be the hash of its saved config. A
+    /// file whose config was changed to another valid one is refused, since
+    /// its balance and its signatures would belong to different addresses.
+    #[test]
+    fn account_whose_lock_args_differ_from_its_config_is_refused() {
+        let config = MultisigConfig::new(1, 2, vec![key(0, 1), key(1, 2)]).unwrap();
+        let account = SphincsPlusAccount {
+            index: 3,
+            lock_args: config.lock_script_args().to_string(),
+            config,
+        };
+        let json = serde_json::to_value(&account).unwrap();
+        let read: SphincsPlusAccount = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(read.lock_args, account.lock_args);
+
+        let mut edited = json;
+        edited["config"]["threshold"] = serde_json::json!(1);
+        let err = serde_json::from_value::<SphincsPlusAccount>(edited).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Account 3 is saved with lock args"),
+            "{err}"
+        );
     }
 
     mod signing_request {
