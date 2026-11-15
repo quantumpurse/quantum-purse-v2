@@ -210,8 +210,9 @@ impl ThpSession {
             variant: resp.variant(),
         };
 
-        let expected = MultisigConfig::single_sig(variant, out.pubkey.clone(), TREZOR_CONVENTION)
-            .lock_script_args();
+        let expected =
+            MultisigConfig::new_singlesig(variant, out.pubkey.clone(), TREZOR_CONVENTION)
+                .lock_script_args();
         if expected.as_bytes() != out.lock_args.as_slice() {
             return Err(TrezorSignerError::Parity(format!(
                 "lock_args mismatch: device {} vs derived {}",

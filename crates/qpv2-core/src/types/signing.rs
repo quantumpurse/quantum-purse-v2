@@ -127,7 +127,7 @@ impl TryFrom<ReprSigningRequest> for SigningRequest {
             .map(|s| Signer::new(s.index(), s.variant(), s.pubkey().to_vec()))
             .collect::<Result<Vec<_>, _>>()
             .and_then(|signers| {
-                MultisigConfig::new(given.required_first_n(), given.threshold(), signers)
+                MultisigConfig::new_multisig(given.required_first_n(), given.threshold(), signers)
             })
             .map_err(|e| format!("The request's multisig is invalid: {}", e))?;
 
@@ -718,7 +718,7 @@ mod tests {
         const CKB: u64 = 100_000_000;
 
         fn multisig() -> MultisigConfig {
-            MultisigConfig::new(0, 1, vec![key(0, 1), key(1, 2)]).unwrap()
+            MultisigConfig::new_multisig(0, 1, vec![key(0, 1), key(1, 2)]).unwrap()
         }
 
         /// The multisig's lock on testnet.
@@ -891,7 +891,7 @@ mod tests {
         fn request_spending_a_cell_outside_its_multisig_is_refused() {
             let config = multisig();
             let own_key = config.signers()[0].clone();
-            let own_account = MultisigConfig::single_sig(
+            let own_account = MultisigConfig::new_singlesig(
                 own_key.variant(),
                 own_key.pubkey().to_vec(),
                 Default::default(),
@@ -912,7 +912,7 @@ mod tests {
         #[test]
         fn request_whose_multisig_is_a_single_sig_is_refused() {
             let own_key = multisig().signers()[0].clone();
-            let own_account = MultisigConfig::single_sig(
+            let own_account = MultisigConfig::new_singlesig(
                 own_key.variant(),
                 own_key.pubkey().to_vec(),
                 Default::default(),
@@ -979,7 +979,7 @@ mod tests {
         /// A friend's single-sig lock, for outputs that leave the multisig.
         fn friend() -> Script {
             let key = key(0, 3);
-            lock_of(&MultisigConfig::single_sig(
+            lock_of(&MultisigConfig::new_singlesig(
                 key.variant(),
                 key.pubkey().to_vec(),
                 SingleSigConvention::Standard,

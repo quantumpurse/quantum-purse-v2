@@ -343,7 +343,7 @@ impl KeyVault {
         })?;
 
         let single_sig_convention = Self::get_single_sig_convention(self.wallet_id)?;
-        let config = MultisigConfig::single_sig(
+        let config = MultisigConfig::new_singlesig(
             self.variant,
             pub_key.as_ref().to_vec(),
             single_sig_convention,
@@ -398,7 +398,7 @@ impl KeyVault {
             signers.len()
         );
 
-        let config = MultisigConfig::new(required_first_n, threshold, signers)?;
+        let config = MultisigConfig::new_multisig(required_first_n, threshold, signers)?;
         // Refuses a multisig this wallet holds no key for.
         Self::find_local_signers(wallet_id, &config)?;
         let lock_script_args = config.lock_script_args();
@@ -760,7 +760,7 @@ impl KeyVault {
                 msg
             })?;
 
-            let config = MultisigConfig::single_sig(
+            let config = MultisigConfig::new_singlesig(
                 self.variant,
                 pub_key.as_ref().to_vec(),
                 single_sig_convention,
@@ -804,7 +804,7 @@ impl KeyVault {
                 msg
             })?;
 
-            let config = MultisigConfig::single_sig(
+            let config = MultisigConfig::new_singlesig(
                 self.variant,
                 pub_key.as_ref().to_vec(),
                 single_sig_convention,

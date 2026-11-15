@@ -115,7 +115,7 @@ fn sign_transfer_verifies() {
             .get_address(0, variant, false, false)
             .expect("get_address");
         let lock = testnet_lock(&addr.lock_args);
-        let config = MultisigConfig::single_sig(variant, addr.pubkey.clone(), TREZOR_CONVENTION);
+        let config = MultisigConfig::new_singlesig(variant, addr.pubkey.clone(), TREZOR_CONVENTION);
         let signing_lock_size = config.max_witness_lock_size();
 
         // Synthetic previous tx: one output locked to our account.

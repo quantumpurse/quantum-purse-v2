@@ -138,12 +138,13 @@ impl fmt::Display for SingleSigConvention {
 /// Configuration for the CKB quantum-resistant lock script's all-in-one multisig header.
 /// Every account uses this — a "single-sig" account is threshold=1 with one signer.
 ///
-/// The fields are private so that a config can only be built by [`Self::new`],
-/// a checked multisig of 2 or more signers, or [`Self::single_sig`], a 1-of-1.
-/// Saved accounts and signing requests are read back through the same
-/// placing of signers by index and the same checks of the lock script's rules
-/// that [`Self::new`] does. Only the one-co-signer rule is left to
-/// [`Self::new`], since a single-sig account is saved as a 1-of-1.
+/// The fields are private so that a config can only be built by
+/// [`Self::new_multisig`], a checked multisig of 2 or more signers, or
+/// [`Self::new_singlesig`], a 1-of-1. Saved accounts and signing requests are
+/// read back through the same placing of signers by index and the same checks
+/// of the lock script's rules that [`Self::new_multisig`] does. Only the
+/// one-co-signer rule is left to [`Self::new_multisig`], since a single-sig
+/// account is saved as a 1-of-1.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(try_from = "ReprMultisigConfig")]
 pub struct MultisigConfig {
@@ -157,8 +158,8 @@ pub struct MultisigConfig {
 
 /// A `MultisigConfig` as written in JSON. Reading one goes through the
 /// `TryFrom` below, which places the signers by index and checks the lock
-/// script's rules, the same as [`MultisigConfig::new`]. One signer is
-/// accepted here: a single-sig account is saved as a 1-of-1.
+/// script's rules, the same as [`MultisigConfig::new_multisig`]. One signer
+/// is accepted here: a single-sig account is saved as a 1-of-1.
 #[derive(Deserialize)]
 struct ReprMultisigConfig {
     required_first_n: u8,
@@ -243,8 +244,12 @@ impl MultisigConfig {
     /// in doesn't matter. Returns an error if the config violates on-chain
     /// constraints, or has no co-signer: a multisig account with one signer
     /// would be a single-sig account at another address, which
-    /// [`Self::single_sig`] makes.
-    pub fn new(required_first_n: u8, threshold: u8, signers: Vec<Signer>) -> Result<Self, String> {
+    /// [`Self::new_singlesig`] makes.
+    pub fn new_multisig(
+        required_first_n: u8,
+        threshold: u8,
+        signers: Vec<Signer>,
+    ) -> Result<Self, String> {
         if signers.len() < 2 {
             return Err(format!(
                 "A multisig account needs 2..=255 signers (at least one co-signer), got {}.",
@@ -267,7 +272,7 @@ impl MultisigConfig {
     /// (`required_first_n: 1`), with threshold 1 of 1 total. See
     /// <https://github.com/nervosnetwork/quantum-resistant-lock-script/blob/main/docs/simple.md>.
     /// `SingleSigConvention::V1` deviates with `required_first_n: 0`.
-    pub fn single_sig(
+    pub fn new_singlesig(
         variant: SpxVariant,
         pubkey: Vec<u8>,
         convention: SingleSigConvention,
@@ -534,9 +539,9 @@ pub(super) mod tests {
 
     #[test]
     fn multisig_needs_at_least_two_signers() {
-        let err = MultisigConfig::new(0, 1, vec![key(0, 1)]).unwrap_err();
+        let err = MultisigConfig::new_multisig(0, 1, vec![key(0, 1)]).unwrap_err();
         assert!(err.contains("at least one co-signer"), "{err}");
-        assert!(MultisigConfig::new(0, 1, vec![key(0, 1), key(1, 2)]).is_ok());
+        assert!(MultisigConfig::new_multisig(0, 1, vec![key(0, 1), key(1, 2)]).is_ok());
     }
 
     /// The indices must name every place once. A gap, a repeat or a missing
@@ -544,7 +549,8 @@ pub(super) mod tests {
     #[test]
     fn multisig_refuses_a_gap_or_repeat_in_signer_indices() {
         for [first, second] in [[0, 2], [0, 0], [1, 2]] {
-            let err = MultisigConfig::new(0, 1, vec![key(first, 1), key(second, 2)]).unwrap_err();
+            let err = MultisigConfig::new_multisig(0, 1, vec![key(first, 1), key(second, 2)])
+                .unwrap_err();
             assert!(
                 err.contains("Signer indices must run from 0 to 1"),
                 "{first}, {second}: {err}"
@@ -556,8 +562,10 @@ pub(super) mod tests {
     /// their keys, so the same indices always give the same address.
     #[test]
     fn multisig_places_signers_by_index() {
-        let given = MultisigConfig::new(1, 2, vec![key(0, 9), key(1, 1), key(2, 5)]).unwrap();
-        let shuffled = MultisigConfig::new(1, 2, vec![key(2, 5), key(0, 9), key(1, 1)]).unwrap();
+        let given =
+            MultisigConfig::new_multisig(1, 2, vec![key(0, 9), key(1, 1), key(2, 5)]).unwrap();
+        let shuffled =
+            MultisigConfig::new_multisig(1, 2, vec![key(2, 5), key(0, 9), key(1, 1)]).unwrap();
         assert_eq!(given.lock_script_args(), shuffled.lock_script_args());
         assert_eq!(
             shuffled.signers()[0].pubkey(),
@@ -570,7 +578,7 @@ pub(super) mod tests {
     /// and the address stays the same. An incomplete numbering is refused.
     #[test]
     fn config_reads_back_placed_by_index() {
-        let config = MultisigConfig::new(1, 2, vec![key(0, 1), key(1, 2)]).unwrap();
+        let config = MultisigConfig::new_multisig(1, 2, vec![key(0, 1), key(1, 2)]).unwrap();
         let mut json = serde_json::to_value(&config).unwrap();
         json["signers"].as_array_mut().unwrap().swap(0, 1);
         let read: MultisigConfig = serde_json::from_value(json.clone()).unwrap();
@@ -590,7 +598,7 @@ pub(super) mod tests {
     /// signer count, or a key cut short, is refused on load.
     #[test]
     fn config_read_back_is_checked_like_a_new_one() {
-        let config = MultisigConfig::new(1, 2, vec![key(0, 1), key(1, 2)]).unwrap();
+        let config = MultisigConfig::new_multisig(1, 2, vec![key(0, 1), key(1, 2)]).unwrap();
         let json = serde_json::to_value(&config).unwrap();
 
         let mut edited = json.clone();
@@ -618,7 +626,7 @@ pub(super) mod tests {
     #[test]
     fn single_sig_config_reads_back() {
         for convention in [SingleSigConvention::Standard, SingleSigConvention::V1] {
-            let config = MultisigConfig::single_sig(
+            let config = MultisigConfig::new_singlesig(
                 SpxVariant::Sha2128S,
                 vec![1; SHA2_128S_PK_LEN],
                 convention,
@@ -634,7 +642,7 @@ pub(super) mod tests {
     /// its balance and its signatures would belong to different addresses.
     #[test]
     fn account_whose_lock_args_differ_from_its_config_is_refused() {
-        let config = MultisigConfig::new(1, 2, vec![key(0, 1), key(1, 2)]).unwrap();
+        let config = MultisigConfig::new_multisig(1, 2, vec![key(0, 1), key(1, 2)]).unwrap();
         let account = SphincsPlusAccount {
             index: 3,
             lock_args: config.lock_script_args().to_string(),

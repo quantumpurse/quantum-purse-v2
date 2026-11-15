@@ -232,7 +232,7 @@ impl TrezorSession {
         is_mainnet: bool,
     ) -> Result<SphincsPlusAccount, TrezorSignerError> {
         let addr = self.get_address(account_index, variant, is_mainnet, true)?;
-        let config = MultisigConfig::single_sig(variant, addr.pubkey, TREZOR_CONVENTION);
+        let config = MultisigConfig::new_singlesig(variant, addr.pubkey, TREZOR_CONVENTION);
         Ok(SphincsPlusAccount {
             index: account_index,
             lock_args: hex::encode(&addr.lock_args),
