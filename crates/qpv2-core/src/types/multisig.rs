@@ -381,28 +381,20 @@ impl MultisigConfig {
             .build()
     }
 
-    /// Assembles the complete witness lock field for a multisig transaction.
-    ///
-    /// Takes the signatures made, each at its signer's position. Validates
-    /// that exactly M signatures are present, the first R signers have
-    /// signatures, and there are no duplicates.
-    ///
-    /// Returns the byte vector to be placed in `WitnessArgs.lock`.
-    pub fn assemble_multisig_witness(
+    /// Picks the M signatures a witness uses from those collected: every
+    /// required signer's first, then the others in the order they were
+    /// collected. More than M is fine: the wallet that pays signs with up to
+    /// M of its keys, and co-signers answer with all of theirs, so a required
+    /// co-signer's signature can arrive after M are already in. The extras
+    /// are left out. Refuses a duplicate or out-of-range signer, a required
+    /// signer with no signature, or fewer than M signatures in all.
+    fn pick_signatures<'a>(
         &self,
-        signatures: &[MsigSignature],
-    ) -> Result<Vec<u8>, String> {
+        signatures: &'a [MsigSignature],
+    ) -> Result<Vec<&'a MsigSignature>, String> {
         let n = self.signers().len();
         let m = self.threshold() as usize;
         let r = self.required_first_n() as usize;
-
-        if signatures.len() != m {
-            return Err(format!(
-                "Expected {} signatures (threshold), got {}.",
-                m,
-                signatures.len()
-            ));
-        }
 
         let sig_indices: std::collections::HashSet<usize> =
             signatures.iter().map(|s| s.signer_index).collect();
@@ -429,6 +421,34 @@ impl MultisigConfig {
             }
         }
 
+        if signatures.len() < m {
+            return Err(format!(
+                "{} signatures are needed, got {}.",
+                m,
+                signatures.len()
+            ));
+        }
+
+        // Every required signer is in, once each, and there are at most M of
+        // them, so taking M keeps them all.
+        let (required, others): (Vec<_>, Vec<_>) =
+            signatures.iter().partition(|s| s.signer_index < r);
+        Ok(required.into_iter().chain(others).take(m).collect())
+    }
+
+    /// Assembles the complete witness lock field for a multisig transaction.
+    ///
+    /// Takes the signatures collected, each at its signer's position, and
+    /// uses the M that `pick_signatures` picks: the required signers, then
+    /// enough of the others.
+    ///
+    /// Returns the byte vector to be placed in `WitnessArgs.lock`.
+    pub fn assemble_multisig_witness(
+        &self,
+        signatures: &[MsigSignature],
+    ) -> Result<Vec<u8>, String> {
+        let picked = self.pick_signatures(signatures)?;
+
         let mut lock = Vec::new();
         lock.extend_from_slice(&self.header_bytes());
 
@@ -438,7 +458,7 @@ impl MultisigConfig {
                 .try_into()
                 .expect("SpxVariant and ParamId share discriminants");
 
-            if let Some(sig) = signatures.iter().find(|s| s.signer_index == i) {
+            if let Some(sig) = picked.iter().find(|s| s.signer_index == i) {
                 let (_, expected_sig_len) = ckb_fips205_utils::verifying::lengths(param_id);
                 if sig.signature.len() != expected_sig_len {
                     return Err(format!(
@@ -635,6 +655,42 @@ pub(super) mod tests {
             let read: MultisigConfig = serde_json::from_value(json).unwrap();
             assert_eq!(read.lock_script_args(), config.lock_script_args());
         }
+    }
+
+    /// The signer indices `chosen` from signatures collected at `collected`.
+    fn chosen(config: &MultisigConfig, collected: &[usize]) -> Result<Vec<usize>, String> {
+        let signatures: Vec<MsigSignature> = collected
+            .iter()
+            .map(|&signer_index| MsigSignature {
+                signer_index,
+                signature: Vec::new(),
+            })
+            .collect();
+        config
+            .pick_signatures(&signatures)
+            .map(|chosen| chosen.iter().map(|s| s.signer_index).collect())
+    }
+
+    /// A 2-of-3 where S1 must always sign.
+    fn s1_required() -> MultisigConfig {
+        MultisigConfig::new_multisig(1, 2, vec![key(0, 1), key(1, 2), key(2, 3)]).unwrap()
+    }
+
+    /// The wallet that pays signs with S2 and S3, then a co-signer's S1
+    /// arrives: three signatures for a threshold of two. The witness takes S1,
+    /// then the others in the order they came, and leaves the last out.
+    #[test]
+    fn more_signatures_than_the_threshold_keep_the_required_first() {
+        assert_eq!(chosen(&s1_required(), &[1, 2, 0]), Ok(vec![0, 1]));
+        assert_eq!(chosen(&s1_required(), &[2, 1, 0]), Ok(vec![0, 2]));
+    }
+
+    #[test]
+    fn a_missing_required_signer_or_too_few_signatures_is_refused() {
+        let err = chosen(&s1_required(), &[1, 2]).unwrap_err();
+        assert!(err.contains("S1 is required"), "{err}");
+        let err = chosen(&s1_required(), &[0]).unwrap_err();
+        assert!(err.contains("2 signatures are needed, got 1"), "{err}");
     }
 
     /// A saved account's lock args must be the hash of its saved config. A

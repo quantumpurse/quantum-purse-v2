@@ -1395,16 +1395,11 @@ fn handle_msig_submit(
         signatures.extend(response.signed);
     }
 
-    let threshold = request.multisig_config().threshold() as usize;
-    if signatures.len() != threshold {
-        return Err(format!(
-            "Expected {} response file(s) (threshold), got {}.",
-            threshold,
-            signatures.len()
-        ));
-    }
-
-    println!("Assembling witness with {} signatures...", signatures.len());
+    // The core picks the M the witness uses, required signers first.
+    println!(
+        "Assembling witness from {} collected signatures...",
+        signatures.len()
+    );
     let witness_lock = request
         .multisig_config()
         .assemble_multisig_witness(&signatures)
