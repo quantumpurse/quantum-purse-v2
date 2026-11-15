@@ -142,7 +142,7 @@ impl App {
                             self.multisig_threshold = 1;
                             self.multisig_required_first_n = 0;
                             // A multisig needs at least two signers, your
-                            // own key and one more, so two cards are there
+                            // own key and one more, so two rows are there
                             // to fill in.
                             self.multisig_signers = vec![
                                 (String::new(), NEW_SIGNER_VARIANT),

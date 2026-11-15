@@ -684,7 +684,7 @@ impl App {
 
     /// Create a multisig account from the modal form state.
     pub(crate) fn create_multisig_account(&mut self) {
-        // The card order is the signers' order.
+        // The row order is the signers' order.
         let signers: Vec<qpv2_core::types::Signer> = match self
             .multisig_signers
             .iter()
@@ -699,7 +699,7 @@ impl App {
                                 qpv2_core::types::Signer::new(index, *variant, pubkey)
                             })
                     })
-                    // Numbered as the dialog's cards are.
+                    // Numbered as the dialog's rows are.
                     .map_err(|e| format!("S{}: {}", i + 1, e))
             })
             .collect::<Result<Vec<_>, String>>()
