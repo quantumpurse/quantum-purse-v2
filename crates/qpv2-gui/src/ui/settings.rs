@@ -1,8 +1,10 @@
-//! Settings tab: backend selection and live node instrumentation.
+//! Settings tab: backend selection, the wallet's colors and live node
+//! instrumentation.
 
 use ckb_node::{NetworkType, NodeConfig, NodeType};
 use eframe::egui;
 
+use crate::palette::{self, ColorRole};
 use crate::types::{display_font, label_font, AppColors, Status};
 use crate::ui::utils::{
     data_row, data_row_colored, ghost_button, group_thousands, lerp_color, panel_frame, row_hover,
@@ -54,9 +56,9 @@ impl App {
                         });
                         ui.add_space(2.0);
                         let subtitle = if foreign_node.is_some() {
-                            "Configure and monitor foreign CKB node."
+                            "Set the wallet's colors, and configure and monitor foreign CKB node."
                         } else {
-                            "Configure and monitor your CKB node."
+                            "Set the wallet's colors, and configure and monitor your CKB node."
                         };
                         ui.label(
                             egui::RichText::new(subtitle)
@@ -142,6 +144,13 @@ impl App {
                     });
                 }
 
+                // ── Colors ───────────────────────────────────
+                ui.add_space(12.0);
+                panel_frame(&self.colors).show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 6.0;
+                    self.draw_colors_section(ui, &sec.next_code());
+                });
+
                 // Applied after rendering so the frame draws against the
                 // pre-switch state instead of half-updated config.
                 if let Some(backend) = switch_to {
@@ -173,7 +182,7 @@ impl App {
                 .iter()
                 .position(|&n| n == current_network)
                 .unwrap_or(0);
-            if let Some(i) = text_choice(ui, &self.colors, &["MAINNET", "TESTNET"], chosen) {
+            if let Some(i) = text_choice(ui, &self.colors, &["MAINNET", "TESTNET"], Some(chosen)) {
                 selected = networks[i];
             }
         });
@@ -245,11 +254,77 @@ impl App {
         setting_row(ui, &self.colors, "Backend", |ui| {
             let chosen = backends.iter().position(|&b| b == current).unwrap_or(0);
             let labels = backends.map(Self::backend_label);
-            if let Some(i) = text_choice(ui, &self.colors, &labels, chosen) {
+            if let Some(i) = text_choice(ui, &self.colors, &labels, Some(chosen)) {
                 switch_to = Some(backends[i]);
             }
         });
         switch_to
+    }
+
+    // ── Colors ───────────────────────────────────────────────
+
+    /// The wallet's colors: LIGHT and DARK, then a row per named
+    /// color with a swatch that opens a picker and the hex code, which can
+    /// be typed or pasted. A change shows at once across the app and is
+    /// saved when it settles.
+    fn draw_colors_section(&mut self, ui: &mut egui::Ui, code: &str) {
+        section_header(ui, &self.colors, code, "Colors");
+        ui.add_space(6.0);
+        let mut colors = self.colors;
+        setting_row(ui, &self.colors, "Palette", |ui| {
+            // A theme is marked as chosen only while every color is its
+            // own: one changed by hand makes it neither.
+            let chosen = if colors == AppColors::light() {
+                Some(0)
+            } else if colors == AppColors::default() {
+                Some(1)
+            } else {
+                None
+            };
+            if let Some(i) = text_choice(ui, &self.colors, &["LIGHT", "DARK"], chosen) {
+                colors = if i == 0 {
+                    AppColors::light()
+                } else {
+                    AppColors::default()
+                };
+            }
+        });
+        for role in ColorRole::ALL {
+            setting_row(ui, &self.colors, role.label(), |ui| {
+                if let Some(c) = color_control(ui, &self.colors, role, role.get(&colors)) {
+                    role.set(&mut colors, c);
+                }
+            });
+        }
+        // Hand-picked colors aren't held to any contrast, so say when the
+        // text has become hard to read, and how to get back.
+        let ratio = palette::contrast(colors.text, colors.bg);
+        if ratio < 4.5 {
+            ui.label(
+                egui::RichText::new(format!(
+                    "Text is hard to read on this background ({ratio:.1}:1). \
+                     LIGHT or DARK brings back a readable theme."
+                ))
+                .size(11.0)
+                .color(colors.warn),
+            );
+        }
+
+        if colors != self.colors {
+            self.colors = colors;
+            crate::apply_visuals(ui.ctx(), &colors);
+        }
+        // While a picker is dragged every frame is a change, so save once
+        // the pointer lets go.
+        if self.colors != self.saved_colors && !ui.input(|i| i.pointer.any_down()) {
+            if let Err(e) = palette::save_colors(&self.colors) {
+                let msg = format!("Couldn't save the colors: {e}");
+                tracing::error!("{}", msg);
+                self.status = Status::Error(msg);
+            }
+            // Not retried every frame after a failure: the next change is.
+            self.saved_colors = self.colors;
+        }
     }
 
     /// Detects a node QPV2 did not start answering on its port: a local
@@ -896,12 +971,14 @@ fn setting_row(
 /// A choice drawn as text, so it reads like the values below it: the
 /// options in a row with "·" between them, in the values' font. The chosen
 /// one is in the accent and underlined; the others are muted until hovered.
-/// Returns the option clicked this frame, if it isn't the chosen one.
+/// With `chosen` None, no option is chosen, so the options work as plain
+/// links, for actions. Returns the option clicked this frame, if it isn't
+/// the chosen one.
 fn text_choice(
     ui: &mut egui::Ui,
     colors: &AppColors,
     options: &[&str],
-    chosen: usize,
+    chosen: Option<usize>,
 ) -> Option<usize> {
     // `data_row`'s value font. Laid out without a colour, so each option can
     // be painted in its own.
@@ -937,7 +1014,7 @@ fn text_choice(
             ui.id().with(("choice", *option)),
             egui::Sense::click(),
         );
-        let active = i == chosen;
+        let active = chosen == Some(i);
         let color = if active {
             colors.accent
         } else if resp.hovered() {
@@ -962,6 +1039,81 @@ fn text_choice(
         }
     }
     clicked
+}
+
+/// A color row's control, drawn right to left: the hex code in the values'
+/// font, then a swatch that opens egui's color picker. Returns the color
+/// either one set this frame.
+fn color_control(
+    ui: &mut egui::Ui,
+    colors: &AppColors,
+    role: ColorRole,
+    current: egui::Color32,
+) -> Option<egui::Color32> {
+    let mut picked = None;
+    ui.push_id(role.label(), |ui| {
+        // While the code is edited, the typed text is kept here and each
+        // valid code shows at once. Leaving the field shows the current
+        // color's code again, so a half-typed one just goes away.
+        let draft_id = ui.id().with("hex-draft");
+        let mut text = ui
+            .data(|d| d.get_temp::<String>(draft_id))
+            .unwrap_or_else(|| palette::to_hex(current));
+        let font = egui::FontId::proportional(12.5);
+        let width = ui
+            .painter()
+            .layout_no_wrap("#000000".to_string(), font.clone(), colors.text)
+            .size()
+            .x;
+        let text_color = if palette::parse_hex(&text).is_some() {
+            colors.text
+        } else {
+            colors.danger
+        };
+        let edit = ui.add(
+            egui::TextEdit::singleline(&mut text)
+                .font(font)
+                .text_color(text_color)
+                .frame(egui::Frame::NONE)
+                .desired_width(width)
+                .char_limit(7),
+        );
+        // No box around the code, so an underline shows it can be edited.
+        if edit.has_focus() || edit.hovered() {
+            let line = if edit.has_focus() {
+                colors.accent
+            } else {
+                colors.border2
+            };
+            ui.painter().hline(
+                edit.rect.x_range(),
+                edit.rect.bottom() + 1.5,
+                egui::Stroke::new(1.0, line),
+            );
+        }
+        if edit.has_focus() {
+            if edit.changed() {
+                picked = palette::parse_hex(&text);
+            }
+            ui.data_mut(|d| d.insert_temp(draft_id, text));
+        } else {
+            ui.data_mut(|d| d.remove::<String>(draft_id));
+        }
+
+        ui.add_space(10.0);
+        // A small square, not egui's wide default swatch.
+        ui.spacing_mut().interact_size = egui::vec2(14.0, 14.0);
+        let mut color = current;
+        let swatch = egui::color_picker::color_edit_button_srgba(
+            ui,
+            &mut color,
+            egui::color_picker::Alpha::Opaque,
+        );
+        if swatch.on_hover_text(role.description()).changed() {
+            picked = Some(color);
+        }
+    });
+    picked
 }
 
 fn full_node_sync_pct(sync_state: Option<&ckb_jsonrpc_types::SyncState>) -> f32 {

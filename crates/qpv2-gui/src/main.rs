@@ -5,6 +5,7 @@
 
 mod cosign;
 mod fetcher;
+mod palette;
 mod poller;
 mod qr_adoption;
 mod transactor;
@@ -48,6 +49,9 @@ pub(crate) struct App {
     pub(crate) screen: Screen,
     pub(crate) status: Status,
     pub(crate) colors: AppColors,
+    // The colors last saved to `colors.json`, so a change is saved once it
+    // settles rather than on every frame of a drag.
+    pub(crate) saved_colors: AppColors,
 
     // Active wallet identity.
     pub(crate) wallet_id: u32,
@@ -275,67 +279,73 @@ pub(crate) struct App {
     pub(crate) status_set_at: Option<std::time::Instant>,
 }
 
+/// Flight Deck visuals from `colors`: dark instrument panel, sharp corners,
+/// the accent as the signal color. Run at startup, and again whenever the
+/// Settings page changes the colors, since egui's own widgets read these.
+pub(crate) fn apply_visuals(ctx: &egui::Context, colors: &AppColors) {
+    let mut visuals = egui::Visuals::dark();
+
+    visuals.override_text_color = Some(colors.text);
+    visuals.panel_fill = colors.bg;
+    visuals.window_fill = colors.surface;
+    visuals.window_stroke = egui::Stroke::new(1.0, colors.border2);
+    visuals.faint_bg_color = colors.surface;
+    visuals.extreme_bg_color = colors.bg;
+    visuals.selection.bg_fill = colors.accent_tint;
+    visuals.selection.stroke = egui::Stroke::new(1.0, colors.accent);
+    visuals.hyperlink_color = colors.accent;
+
+    // Sharp corners everywhere — an instrument has no soft edges.
+    visuals.window_corner_radius = egui::CornerRadius::ZERO;
+    visuals.menu_corner_radius = egui::CornerRadius::ZERO;
+    for w in [
+        &mut visuals.widgets.noninteractive,
+        &mut visuals.widgets.inactive,
+        &mut visuals.widgets.hovered,
+        &mut visuals.widgets.active,
+        &mut visuals.widgets.open,
+    ] {
+        w.corner_radius = egui::CornerRadius::ZERO;
+        w.bg_fill = colors.surface2;
+    }
+    visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, colors.border);
+    visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, colors.border);
+    visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, colors.border2);
+    visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, colors.accent);
+    visuals.widgets.open.bg_stroke = egui::Stroke::new(1.0, colors.border2);
+
+    // The rest of egui's colors that reach the screen. Its stock ones are
+    // grays tuned for its own theme, and the dropdowns showed them.
+    // A dropdown at rest is filled like a text field, lighter when
+    // hovered or open.
+    visuals.widgets.inactive.weak_bg_fill = colors.bg;
+    visuals.widgets.hovered.weak_bg_fill = colors.surface2;
+    visuals.widgets.active.weak_bg_fill = colors.surface2;
+    visuals.widgets.open.weak_bg_fill = colors.surface2;
+    // Disabled widgets and hint text fade toward this.
+    visuals.widgets.noninteractive.weak_bg_fill = colors.surface;
+    // Dropdown arrows, checkmarks and the collapsing triangle: muted at
+    // rest, full text color under the pointer.
+    visuals.widgets.noninteractive.fg_stroke.color = colors.text;
+    visuals.widgets.inactive.fg_stroke.color = colors.text_muted;
+    visuals.widgets.hovered.fg_stroke.color = colors.text;
+    visuals.widgets.active.fg_stroke.color = colors.text;
+    visuals.widgets.open.fg_stroke.color = colors.text;
+    visuals.text_cursor.stroke.color = colors.accent;
+
+    ctx.set_visuals(visuals);
+}
+
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        // Flight Deck visuals: dark instrument panel, sharp corners,
-        // cryo-cyan signal color.
-        let mut visuals = egui::Visuals::dark();
-        let colors = AppColors::default();
-
-        visuals.override_text_color = Some(colors.text);
-        visuals.panel_fill = colors.bg;
-        visuals.window_fill = colors.surface;
-        visuals.window_stroke = egui::Stroke::new(1.0, colors.border2);
-        visuals.faint_bg_color = colors.surface;
-        visuals.extreme_bg_color = colors.bg;
-        visuals.selection.bg_fill = colors.accent_tint;
-        visuals.selection.stroke = egui::Stroke::new(1.0, colors.accent);
-        visuals.hyperlink_color = colors.accent;
-
-        // Sharp corners everywhere — an instrument has no soft edges.
-        visuals.window_corner_radius = egui::CornerRadius::ZERO;
-        visuals.menu_corner_radius = egui::CornerRadius::ZERO;
-        for w in [
-            &mut visuals.widgets.noninteractive,
-            &mut visuals.widgets.inactive,
-            &mut visuals.widgets.hovered,
-            &mut visuals.widgets.active,
-            &mut visuals.widgets.open,
-        ] {
-            w.corner_radius = egui::CornerRadius::ZERO;
-            w.bg_fill = colors.surface2;
-        }
-        visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, colors.border);
-        visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, colors.border);
-        visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, colors.border2);
-        visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, colors.accent);
-        visuals.widgets.open.bg_stroke = egui::Stroke::new(1.0, colors.border2);
-
-        // The rest of egui's colors that reach the screen. Its stock ones are
-        // grays tuned for its own theme, and the dropdowns showed them.
-        // A dropdown at rest is filled like a text field, lighter when
-        // hovered or open.
-        visuals.widgets.inactive.weak_bg_fill = colors.bg;
-        visuals.widgets.hovered.weak_bg_fill = colors.surface2;
-        visuals.widgets.active.weak_bg_fill = colors.surface2;
-        visuals.widgets.open.weak_bg_fill = colors.surface2;
-        // Disabled widgets and hint text fade toward this.
-        visuals.widgets.noninteractive.weak_bg_fill = colors.surface;
-        // Dropdown arrows, checkmarks and the collapsing triangle: muted at
-        // rest, full text color under the pointer.
-        visuals.widgets.noninteractive.fg_stroke.color = colors.text;
-        visuals.widgets.inactive.fg_stroke.color = colors.text_muted;
-        visuals.widgets.hovered.fg_stroke.color = colors.text;
-        visuals.widgets.active.fg_stroke.color = colors.text;
-        visuals.widgets.open.fg_stroke.color = colors.text;
-        visuals.text_cursor.stroke.color = colors.accent;
+        let colors = palette::load_colors();
 
         // The Flight Deck theme is the app's only theme: never follow
         // the OS light/dark preference. Without this pin, egui swaps in
         // its stock white widget visuals (combo boxes, text fields,
         // dropdown popups) whenever the system is in light mode.
         cc.egui_ctx.set_theme(egui::ThemePreference::Dark);
-        cc.egui_ctx.set_visuals(visuals);
+        apply_visuals(&cc.egui_ctx, &colors);
 
         // Register custom fonts. All text is monospace: IBM Plex Mono
         // carries body and data, Martian Mono Condensed carries display
@@ -493,6 +503,7 @@ impl App {
             screen,
             status: startup_status,
             colors,
+            saved_colors: colors,
             wallet_id,
             wallet_name,
             wallet_cache,

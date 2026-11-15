@@ -422,7 +422,9 @@ pub(crate) const CKB_DECIMAL_PLACES: u64 = 100_000_000;
 /// instrument. Cool near-black canvas, neutral hairline separators,
 /// one dominant cryo-cyan signal color, and green/red reserved for
 /// strictly semantic meaning (online/positive vs offline/negative).
-/// Cyan was chosen over amber, which reads as a caution color.
+/// Cyan was chosen over amber, which reads as a caution color. These are the
+/// factory colors; users can change them on the Settings page (`palette`).
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct AppColors {
     /// Main canvas — cool near-black.
     pub(crate) bg: egui::Color32,
@@ -478,6 +480,31 @@ impl Default for AppColors {
             text: egui::Color32::from_rgb(221, 232, 234), // #dde8ea
             text_muted: egui::Color32::from_rgb(109, 125, 130), // #6d7d82
             signal: egui::Color32::from_rgb(192, 132, 252), // #c084fc
+        }
+    }
+}
+
+impl AppColors {
+    /// The light theme the Settings page offers next to the factory one: a
+    /// pale blue-gray canvas, near-black text and a navy accent. The two
+    /// see-through fills keep the factory's opacity.
+    pub(crate) fn light() -> Self {
+        Self {
+            bg: egui::Color32::from_rgb(201, 210, 214),      // #c9d2d6
+            surface: egui::Color32::from_rgb(209, 219, 225), // #d1dbe1
+            surface2: egui::Color32::from_rgb(219, 232, 239), // #dbe8ef
+            border: egui::Color32::from_rgb(243, 252, 255),  // #f3fcff
+            border2: egui::Color32::from_rgb(255, 255, 255), // #ffffff
+            accent: egui::Color32::from_rgb(0, 38, 86),      // #002656
+            accent2: egui::Color32::from_rgb(61, 146, 214),  // #3d92d6
+            accent3: egui::Color32::from_rgb(0, 0, 0),       // #000000
+            accent_tint: egui::Color32::from_rgba_unmultiplied(0, 38, 86, 22),
+            warn_tint: egui::Color32::from_rgba_unmultiplied(191, 161, 40, 26),
+            danger: egui::Color32::from_rgb(255, 84, 62), // #ff543e
+            warn: egui::Color32::from_rgb(191, 161, 40),  // #bfa128
+            text: egui::Color32::from_rgb(33, 36, 37),    // #212425
+            text_muted: egui::Color32::from_rgb(109, 125, 130), // #6d7d82
+            signal: egui::Color32::from_rgb(158, 90, 218), // #9e5ada
         }
     }
 }
