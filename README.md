@@ -243,9 +243,6 @@ Requires `libtss2-dev` (Ubuntu/Debian), `tpm2-tss-devel` (Fedora),
 or `tpm2-tss` (Arch) at build time. Device access via `/dev/tpmrm0`
 (kernel resource manager).
 
-The previous Secret Service D-Bus implementation is preserved in
-`sw_backed/linux_secret_service.rs` for reference.
-
 ##### 4. Platform comparison
 
 | Scenario | Plain file | DPAPI / Secret Service | Apple Keychain + Touch ID | TPM seal (Windows) | TPM seal (Linux) | FIDO2 Hardware Key |
@@ -256,9 +253,9 @@ The previous Secret Service D-Bus implementation is preserved in
 | Admin with Mimikatz while user logged in | Reads key freely | Can extract DPAPI master key from memory | Key never leaves Secure Enclave in plaintext | Key leaves the TPM in plaintext only during an unseal | Key leaves the TPM in plaintext only during an unseal | Key never leaves FIDO2 device — HMAC computed on-chip |
 | Remote attacker with shell as user | Reads key freely | Reads key freely | Blocked — no physical presence for Touch ID | Blocked — needs the PIN | Blocked — needs the PIN | Blocked — no physical device to tap |
 
-The DPAPI (Windows) and Secret Service (Linux) implementations are
-preserved for reference. Both are replaced by hardware-backed options:
-TPM seal on both Windows and Linux.
+The wallet used DPAPI (Windows) and Secret Service (Linux) before. Both
+were replaced by hardware-backed options: TPM seal on both Windows and
+Linux.
 
 ##### 5. Hardware-backed authentication architecture
 
