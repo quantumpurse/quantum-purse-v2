@@ -209,18 +209,22 @@ impl App {
                 request,
                 signatures,
                 ..
-            } => log_line(
-                ui,
-                "[SIGN ]",
-                c.accent,
-                &format!(
-                    "Awaiting co-signers — {} of {} signatures collected.",
+            } => {
+                // Enough is what Submit accepts, not a count: with the
+                // threshold met, a required signer can still be missing.
+                let state = if request.multisig_config().can_submit(signatures) {
+                    "Ready to submit"
+                } else {
+                    "Awaiting co-signers"
+                };
+                let message = format!(
+                    "{} — {} of {} signatures collected.",
+                    state,
                     signatures.len(),
                     request.multisig_config().threshold()
-                ),
-                c.text,
-                true,
-            ),
+                );
+                log_line(ui, "[SIGN ]", c.accent, &message, c.text, true)
+            }
             TransactionStatus::Sending => log_line(
                 ui,
                 "[SEND ]",

@@ -436,6 +436,13 @@ impl MultisigConfig {
         Ok(required.into_iter().chain(others).take(m).collect())
     }
 
+    /// Whether `signatures` are enough to submit, by the same rule that
+    /// picks them for the witness: the required signers and M in all. The
+    /// signatures themselves aren't checked here.
+    pub fn can_submit(&self, signatures: &[MsigSignature]) -> bool {
+        self.pick_signatures(signatures).is_ok()
+    }
+
     /// Assembles the complete witness lock field for a multisig transaction.
     ///
     /// Takes the signatures collected, each at its signer's position, and
