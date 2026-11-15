@@ -250,11 +250,11 @@ The previous Secret Service D-Bus implementation is preserved in
 
 | Scenario | Plain file | DPAPI / Secret Service | Apple Keychain + Touch ID | TPM seal (Windows) | TPM seal (Linux) | FIDO2 Hardware Key |
 |---|---|---|---|---|---|---|
-| Malware running as user | Reads key freely | Reads key freely | Blocked — Secure Enclave requires Touch ID per access | Blocked — requires the PIN per access | Blocked — TPM requires authorization policy | Blocked — requires physical device + PIN + tap |
-| Another user on same machine | Can read if file permissions allow | Cannot decrypt (tied to user session) | Cannot access (Keychain bound to user + biometric) | Cannot access without the PIN (seal is machine-bound, not user-bound) | Cannot access (TPM sealed to user session) | Cannot access — no device, no PIN |
+| Malware running as user | Reads key freely | Reads key freely | Blocked — Secure Enclave requires Touch ID per access | Blocked — requires the PIN per access | Blocked — requires the PIN per access | Blocked — requires physical device + PIN + tap |
+| Another user on same machine | Can read if file permissions allow | Cannot decrypt (tied to user session) | Cannot access (Keychain bound to user + biometric) | Cannot access without the PIN (seal is machine-bound, not user-bound) | Cannot access without the PIN (seal is machine-bound, not user-bound) | Cannot access — no device, no PIN |
 | Stolen disk, booted from USB | Reads key in plaintext | Cannot decrypt without user's login password | Cannot decrypt — key sealed in Secure Enclave hardware | Cannot decrypt — sealed blob useless without this TPM | Cannot decrypt — sealed blob useless without TPM | Cannot decrypt — credential_id blob useless without device |
-| Admin with Mimikatz while user logged in | Reads key freely | Can extract DPAPI master key from memory | Key never leaves Secure Enclave in plaintext | Key never leaves the TPM in plaintext — nothing to extract | Key never leaves TPM in plaintext | Key never leaves FIDO2 device — HMAC computed on-chip |
-| Remote attacker with shell as user | Reads key freely | Reads key freely | Blocked — no physical presence for Touch ID | Blocked — needs the PIN | Can unseal if process reaches `/dev/tpmrm0` | Blocked — no physical device to tap |
+| Admin with Mimikatz while user logged in | Reads key freely | Can extract DPAPI master key from memory | Key never leaves Secure Enclave in plaintext | Key leaves the TPM in plaintext only during an unseal | Key leaves the TPM in plaintext only during an unseal | Key never leaves FIDO2 device — HMAC computed on-chip |
+| Remote attacker with shell as user | Reads key freely | Reads key freely | Blocked — no physical presence for Touch ID | Blocked — needs the PIN | Blocked — needs the PIN | Blocked — no physical device to tap |
 
 The DPAPI (Windows) and Secret Service (Linux) implementations are
 preserved for reference. Both are replaced by hardware-backed options:
@@ -270,6 +270,6 @@ hardware operation gated by authentication produces or releases a key.
 | Hardware holds | wrapping_key (permanent, fused) | SRK, via the provider's well-known seal key | SRK (deterministic from well-known template) | Per-item key wrapped by class key derived from hardware UID |
 | Client stores on disk | credential_id = Encrypt(wrapping_key, CredRandom) | pcp_sealed_blob.bin (opaque sealed object) | tpm_sealed_blob.bin (Private + Public) | Keychain item (encrypted by per-item key) |
 | On use | Device decrypts blob → HMAC(CredRandom, salt) → returns derived key | TPM unseals blob → returns original key | TPM loads sealed blob → TPM2_Unseal → returns key | Secure Enclave unwraps per-item key → decrypts → returns key |
-| Authentication gate | PIN (verified on-device, 8 retries) | PIN (TPM authorization value, HKDF-expanded to 32 bytes) | TPM authorization policy | Touch ID (biometric match in Secure Enclave) |
+| Authentication gate | PIN (verified on-device, 8 retries) | PIN (TPM authorization value, HKDF-expanded to 32 bytes) | PIN (TPM authorization value, HKDF-expanded to 32 bytes) | Touch ID (biometric match in Secure Enclave) |
 | Secret origin | Generated inside the device (CredRandom) | Generated on the client | Generated on the client | Generated on the client |
 | Key leaves hardware? | Never — only HMAC derivative returned | Only during unseal operation | Only during unseal operation | Only during decrypt operation |
