@@ -332,7 +332,6 @@ pub(crate) enum SignedTx {
     Multisig {
         /// Boxed, as `TransactionStatus::AwaitingCoSigners` keeps it.
         request: Box<qpv2_core::types::SigningRequest>,
-        unsigned_tx: ckb_types::core::TransactionView,
         /// This wallet's signatures, each at its key's position among the
         /// signers.
         signatures: Vec<qpv2_core::types::MsigSignature>,
@@ -380,7 +379,6 @@ pub(crate) enum TransactionStatus {
         // the indirection it would bloat every `TransactionStatus` value
         // (even `Idle`) to its size. See clippy::large_enum_variant.
         request: Box<qpv2_core::types::SigningRequest>,
-        unsigned_tx: ckb_types::core::TransactionView,
         /// Signatures collected so far, each at its signer's position.
         signatures: Vec<qpv2_core::types::MsigSignature>,
         /// Clipboard/paste buffer for importing a co-signer response.

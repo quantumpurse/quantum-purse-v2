@@ -116,7 +116,6 @@ fn sign_transaction(
     );
     Ok(SignedTx::Multisig {
         request: Box::new(request),
-        unsigned_tx,
         signatures,
     })
 }
@@ -753,13 +752,11 @@ impl App {
             }
             SignedTx::Multisig {
                 request,
-                unsigned_tx,
                 signatures,
             } => {
                 self.tx_status = TransactionStatus::AwaitingCoSigners {
                     kind,
                     request,
-                    unsigned_tx,
                     signatures,
                     import_response_json: String::new(),
                     step1_done: false,
@@ -771,15 +768,14 @@ impl App {
     /// Assemble the collected multisig signatures and broadcast.
     /// Called from the co-signer coordination UI when M signatures are collected.
     pub(crate) fn submit_multisig_transaction(&mut self) {
-        let (kind, request, unsigned_tx, signatures) =
+        let (kind, request, signatures) =
             match std::mem::replace(&mut self.tx_status, TransactionStatus::Idle) {
                 TransactionStatus::AwaitingCoSigners {
                     kind,
                     request,
-                    unsigned_tx,
                     signatures,
                     ..
-                } => (kind, request, unsigned_tx, signatures),
+                } => (kind, request, signatures),
                 other => {
                     self.tx_status = other;
                     return;
@@ -799,8 +795,10 @@ impl App {
             }
         };
 
+        // The request's own transaction: the one that was checked and that
+        // every co-signer signed.
         let signed_tx = match ckb_node::tx_builder::fill_witness(
-            unsigned_tx,
+            request.unsigned_tx().clone(),
             request.script_group_index(),
             witness_lock,
         ) {
