@@ -82,6 +82,16 @@ pub(crate) fn timed_ckb_async_rpc_client(url: &str) -> ckb_sdk::rpc::CkbRpcAsync
         .expect("ckb rpc url, e.g. \"http://127.0.0.1:8114\"")
 }
 
+/// Builds a plain HTTP client with [`RPC_TIMEOUT`] applied, for calls
+/// ckb-sdk's clients don't cover, such as batch requests. reqwest's own
+/// default waits 30 seconds.
+fn timed_http_client() -> reqwest::blocking::Client {
+    reqwest::blocking::Client::builder()
+        .timeout(RPC_TIMEOUT)
+        .build()
+        .expect("an HTTP client with only a timeout set")
+}
+
 /// Unified RPC interface for wallet operations.
 ///
 /// Abstracts over full node and light client so wallet code does not
@@ -261,7 +271,7 @@ impl QpClient {
             })
             .collect();
 
-        let resp = reqwest::blocking::Client::new()
+        let resp = timed_http_client()
             .post(&self.config().rpc_url)
             .json(&batch)
             .send()
