@@ -83,10 +83,10 @@ Firmware limits: ≤256 inputs, ≤256 outputs, ≤64 cell deps, account index �
 
 ## Running the emulator
 
-From `_handy/trezor-firmware/core` (needs the firmware build toolchain — scons, a Python env via `uv`/`poetry`, SDL2, and the embedded Rust toolchain):
+From `vendor/trezor-firmware/core` (needs the firmware build toolchain — scons, a Python env via `uv`/`poetry`, SDL2, and the embedded Rust toolchain):
 
 ```sh
-cd _handy/trezor-firmware/core
+cd vendor/trezor-firmware/core
 make build_unix        # build the emulator (one-time; heavy)
 ./emu.py               # run it — listens on UDP 127.0.0.1:21324 (debug: 21325)
 ```

@@ -1,7 +1,7 @@
 //! Integration tests that drive a LIVE Trezor emulator.
 //!
 //! `#[ignore]`d by default so `cargo test` stays green without a device. To run:
-//! start the emulator from `_handy/trezor-firmware/core` (`make build_unix &&
+//! start the emulator from `vendor/trezor-firmware/core` (`make build_unix &&
 //! ./emu.py`) with a passphrase-disabled seed, then:
 //!
 //! ```sh
