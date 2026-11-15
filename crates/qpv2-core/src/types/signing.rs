@@ -650,8 +650,9 @@ pub struct SigningResponse {
 impl SigningResponse {
     /// Checks a co-signer's response against the request it answers and
     /// against `collected`, the signatures gathered so far, before the caller
-    /// adds its signatures. The GUI and the CLI both use it. The signatures
-    /// themselves are not verified here: a wrong one is refused by the chain.
+    /// adds its signatures. The GUI and the CLI both use it. Each signature
+    /// is verified against its signer's key and the request's message, so a
+    /// bad one is refused here, by name, instead of by the chain after Submit.
     pub fn validate(
         &self,
         request: &SigningRequest,
@@ -694,6 +695,29 @@ impl SigningResponse {
                     "The response holds S{} twice.",
                     sig.signer_index + 1
                 ));
+            }
+            // The signers are in index order, so its index is its place.
+            let signer = &request.multisig_config.signers()[sig.signer_index];
+            match crate::KeyVault::raw_verify(
+                signer.variant(),
+                signer.pubkey(),
+                request.signing_message.as_bytes(),
+                &sig.signature,
+            ) {
+                Ok(true) => {}
+                Ok(false) => {
+                    return Err(format!(
+                        "S{}'s signature doesn't match its key.",
+                        sig.signer_index + 1
+                    ))
+                }
+                Err(e) => {
+                    return Err(format!(
+                        "S{}'s signature is invalid: {}",
+                        sig.signer_index + 1,
+                        e
+                    ))
+                }
             }
         }
         Ok(())
@@ -1197,6 +1221,56 @@ mod tests {
                     label: "DAO deposit 199 CKB for".to_string(),
                     value: format!("{} (not this multisig)", address(&friend())),
                 }
+            );
+        }
+
+        /// A co-signer's signature is checked against their key and the
+        /// request's message when it arrives, so a bad one is refused there,
+        /// by name, and never reaches Submit.
+        #[test]
+        fn response_signatures_are_verified() {
+            use crate::types::SpxVariant;
+            use fips205::slh_dsa_sha2_128f;
+            use fips205::traits::{KeyGen, SerDes, Signer as _};
+
+            // S1 holds a real key; S2's is never used to sign.
+            let (public_key, private_key) =
+                slh_dsa_sha2_128f::KG::keygen_with_seeds(&[1; 16], &[2; 16], &[3; 16]);
+            let s1 = Signer::new(0, SpxVariant::Sha2128F, public_key.into_bytes().to_vec());
+            let s2 = Signer::new(1, SpxVariant::Sha2128F, vec![9; 32]);
+            let config =
+                MultisigConfig::new_multisig(0, 1, vec![s1.unwrap(), s2.unwrap()]).unwrap();
+            let request = spend(vec![cell(200, lock_of(&config))], &config).unwrap();
+            let signature = private_key
+                .try_sign(request.signing_message().as_bytes(), &[], true)
+                .unwrap()
+                .to_vec();
+            let response = |signer_index: usize, signature: Vec<u8>| SigningResponse {
+                version: request.version(),
+                signed: vec![MsigSignature {
+                    signer_index,
+                    signature,
+                }],
+                signing_message: request.signing_message().to_string(),
+            };
+
+            assert!(response(0, signature.clone())
+                .validate(&request, &[])
+                .is_ok());
+
+            let mut forged = signature.clone();
+            forged[0] ^= 1;
+            let err = response(0, forged).validate(&request, &[]).unwrap_err();
+            assert!(
+                err.contains("S1's signature doesn't match its key"),
+                "{err}"
+            );
+
+            // S1's signature labelled as S2's.
+            let err = response(1, signature).validate(&request, &[]).unwrap_err();
+            assert!(
+                err.contains("S2's signature doesn't match its key"),
+                "{err}"
             );
         }
     }

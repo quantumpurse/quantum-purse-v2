@@ -179,13 +179,3 @@ silently truncating). Same approach as CCC's `fixedPointFrom`. Put one
 shared `parse_ckb_to_shannons(&str) -> Result<u64, String>` in
 `qpv2-core` so CLI and GUI use identical parsing, and switch the CLI
 clap args from `f64` to `String`.
-
-## Submitter does not verify signatures before broadcasting
-
-**Status:** Open
-
-**Problem:** `handle_msig_submit` in the CLI (and `submit_multisig_transaction` in the GUI) checks that the response count matches threshold and that signing messages match, but never verifies that each signature is actually valid against the corresponding signer's public key. Garbage signatures pass all CLI/GUI validation and only fail on-chain.
-
-A malicious co-signer could repeatedly submit invalid signatures to delay a legitimate transaction. In time-sensitive scenarios (e.g., DAO withdrawal before maturity deadline), this could cause the user to miss the window and lose DAO interest.
-
-**Fix:** Before assembling the witness, verify each `(signer_index, signature)` pair against the signer's public key from `multisig_config.signers[signer_index]` using `KeyVault::raw_verify`. Reject invalid signatures before broadcasting.

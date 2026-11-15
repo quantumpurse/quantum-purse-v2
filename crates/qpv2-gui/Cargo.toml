@@ -2,7 +2,7 @@
 name = "qpv2-gui"
 version = "2.0.0-rc.8"
 edition = "2021"
-description = "GUI for SPHINCS+ key vault with Passkey PRF / Touch ID support."
+description = "Quantum Purse v2 in GUI."
 repository = "https://github.com/quantumpurse/quantum-purse-v2.git"
 license = "MIT"
 
