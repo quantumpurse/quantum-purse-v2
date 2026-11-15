@@ -628,17 +628,20 @@ impl App {
 
     /// Moves a finished transaction's result to the status bar and clears it
     /// from the flow, so the form or dialog it came from shows no result. The
-    /// DAO deposit dialog closes, since its result now shows outside it.
-    /// Called at the end of each frame, after whatever finished it: a poll or
-    /// a click that failed validation.
+    /// DAO deposit dialog closes on success, since its result now shows
+    /// outside it. On any failure, such as a cancelled unlock, a wrong
+    /// password or a bad amount, it stays open, so the deposit can be tried
+    /// again without typing it in again. Called at the end of each frame,
+    /// after whatever finished it: a poll or a click that failed validation.
     fn report_finished_tx_status(&mut self, ctx: &egui::Context) {
+        let succeeded = matches!(self.tx_status, TransactionStatus::Success(_));
         self.status = match &self.tx_status {
             TransactionStatus::Success(hash) => Status::Sent(hash.clone()),
             TransactionStatus::Error(e) => Status::Error(e.clone()),
             _ => return,
         };
         self.tx_status = TransactionStatus::Idle;
-        if self.dao_view == DaoView::Deposit {
+        if succeeded && self.dao_view == DaoView::Deposit {
             self.dao_view = DaoView::Overview;
         }
         // The bar was already drawn this frame.

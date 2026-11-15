@@ -1,6 +1,6 @@
 //! Transaction building, signing, and sending.
 
-use crate::types::{SignedTx, Status, TransactionKind, TransactionStatus};
+use crate::types::{SignedTx, TransactionKind, TransactionStatus};
 use crate::wallet::{get_fido2_dek, spawn_fido2_job};
 use crate::App;
 use ckb_node::{NodeType, QpClient};
@@ -637,13 +637,9 @@ impl App {
             }
         };
         let is_mainnet = self.qp_client.is_mainnet();
-        let mut auth_failed = false;
         let signed = sign_transaction(
             &vault,
-            |purpose| {
-                self.resolve_auth_key(purpose)
-                    .inspect_err(|_| auth_failed = true)
-            },
+            |purpose| self.resolve_auth_key(purpose),
             &account,
             kind,
             unsigned_tx,
@@ -653,11 +649,6 @@ impl App {
         );
         match signed {
             Ok(signed) => self.forward_signed_tx(kind, signed),
-            Err(e) if auth_failed => {
-                tracing::error!("{}", e);
-                self.tx_status = TransactionStatus::Idle;
-                self.status = Status::Error(e);
-            }
             Err(e) => {
                 tracing::error!("{}", e);
                 self.tx_status = TransactionStatus::Error(e);
