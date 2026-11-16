@@ -191,20 +191,7 @@ impl Tab {
         Tab::Settings,
     ];
 
-    /// Four-letter module code shown in the rail.
-    pub(crate) fn code(&self) -> &'static str {
-        match self {
-            Tab::Dashboard => "DASH",
-            Tab::Transfer => "XFER",
-            Tab::DaoOperations => "DAO",
-            Tab::Accounts => "ACCT",
-            Tab::Multisig => "MSIG",
-            Tab::Wallets => "WLLT",
-            Tab::Settings => "CONF",
-        }
-    }
-
-    /// Full module name shown next to the code.
+    /// Full module name shown under its icon in the rail.
     pub(crate) fn name(&self) -> &'static str {
         match self {
             Tab::Dashboard => "Dashboard",

@@ -4,8 +4,7 @@
 use crate::types::{label_font, Status, Tab};
 use crate::ui::cover::{draw_cover, letters_bottom, reserve_stage, restart_cover};
 use crate::ui::utils::{
-    blinking_cursor, breathing_dot, draw_qp_logo_chip, ghost_button, hold_button, panel_frame,
-    value_flash,
+    breathing_dot, draw_qp_logo_chip, ghost_button, hold_button, panel_frame, value_flash,
 };
 use crate::ui::wallet_modal::WALLET_FORM_W;
 use crate::App;
@@ -18,6 +17,8 @@ const TELEMETRY_H: f32 = 38.0;
 const STATUSLINE_H: f32 = 26.0;
 /// Width of the left module rail.
 const RAIL_W: f32 = 138.0;
+/// Side of a module's icon in the rail.
+const RAIL_ICON: f32 = 18.0;
 /// Width of a telemetry segment's dropdown caret, glyph plus its 2px offset.
 /// The carets are decoration only — the segment beside each one is the click
 /// target — but the wallet's sits in a right-to-left layout with nothing to its
@@ -546,10 +547,9 @@ impl App {
         });
     }
 
-    /// Slim left rail: numbered module codes, accent active state with
-    /// a blinking cursor.
+    /// Slim left rail: numbered module icons with their names. The active
+    /// one is tinted, barred on the left, and its icon drawn in the accent.
     fn draw_module_rail(&mut self, ui: &mut egui::Ui) {
-        let t = ui.input(|i| i.time) as f32;
         ui.add_space(10.0);
         // The user stays on this module while a device task waits on them:
         // see `device_task_in_flight`.
@@ -580,7 +580,7 @@ impl App {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
             }
 
-            let code_color = if is_active {
+            let icon_color = if is_active {
                 self.colors.accent
             } else if hovered {
                 self.colors.text
@@ -596,27 +596,12 @@ impl App {
                 label_font(8.0),
                 self.colors.text_muted,
             );
-            // Module code.
-            let code_pos = egui::pos2(rect.left() + 34.0, rect.top() + 13.0);
-            painter.text(
-                code_pos,
-                egui::Align2::LEFT_CENTER,
-                tab.code(),
-                label_font(12.0),
-                code_color,
+            // Module icon, on the line above the name.
+            let icon = egui::Rect::from_min_size(
+                egui::pos2(rect.left() + 34.0, rect.top() + 13.0 - RAIL_ICON / 2.0),
+                egui::vec2(RAIL_ICON, RAIL_ICON),
             );
-            if is_active {
-                let code_w = tab.code().len() as f32 * 9.0;
-                blinking_cursor(
-                    painter,
-                    egui::pos2(code_pos.x + code_w + 5.0, code_pos.y),
-                    11.0,
-                    self.colors.accent,
-                    t,
-                );
-                ui.ctx()
-                    .request_repaint_after(std::time::Duration::from_millis(120));
-            }
+            paint_tab_icon(painter, tab, icon, icon_color);
             // Module name.
             painter.text(
                 egui::pos2(rect.left() + 34.0, rect.top() + 28.0),
@@ -900,5 +885,81 @@ fn type_on(
         text.chars().take(shown).collect()
     } else {
         text.to_string()
+    }
+}
+
+/// Paints `tab`'s rail icon into `rect` in `color`: a hairline drawing on a
+/// 24-unit grid, scaled to fit. It's only lines, outlined boxes and circles,
+/// so it needs no image support and takes its color the way text does.
+fn paint_tab_icon(painter: &egui::Painter, tab: Tab, rect: egui::Rect, color: egui::Color32) {
+    let scale = rect.width() / 24.0;
+    let at = |x: f32, y: f32| rect.min + egui::vec2(x, y) * scale;
+    let stroke = egui::Stroke::new(1.5 * scale, color);
+    let line = |points: &[(f32, f32)]| {
+        let points = points.iter().map(|&(x, y)| at(x, y)).collect();
+        painter.add(egui::Shape::line(points, stroke));
+    };
+    let frame = |x: f32, y: f32, w: f32, h: f32| {
+        let rect = egui::Rect::from_min_size(at(x, y), egui::vec2(w, h) * scale);
+        painter.rect_stroke(rect, 0.0, stroke, egui::StrokeKind::Middle);
+    };
+    let ring = |x: f32, y: f32, r: f32| {
+        painter.circle_stroke(at(x, y), r * scale, stroke);
+    };
+
+    match tab {
+        // A bar chart.
+        Tab::Dashboard => {
+            frame(4.0, 12.0, 4.0, 8.0);
+            frame(10.0, 8.0, 4.0, 12.0);
+            frame(16.0, 4.0, 4.0, 16.0);
+        }
+        // Two arrows, out and back.
+        Tab::Transfer => {
+            line(&[(4.0, 8.0), (19.0, 8.0)]);
+            line(&[(15.0, 4.0), (19.0, 8.0), (15.0, 12.0)]);
+            line(&[(20.0, 16.0), (5.0, 16.0)]);
+            line(&[(9.0, 12.0), (5.0, 16.0), (9.0, 20.0)]);
+        }
+        // A vault with its dial.
+        Tab::DaoOperations => {
+            frame(4.0, 4.0, 16.0, 15.0);
+            ring(12.0, 11.5, 3.5);
+            line(&[(7.0, 19.0), (7.0, 21.0)]);
+            line(&[(17.0, 19.0), (17.0, 21.0)]);
+        }
+        // A key.
+        Tab::Accounts => {
+            ring(8.0, 12.0, 4.0);
+            line(&[(12.0, 12.0), (21.0, 12.0)]);
+            line(&[(17.0, 12.0), (17.0, 15.0)]);
+            line(&[(20.0, 12.0), (20.0, 15.0)]);
+        }
+        // Two signers joining one lock.
+        Tab::Multisig => {
+            ring(6.0, 6.0, 2.5);
+            ring(18.0, 6.0, 2.5);
+            ring(12.0, 18.0, 2.5);
+            line(&[(7.1, 8.2), (10.9, 15.8)]);
+            line(&[(16.9, 8.2), (13.1, 15.8)]);
+        }
+        // A wallet with its flap and clasp.
+        Tab::Wallets => {
+            frame(3.0, 7.0, 18.0, 13.0);
+            line(&[(5.0, 7.0), (16.0, 3.0), (17.3, 7.0)]);
+            frame(14.0, 11.5, 7.0, 4.0);
+        }
+        // Three sliders.
+        Tab::Settings => {
+            line(&[(3.0, 6.0), (13.0, 6.0)]);
+            line(&[(17.0, 6.0), (21.0, 6.0)]);
+            line(&[(3.0, 12.0), (7.0, 12.0)]);
+            line(&[(11.0, 12.0), (21.0, 12.0)]);
+            line(&[(3.0, 18.0), (15.0, 18.0)]);
+            line(&[(19.0, 18.0), (21.0, 18.0)]);
+            frame(13.0, 4.0, 4.0, 4.0);
+            frame(7.0, 10.0, 4.0, 4.0);
+            frame(15.0, 16.0, 4.0, 4.0);
+        }
     }
 }

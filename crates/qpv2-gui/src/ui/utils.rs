@@ -897,24 +897,6 @@ pub(crate) fn fido2_waiting_line(ui: &mut egui::Ui, colors: &AppColors) {
     });
 }
 
-/// Blinking block cursor (1.2Hz square wave), the terminal idiom used
-/// beside active titles and prompts.
-pub(crate) fn blinking_cursor(
-    painter: &egui::Painter,
-    left_center: egui::Pos2,
-    height: f32,
-    color: egui::Color32,
-    t: f32,
-) {
-    if (t * 1.2).fract() < 0.55 {
-        let rect = egui::Rect::from_min_size(
-            egui::pos2(left_center.x, left_center.y - height / 2.0),
-            egui::vec2(height * 0.55, height),
-        );
-        painter.rect_filled(rect, 0.0, color);
-    }
-}
-
 /// Bloomberg-style change flash: remembers `value` under `id` and
 /// returns a 0..=1 intensity for ~0.9s after it changes. Callers paint
 /// an accent overlay scaled by the returned intensity.
