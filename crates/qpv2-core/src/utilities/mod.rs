@@ -1,4 +1,7 @@
-use super::constants::{ENC_SCRYPT, IV_LENGTH, SALT_LENGTH, VAULT_ENC_KEY_HKDF_INFO};
+use super::constants::{
+    ENC_SCRYPT, IV_LENGTH, PASSPHRASE_SALT_PREFIX, PASSPHRASE_SCRYPT, SALT_LENGTH,
+    VAULT_ENC_KEY_HKDF_INFO,
+};
 use super::types::{AuthKey, CipherPayload, ScryptParam, SpxVariant};
 use crate::containers::{SecureString, SecureVec};
 use aes_gcm::{
@@ -129,6 +132,76 @@ pub fn derive_scrypt_key(
     scrypt(input, salt, &scrypt_param, &mut scrypt_key)
         .map_err(|e| format!("Scrypt error: {:?}", e))?;
     Ok(scrypt_key)
+}
+
+/// Mixes an optional passphrase into the master seed in place, turning it
+/// into the seed that keys are derived from.
+///
+/// The recipe, which can never change once a passphrase wallet holds funds:
+///
+/// ```text
+/// new seed = scrypt(password = seed,
+///                   salt     = PASSPHRASE_SALT_PREFIX || passphrase,
+///                   cost     = PASSPHRASE_SCRYPT (log_n, r, p),
+///                   output length = seed length)
+/// ```
+///
+/// - No passphrase (`None`) leaves the seed unchanged, so a wallet without
+///   one keeps its keys.
+/// - An empty passphrase (`Some("")`) is refused, so "no passphrase" has
+///   one spelling, `None`, and a caller has to choose it on purpose.
+/// - The whole seed is replaced, not only its two secret parts. The third
+///   part becomes the public half of every key, so leaving it alone would
+///   link a passphrase wallet to the plain one on-chain.
+/// - Scrypt makes each passphrase guess slow for someone who holds the seed.
+/// - Only printable ASCII is accepted. Other characters can be typed as
+///   different bytes on different systems, which would open a different,
+///   empty wallet.
+///
+/// **Parameters**:
+/// - `seed: &mut [u8]` - The master seed, overwritten with the new seed of the same length.
+/// - `passphrase: Option<&str>` - The passphrase, or `None` for a wallet without one.
+///
+/// **Returns**:
+/// - `Result<(), String>` - Nothing on success, or an error message on failure, in which case the seed is untouched.
+///
+/// Warning: Proper zeroization of the inputs is the responsibility of the caller.
+pub fn apply_passphrase(seed: &mut [u8], passphrase: Option<&str>) -> Result<(), String> {
+    if seed.is_empty() {
+        return Err("The master seed is empty.".to_string());
+    }
+    let Some(passphrase) = passphrase else {
+        return Ok(());
+    };
+    if passphrase.is_empty() {
+        return Err("The passphrase is empty.".to_string());
+    }
+    // Every character must be printable ASCII, space to '~'. The error does
+    // not name the one that isn't, because it is part of a secret.
+    if !passphrase.chars().all(|c| matches!(c, ' '..='~')) {
+        return Err(
+            "The passphrase may only use English letters, digits, spaces and common symbols."
+                .to_string(),
+        );
+    }
+
+    let mut salt = SecureVec::from_vec(PASSPHRASE_SALT_PREFIX.to_vec());
+    salt.extend(SecureVec::from_vec(passphrase.as_bytes().to_vec()));
+
+    // Scrypt fills the whole buffer it is given, so the output length is the
+    // seed's and not `PASSPHRASE_SCRYPT.len`.
+    let scrypt_param = Params::new(
+        PASSPHRASE_SCRYPT.log_n,
+        PASSPHRASE_SCRYPT.r,
+        PASSPHRASE_SCRYPT.p,
+        PASSPHRASE_SCRYPT.len,
+    )
+    .map_err(|e| format!("Scrypt params error: {:?}", e))?;
+    let mut new_seed = SecureVec::new_with_length(seed.len());
+    scrypt(seed, &salt, &scrypt_param, &mut new_seed)
+        .map_err(|e| format!("Scrypt error: {:?}", e))?;
+    seed.copy_from_slice(&new_seed);
+    Ok(())
 }
 
 /// Derives a key using HKDF-SHA256.

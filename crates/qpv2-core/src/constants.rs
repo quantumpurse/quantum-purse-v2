@@ -35,9 +35,29 @@ pub const ENC_SCRYPT: ScryptParam = ScryptParam {
     len: 32,
 };
 
+/// Scrypt cost for mixing a passphrase into the master seed. It is kept apart
+/// from `ENC_SCRYPT` because it decides the addresses: the password cost can
+/// be raised by re-encrypting the wallet file, but changing this one moves
+/// every passphrase wallet to different addresses.
+///
+/// `len` is not the output length here. The new seed is as long as the old
+/// one, up to 96 bytes, and the scrypt library accepts no `len` above 64, so
+/// this only has to be a value it accepts.
+pub const PASSPHRASE_SCRYPT: ScryptParam = ScryptParam {
+    log_n: 17,
+    r: 8,
+    p: 1,
+    len: 32,
+};
+
 /// HKDF info string for deriving AES-256 key from passkey PRF output.
 /// Domain separation ensures this key is distinct from any other HKDF derivation in the system.
 pub const VAULT_ENC_KEY_HKDF_INFO: &[u8] = b"quantum-purse-v2/vault-encryption/aes-256-gcm-key/v1";
+
+/// Leads the scrypt salt when a passphrase is mixed into the master seed, so
+/// this use of scrypt can never produce the same bytes as another one.
+/// Changing it moves every passphrase wallet to different addresses.
+pub const PASSPHRASE_SALT_PREFIX: &[u8] = b"quantum-purse-v2/passphrase/v1";
 
 /// CKB quantum-resistant lock script deployment info per network.
 /// Source: https://github.com/cryptape/quantum-resistant-lock-script
