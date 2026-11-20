@@ -31,6 +31,29 @@ fn main() {
             .compile()
             .expect("embed Windows app icon");
     }
+
+    set_windows_main_stack();
+}
+
+/// Main-thread stack reserve on Windows, matching the 8 MiB Linux and macOS
+/// give it.
+///
+/// Windows' default is 1 MiB, which the egui update loop outgrows in debug
+/// builds: unoptimized frames are large (`KeyVault::ckb_sign` alone reserves
+/// ~1.5 MiB), so the main thread overflows mid-frame. Inside winit's window
+/// procedure that surfaces as `0xc000041d` (fatal user-callback exception)
+/// rather than a plain stack overflow.
+fn set_windows_main_stack() {
+    const MAIN_STACK_BYTES: u32 = 8 * 1024 * 1024;
+
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
+        return;
+    }
+    if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+        println!("cargo:rustc-link-arg-bins=/STACK:{MAIN_STACK_BYTES}");
+    } else {
+        println!("cargo:rustc-link-arg-bins=-Wl,--stack,{MAIN_STACK_BYTES}");
+    }
 }
 
 fn profile_dir() -> Option<PathBuf> {
