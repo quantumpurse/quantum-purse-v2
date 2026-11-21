@@ -106,6 +106,16 @@ impl KeyVault {
         Ok(())
     }
 
+    /// Mixes the passphrase into a freshly decrypted master seed, so every
+    /// key derived from it afterwards belongs to the passphrase wallet. A
+    /// passphrase that disagrees with the wallet's `is_passphrase` is
+    /// refused first.
+    fn apply_passphrase(&self, seed: &mut [u8], passphrase: Option<&str>) -> Result<(), String> {
+        let wallet_info = Self::get_meta(self.wallet_id)?;
+        utilities::check_passphrase_compatibility(wallet_info.is_passphrase, passphrase)?;
+        utilities::apply_passphrase(seed, passphrase)
+    }
+
     /// Clears all data in the vault.
     ///
     /// **Returns**:
@@ -139,7 +149,7 @@ impl KeyVault {
     /// **Returns**:
     /// - `Result<SingleSigConvention, String>` - The single-sig convention recorded at wallet creation, or an error on failure.
     pub fn get_single_sig_convention(wallet_id: u32) -> Result<SingleSigConvention, String> {
-        Ok(Self::read_wallet_info(wallet_id)?.single_sig_convention)
+        Ok(Self::get_meta(wallet_id)?.single_sig_convention)
     }
 
     /// Retrieves all SPHINCS+ lock script arguments (processed public keys) from the database in the order they get inserted.
@@ -241,6 +251,7 @@ impl KeyVault {
     /// **Parameters**:
     /// - `auth: AuthKey` - The authentication key used to encrypt the generated master seed.
     /// - `auth_method: AuthMethod` - The authentication method to record in wallet metadata.
+    /// - `is_passphrase: bool` - Whether the wallet's keys are derived with a passphrase, recorded in wallet metadata.
     ///
     /// **Returns**:
     /// - `Result<(), String>` - Ok on success, or an error on failure.
@@ -270,6 +281,7 @@ impl KeyVault {
         auth: AuthKey,
         auth_method: AuthMethod,
         name: &str,
+        is_passphrase: bool,
     ) -> Result<(), String> {
         Self::validate_auth(&auth)?;
         db::wallets::validate_wallet_name(name, None).map_err(|e| e.to_string())?;
@@ -308,6 +320,7 @@ impl KeyVault {
             spx_variant: self.variant,
             auth_method,
             single_sig_convention: SingleSigConvention::Standard,
+            is_passphrase,
         };
         db::set_wallet_info(self.wallet_id, wallet_info).map_err(|e| e.to_string())?;
 
@@ -318,10 +331,15 @@ impl KeyVault {
     ///
     /// **Parameters**:
     /// - `auth: AuthKey` - The authentication key used to decrypt the master seed.
+    /// - `passphrase: Option<&str>` - The wallet's passphrase, or `None` for a wallet without one.
     ///
     /// **Returns**:
     /// - `Result<String, String>` - The hex-encoded SPHINCS+ lock argument (processed SPHINCS+ public key) of the account on success, or an error on failure.
-    pub fn gen_singlesig_account(&self, auth: AuthKey) -> Result<SphincsPlusAccount, String> {
+    pub fn gen_singlesig_account(
+        &self,
+        auth: AuthKey,
+        passphrase: Option<&str>,
+    ) -> Result<SphincsPlusAccount, String> {
         Self::validate_auth(&auth)?;
 
         // Get and decrypt the master seed
@@ -331,7 +349,8 @@ impl KeyVault {
                 tracing::error!("Master seed not found");
                 "Master seed not found".to_string()
             })?;
-        let seed = utilities::decrypt(&auth, payload)?;
+        let mut seed = utilities::decrypt(&auth, payload)?;
+        self.apply_passphrase(&mut seed, passphrase)?;
 
         let index = Self::get_singlesig_lock_args(self.wallet_id)?.len() as u32;
         tracing::info!(
@@ -389,7 +408,7 @@ impl KeyVault {
         threshold: u8,
         required_first_n: u8,
     ) -> Result<SphincsPlusAccount, String> {
-        if let AuthMethod::Trezor { .. } = Self::read_wallet_info(wallet_id)?.auth_method {
+        if let AuthMethod::Trezor { .. } = Self::get_meta(wallet_id)?.auth_method {
             return Err(
                 "Creating a multisig account on a Trezor wallet is not supported yet.".to_string(),
             );
@@ -425,6 +444,7 @@ impl KeyVault {
     ///   There're only 3 options accepted: 36, 54 or 72 words.
     /// - `auth: AuthKey` - The authentication key used to encrypt the translated master seed.
     /// - `auth_method: AuthMethod` - The authentication method to record in wallet metadata.
+    /// - `is_passphrase: bool` - Whether the wallet's keys are derived with a passphrase, recorded in wallet metadata.
     ///
     /// **Returns**:
     /// - `Result<(), String>` - Ok on success, or an error on failure.
@@ -459,6 +479,7 @@ impl KeyVault {
         auth_method: AuthMethod,
         name: &str,
         single_sig_convention: SingleSigConvention,
+        is_passphrase: bool,
     ) -> Result<(), String> {
         Self::validate_auth(&auth)?;
         db::wallets::validate_wallet_name(name, None).map_err(|e| e.to_string())?;
@@ -486,6 +507,7 @@ impl KeyVault {
             spx_variant: self.variant,
             auth_method,
             single_sig_convention,
+            is_passphrase,
         };
         db::set_wallet_info(self.wallet_id, wallet_info).map_err(|e| e.to_string())?;
 
@@ -521,6 +543,7 @@ impl KeyVault {
     ///
     /// **Parameters**:
     /// - `auth: AuthKey` - The authentication key used to decrypt the private key.
+    /// - `passphrase: Option<&str>` - The wallet's passphrase, or `None` for a wallet without one.
     /// - `lock_args: String` - The hex-encoded lock script's arguments corresponding to the SPHINCS+ public key of the account that signs.
     /// - `message: Vec<u8>` - The CKB transaction message all. For details check https://github.com/xxuejie/rfcs/blob/cighash-all/rfcs/0000-ckb-tx-message-all/0000-ckb-tx-message-all.md
     ///
@@ -529,6 +552,7 @@ impl KeyVault {
     pub fn ckb_sign(
         &self,
         auth: AuthKey,
+        passphrase: Option<&str>,
         lock_args: String,
         message: Vec<u8>,
     ) -> Result<Vec<u8>, String> {
@@ -552,7 +576,8 @@ impl KeyVault {
                 tracing::error!("Master seed not found");
                 "Master seed not found".to_string()
             })?;
-        let seed = utilities::decrypt(&auth, payload)?;
+        let mut seed = utilities::decrypt(&auth, payload)?;
+        self.apply_passphrase(&mut seed, passphrase)?;
 
         let (_, pri_key) = self.derive_spx_keys(&seed, account.index)?;
         let config = &account.config;
@@ -600,6 +625,7 @@ impl KeyVault {
     /// Raw SPHINCS+ sign
     /// **Parameters**:
     /// - `auth: AuthKey` - The authentication key used to decrypt the private key.
+    /// - `passphrase: Option<&str>` - The wallet's passphrase, or `None` for a wallet without one.
     /// - `lock_args: String` - The hex-encoded lock script's arguments corresponding to the SPHINCS+ public key of the account that signs.
     /// - `message: Vec<u8>` - The CKB transaction message all. For details check https://github.com/xxuejie/rfcs/blob/cighash-all/rfcs/0000-ckb-tx-message-all/0000-ckb-tx-message-all.md
     ///
@@ -608,6 +634,7 @@ impl KeyVault {
     pub fn raw_sign(
         &self,
         auth: AuthKey,
+        passphrase: Option<&str>,
         lock_args: String,
         message: Vec<u8>,
     ) -> Result<(Vec<u8>, Vec<u8>), String> {
@@ -631,7 +658,8 @@ impl KeyVault {
                 tracing::error!("Master seed not found");
                 "Master seed not found".to_string()
             })?;
-        let seed = utilities::decrypt(&auth, payload)?;
+        let mut seed = utilities::decrypt(&auth, payload)?;
+        self.apply_passphrase(&mut seed, passphrase)?;
 
         let (_, pri_key) = self.derive_spx_keys(&seed, account.index)?;
 
@@ -733,6 +761,7 @@ impl KeyVault {
     ///
     /// **Parameters**:
     /// - `auth: AuthKey` - The authentication key used to decrypt the master seed.
+    /// - `passphrase: Option<&str>` - The wallet's passphrase, or `None` for a wallet without one.
     /// - `start_index: u32` - The starting index for derivation.
     /// - `count: u32` - The number of sequential lock scripts arguments to derive.
     ///
@@ -741,6 +770,7 @@ impl KeyVault {
     pub fn try_gen_account_batch(
         &self,
         auth: AuthKey,
+        passphrase: Option<&str>,
         start_index: u32,
         count: u32,
     ) -> Result<Vec<String>, String> {
@@ -753,7 +783,8 @@ impl KeyVault {
                 tracing::error!("Master seed not found");
                 "Master seed not found".to_string()
             })?;
-        let seed = utilities::decrypt(&auth, payload)?;
+        let mut seed = utilities::decrypt(&auth, payload)?;
+        self.apply_passphrase(&mut seed, passphrase)?;
         let single_sig_convention = Self::get_single_sig_convention(self.wallet_id)?;
         let mut lock_args_array: Vec<String> = Vec::new();
         for index in start_index..(start_index + count) {
@@ -778,11 +809,17 @@ impl KeyVault {
     ///
     /// **Parameters**:
     /// - `auth: AuthKey` - The authentication key used to decrypt the master seed.
+    /// - `passphrase: Option<&str>` - The wallet's passphrase, or `None` for a wallet without one.
     /// - `count: u32` - The number of accounts to recover (from index 0 to count-1).
     ///
     /// **Returns**:
     /// - `Result<Vec<String>, String>` - A list of newly generated sphincs+ lock script arguments (processed public keys) on success, or an error on failure.
-    pub fn recover_accounts(&self, auth: AuthKey, count: u32) -> Result<Vec<String>, String> {
+    pub fn recover_accounts(
+        &self,
+        auth: AuthKey,
+        passphrase: Option<&str>,
+        count: u32,
+    ) -> Result<Vec<String>, String> {
         Self::validate_auth(&auth)?;
         tracing::info!(
             "Recovering accounts (wallet_id={}, count={})",
@@ -798,7 +835,8 @@ impl KeyVault {
                 "Master seed not found".to_string()
             })?;
         let mut lock_args_array: Vec<String> = Vec::new();
-        let seed = utilities::decrypt(&auth, payload)?;
+        let mut seed = utilities::decrypt(&auth, payload)?;
+        self.apply_passphrase(&mut seed, passphrase)?;
         let single_sig_convention = Self::get_single_sig_convention(self.wallet_id)?;
         for index in 0..count {
             let (pub_key, _) = self.derive_spx_keys(&seed, index).map_err(|e| {
@@ -834,7 +872,7 @@ impl KeyVault {
         Self::has_master_seed(wallet_id).unwrap_or(false)
     }
 
-    pub fn read_wallet_info(wallet_id: u32) -> Result<WalletInfo, String> {
+    pub fn get_meta(wallet_id: u32) -> Result<WalletInfo, String> {
         db::get_wallet_info(wallet_id)
             .map_err(|e| e.to_string())?
             .ok_or_else(|| {
@@ -844,7 +882,7 @@ impl KeyVault {
     }
 
     pub fn check_auth_compatibility(wallet_id: u32, expected: &AuthMethod) -> Result<(), String> {
-        let wallet_info = Self::read_wallet_info(wallet_id)?;
+        let wallet_info = Self::get_meta(wallet_id)?;
 
         match (&wallet_info.auth_method, expected) {
             (AuthMethod::Password, AuthMethod::Password) => Ok(()),
@@ -873,7 +911,7 @@ impl KeyVault {
     /// For CLI only.
     pub fn is_hardware_wallet(wallet_id: u32) -> bool {
         matches!(
-            Self::read_wallet_info(wallet_id).map(|w| w.auth_method),
+            Self::get_meta(wallet_id).map(|w| w.auth_method),
             Ok(AuthMethod::Trezor { .. })
         )
     }
@@ -911,6 +949,8 @@ impl KeyVault {
                 model: model.to_string(),
             },
             single_sig_convention: convention,
+            // The device derives the keys, so no passphrase is mixed in here.
+            is_passphrase: false,
         };
         db::set_wallet_info(wallet_id, wallet_info).map_err(|e| e.to_string())?;
 

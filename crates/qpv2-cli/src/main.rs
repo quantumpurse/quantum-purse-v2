@@ -400,7 +400,7 @@ fn prompt_for_input(prompt: &str) -> Result<SecureString, String> {
 }
 
 fn resolve_auth_key(wallet_id: u32, purpose: &str) -> Result<AuthKey, String> {
-    let wallet_info = KeyVault::read_wallet_info(wallet_id)?;
+    let wallet_info = KeyVault::get_meta(wallet_id)?;
     match wallet_info.auth_method {
         AuthMethod::Password => {
             let password =
@@ -429,7 +429,8 @@ fn init_with_keychain(vault: &KeyVault, name: &str) -> Result<(), String> {
     let key = qpv2_core::utilities::get_random_bytes(32)
         .map_err(|e| format!("Failed to generate key: {}", e))?;
     keychain::store_key(vault.wallet_id, &key)?;
-    if let Err(e) = vault.generate_master_seed(AuthKey::CryptoKey(key), AuthMethod::Keychain, name)
+    if let Err(e) =
+        vault.generate_master_seed(AuthKey::CryptoKey(key), AuthMethod::Keychain, name, false)
     {
         let _ = keychain::delete_key(vault.wallet_id);
         return Err(e);
@@ -453,6 +454,7 @@ fn import_with_keychain(
         AuthMethod::Keychain,
         name,
         single_sig_convention,
+        false,
     ) {
         let _ = keychain::delete_key(vault.wallet_id);
         return Err(e);
@@ -508,7 +510,7 @@ fn init_with_fido2(vault: &KeyVault, name: &str) -> Result<(), String> {
     let key = qpv2_core::utilities::derive_vault_enc_key(&hmac_output)?;
 
     let auth_method = AuthMethod::Fido2 { credential_id };
-    vault.generate_master_seed(AuthKey::CryptoKey(key), auth_method, name)?;
+    vault.generate_master_seed(AuthKey::CryptoKey(key), auth_method, name, false)?;
     Ok(())
 }
 
@@ -554,6 +556,7 @@ fn import_with_fido2(
         auth_method,
         name,
         single_sig_convention,
+        false,
     )?;
     Ok(())
 }
@@ -786,8 +789,12 @@ fn handle_dao_deposit(
         let auth = resolve_auth_key(wallet_id, "deposit into Nervos DAO")?;
         let variant = KeyVault::get_spx_variant(wallet_id)?;
         let vault = KeyVault::new(variant, wallet_id);
-        let signature_bytes =
-            vault.ckb_sign(auth, lock_args.to_string(), message.as_bytes().to_vec())?;
+        let signature_bytes = vault.ckb_sign(
+            auth,
+            None,
+            lock_args.to_string(),
+            message.as_bytes().to_vec(),
+        )?;
 
         ckb_node::tx_builder::fill_witness(unsigned_tx, 0, signature_bytes)
             .map_err(|e| format!("Failed to fill witness: {}", e))?
@@ -843,8 +850,12 @@ fn handle_dao_prepare(
         let auth = resolve_auth_key(wallet_id, "request a DAO withdrawal")?;
         let variant = KeyVault::get_spx_variant(wallet_id)?;
         let vault = KeyVault::new(variant, wallet_id);
-        let signature_bytes =
-            vault.ckb_sign(auth, lock_args.to_string(), message.as_bytes().to_vec())?;
+        let signature_bytes = vault.ckb_sign(
+            auth,
+            None,
+            lock_args.to_string(),
+            message.as_bytes().to_vec(),
+        )?;
 
         ckb_node::tx_builder::fill_witness(unsigned_tx, 0, signature_bytes)
             .map_err(|e| format!("Failed to fill witness: {}", e))?
@@ -900,8 +911,12 @@ fn handle_dao_withdraw(
         let auth = resolve_auth_key(wallet_id, "complete the DAO withdrawal")?;
         let variant = KeyVault::get_spx_variant(wallet_id)?;
         let vault = KeyVault::new(variant, wallet_id);
-        let signature_bytes =
-            vault.ckb_sign(auth, lock_args.to_string(), message.as_bytes().to_vec())?;
+        let signature_bytes = vault.ckb_sign(
+            auth,
+            None,
+            lock_args.to_string(),
+            message.as_bytes().to_vec(),
+        )?;
 
         ckb_node::tx_builder::fill_witness(unsigned_tx, 0, signature_bytes)
             .map_err(|e| format!("Failed to fill witness: {}", e))?
@@ -978,8 +993,12 @@ fn handle_transfer(
         let auth = resolve_auth_key(wallet_id, "sign and send the transfer")?;
         let variant = KeyVault::get_spx_variant(wallet_id)?;
         let vault = KeyVault::new(variant, wallet_id);
-        let signature_bytes =
-            vault.ckb_sign(auth, lock_args.to_string(), message.as_bytes().to_vec())?;
+        let signature_bytes = vault.ckb_sign(
+            auth,
+            None,
+            lock_args.to_string(),
+            message.as_bytes().to_vec(),
+        )?;
         ckb_node::tx_builder::fill_witness(unsigned_tx, 0, signature_bytes)
             .map_err(|e| format!("Failed to fill witness: {}", e))?
     };
@@ -1344,7 +1363,7 @@ fn handle_msig_sign(
 
         let auth = resolve_auth_key(wallet_id, &format!("co-sign a multisig transaction{}", key))?;
         let (signature, _pubkey) =
-            vault.raw_sign(auth, local_signer.lock_args, message_bytes.clone())?;
+            vault.raw_sign(auth, None, local_signer.lock_args, message_bytes.clone())?;
         signed.push(qpv2_core::types::MsigSignature {
             signer_index,
             signature,
@@ -1501,6 +1520,7 @@ fn main() -> Result<(), String> {
                     AuthKey::Password(password),
                     AuthMethod::Password,
                     &name,
+                    false,
                 )?;
             }
             println!("✓ Master seed generated successfully");
@@ -1556,6 +1576,7 @@ fn main() -> Result<(), String> {
                         AuthMethod::Password,
                         &name,
                         single_sig_convention,
+                        false,
                     )?;
                 }
                 println!("✓ Seed phrase imported successfully");
@@ -1599,7 +1620,7 @@ fn main() -> Result<(), String> {
                         let vault = KeyVault::new(variant, wallet_id);
 
                         let auth = resolve_auth_key(wallet_id, "create a new account")?;
-                        vault.gen_singlesig_account(auth)?
+                        vault.gen_singlesig_account(auth, None)?
                     };
                     println!("✓ New account created");
                     println!(
@@ -1698,7 +1719,7 @@ fn main() -> Result<(), String> {
                     let vault = KeyVault::new(variant, wallet_id);
 
                     let auth = resolve_auth_key(wallet_id, "recover accounts")?;
-                    let accounts = vault.recover_accounts(auth, count)?;
+                    let accounts = vault.recover_accounts(auth, None, count)?;
 
                     println!("✓ Recovered {} accounts:", accounts.len());
                     for (idx, lock_args) in accounts.iter().enumerate() {
@@ -1711,7 +1732,7 @@ fn main() -> Result<(), String> {
                     let vault = KeyVault::new(variant, wallet_id);
 
                     let auth = resolve_auth_key(wallet_id, "derive an account batch")?;
-                    let accounts = vault.try_gen_account_batch(auth, start, count)?;
+                    let accounts = vault.try_gen_account_batch(auth, None, start, count)?;
 
                     println!("Generated {} accounts:", accounts.len());
                     for (idx, lock_args) in accounts.iter().enumerate() {
@@ -1732,7 +1753,7 @@ fn main() -> Result<(), String> {
             let message_bytes = hex::decode(&message).map_err(|e| e.to_string())?;
             let auth = resolve_auth_key(wallet_id, "sign the message")?;
 
-            let (signature, pub_key) = vault.raw_sign(auth, identifier, message_bytes)?;
+            let (signature, pub_key) = vault.raw_sign(auth, None, identifier, message_bytes)?;
             println!("Signature: {}", hex::encode(signature));
             println!("Public Key: {}", hex::encode(pub_key));
         }
@@ -1766,7 +1787,7 @@ fn main() -> Result<(), String> {
                 let message_bytes = hex::decode(&message).map_err(|e| e.to_string())?;
                 let auth = resolve_auth_key(wallet_id, "sign the CKB message")?;
 
-                let signature = vault.ckb_sign(auth, lock_args, message_bytes)?;
+                let signature = vault.ckb_sign(auth, None, lock_args, message_bytes)?;
                 println!("Signature: {}", hex::encode(signature));
             }
 
@@ -1966,7 +1987,7 @@ fn main() -> Result<(), String> {
                 } else {
                     println!("Wallets ({}):\n", wallets.len());
                     for entry in &wallets {
-                        let wallet_info = KeyVault::read_wallet_info(entry.id)?;
+                        let wallet_info = KeyVault::get_meta(entry.id)?;
                         let accounts = KeyVault::get_all_lock_args(entry.id)?;
                         let data_path =
                             qpv2_core::db::get_wallet_dir(entry.id).map_err(|e| e.to_string())?;

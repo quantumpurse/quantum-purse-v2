@@ -204,6 +204,29 @@ pub fn apply_passphrase(seed: &mut [u8], passphrase: Option<&str>) -> Result<(),
     Ok(())
 }
 
+/// Refuses a passphrase that disagrees with how the wallet was created: a
+/// passphrase wallet given none, or a plain wallet given one. Either would
+/// derive the keys of a different, empty wallet without any error.
+///
+/// **Parameters**:
+/// - `wallet_uses_passphrase: bool` - The wallet's recorded `is_passphrase`.
+/// - `passphrase: Option<&str>` - The passphrase about to be applied, or `None`.
+///
+/// **Returns**:
+/// - `Result<(), String>` - Nothing when the two agree, or an error message when they do not.
+pub fn check_passphrase_compatibility(
+    wallet_uses_passphrase: bool,
+    passphrase: Option<&str>,
+) -> Result<(), String> {
+    match (wallet_uses_passphrase, passphrase.is_some()) {
+        (true, false) => Err("This wallet uses a passphrase, but none was given.".to_string()),
+        (false, true) => {
+            Err("This wallet does not use a passphrase, but one was given.".to_string())
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Derives a key using HKDF-SHA256.
 ///
 /// **Parameters**:

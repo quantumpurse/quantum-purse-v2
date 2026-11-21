@@ -165,7 +165,7 @@ fn sign(
         };
         let auth = unlock(&purpose)?;
         let (signature, _pubkey) = vault
-            .raw_sign(auth, local_signer.lock_args, message.clone())
+            .raw_sign(auth, None, local_signer.lock_args, message.clone())
             .map_err(|e| format!("Signing failed: {}", e))?;
         signed.push(MsigSignature {
             signer_index: usize::from(local_signer.signer.index()),

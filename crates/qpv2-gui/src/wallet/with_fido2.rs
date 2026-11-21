@@ -109,7 +109,7 @@ impl App {
 
         let vault = KeyVault::new(variant, wallet_id);
         if let Err(e) =
-            vault.generate_master_seed(AuthKey::CryptoKey(key), auth_method, &wallet_name)
+            vault.generate_master_seed(AuthKey::CryptoKey(key), auth_method, &wallet_name, false)
         {
             let msg = format!("Failed to create wallet: {}", e);
             tracing::error!("{}", msg);
@@ -119,7 +119,7 @@ impl App {
 
         // The wallet exists now, so it opens even if this fails: empty, for
         // NEW ACCOUNT to retry.
-        let first_account = vault.gen_singlesig_account(AuthKey::CryptoKey(key_for_account));
+        let first_account = vault.gen_singlesig_account(AuthKey::CryptoKey(key_for_account), None);
 
         self.finalize_wallet_setup(
             AuthMethod::Fido2 { credential_id },
@@ -237,6 +237,7 @@ impl App {
             auth_method,
             &wallet_name,
             single_sig_convention,
+            false,
         ) {
             let msg = format!("Failed to import wallet: {}", e);
             tracing::error!("{}", msg);
@@ -246,7 +247,7 @@ impl App {
 
         // The wallet exists now, so it opens even if this fails: empty, for
         // NEW ACCOUNT to retry.
-        let first_account = vault.gen_singlesig_account(AuthKey::CryptoKey(key_for_account));
+        let first_account = vault.gen_singlesig_account(AuthKey::CryptoKey(key_for_account), None);
 
         // The other import buttons clear this at the click; this one keeps
         // it for a retry until the wallet exists.
@@ -321,7 +322,7 @@ impl App {
             }
         };
         let vault = KeyVault::new(variant, self.wallet_id);
-        match vault.gen_singlesig_account(auth) {
+        match vault.gen_singlesig_account(auth, None) {
             Ok(account) => {
                 tracing::info!(
                     "Account created (wallet_id={}, lock_args={}...)",

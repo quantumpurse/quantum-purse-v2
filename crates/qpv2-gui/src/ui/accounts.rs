@@ -112,7 +112,7 @@ impl App {
 
                 // Auth method is wallet-wide, so resolve it once and
                 // repeat the badge on every row.
-                let auth_label = KeyVault::read_wallet_info(self.wallet_id)
+                let auth_label = KeyVault::get_meta(self.wallet_id)
                     .ok()
                     .map(|info| auth_badge_label(&info.auth_method));
 

@@ -76,6 +76,9 @@ pub struct WalletInfo {
     pub auth_method: AuthMethod,
     /// Single-sig header convention for every account in this wallet.
     pub single_sig_convention: SingleSigConvention,
+    /// Whether every key of this wallet is derived with a passphrase mixed
+    /// into the master seed.
+    pub is_passphrase: bool,
 }
 
 /// ID of all 12 SPHINCS+ variants following https://github.com/cryptape/quantum-resistant-lock-script/pull/14

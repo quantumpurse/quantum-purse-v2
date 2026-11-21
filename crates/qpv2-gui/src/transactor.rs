@@ -59,7 +59,12 @@ fn sign_transaction(
         // ── Single-sig: sign and fill the witness ──
         let auth = unlock("sign and send the TX")?;
         let signature = vault
-            .ckb_sign(auth, account.lock_args.clone(), message.as_bytes().to_vec())
+            .ckb_sign(
+                auth,
+                None,
+                account.lock_args.clone(),
+                message.as_bytes().to_vec(),
+            )
             .map_err(|e| format!("Signing failed: {}", e))?;
         let signed_tx = ckb_node::tx_builder::fill_witness(unsigned_tx, 0, signature)
             .map_err(|e| format!("Failed to fill witness: {}", e))?;
@@ -82,7 +87,12 @@ fn sign_transaction(
         };
         let auth = unlock(&purpose)?;
         let (signature, _pubkey) = vault
-            .raw_sign(auth, local_signer.lock_args, message.as_bytes().to_vec())
+            .raw_sign(
+                auth,
+                None,
+                local_signer.lock_args,
+                message.as_bytes().to_vec(),
+            )
             .map_err(|e| format!("Signing failed: {}", e))?;
         signatures.push(MsigSignature {
             signer_index: usize::from(local_signer.signer.index()),

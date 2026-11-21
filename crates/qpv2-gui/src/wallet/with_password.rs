@@ -52,9 +52,12 @@ impl App {
 
         let pw_for_account = pw.clone();
         let vault = KeyVault::new(variant, wallet_id);
-        if let Err(e) =
-            vault.generate_master_seed(AuthKey::Password(pw), AuthMethod::Password, &wallet_name)
-        {
+        if let Err(e) = vault.generate_master_seed(
+            AuthKey::Password(pw),
+            AuthMethod::Password,
+            &wallet_name,
+            false,
+        ) {
             let msg = format!("Failed to create wallet: {}", e);
             tracing::error!("{}", msg);
             self.status = Status::Error(msg);
@@ -63,7 +66,7 @@ impl App {
 
         // The wallet exists now, so it opens even if this fails: empty, for
         // NEW ACCOUNT to retry.
-        let first_account = vault.gen_singlesig_account(AuthKey::Password(pw_for_account));
+        let first_account = vault.gen_singlesig_account(AuthKey::Password(pw_for_account), None);
 
         self.finalize_wallet_setup(
             AuthMethod::Password,
@@ -138,6 +141,7 @@ impl App {
             AuthMethod::Password,
             &wallet_name,
             single_sig_convention,
+            false,
         ) {
             let msg = format!("Failed to import wallet: {}", e);
             tracing::error!("{}", msg);
@@ -147,7 +151,7 @@ impl App {
 
         // The wallet exists now, so it opens even if this fails: empty, for
         // NEW ACCOUNT to retry.
-        let first_account = vault.gen_singlesig_account(AuthKey::Password(pw_for_account));
+        let first_account = vault.gen_singlesig_account(AuthKey::Password(pw_for_account), None);
 
         self.finalize_wallet_setup(
             AuthMethod::Password,

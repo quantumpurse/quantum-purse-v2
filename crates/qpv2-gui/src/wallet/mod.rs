@@ -31,7 +31,7 @@ impl App {
         wallets
             .into_iter()
             .filter_map(|entry| {
-                let info = KeyVault::read_wallet_info(entry.id).ok()?;
+                let info = KeyVault::get_meta(entry.id).ok()?;
                 let account_count = KeyVault::get_all_lock_args(entry.id)
                     .map(|a| a.len())
                     .unwrap_or(0);
@@ -63,7 +63,7 @@ impl App {
     pub(crate) fn load_wallet(
         wallet_id: u32,
     ) -> Result<(AuthMethod, Vec<SphincsPlusAccount>), String> {
-        let info = KeyVault::read_wallet_info(wallet_id)
+        let info = KeyVault::get_meta(wallet_id)
             .map_err(|e| format!("Failed to read wallet info: {}", e))?;
         let accounts = KeyVault::get_all_accounts(wallet_id)
             .map_err(|e| format!("Failed to read accounts: {}", e))?;
@@ -592,7 +592,7 @@ impl App {
             }
         };
         let vault = KeyVault::new(variant, self.wallet_id);
-        match vault.gen_singlesig_account(auth) {
+        match vault.gen_singlesig_account(auth, None) {
             Ok(account) => {
                 tracing::info!(
                     "Account created (wallet_id={}, lock_args={}...)",
