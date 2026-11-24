@@ -4,9 +4,10 @@ use fips205::{
     traits::{KeyGen, SerDes},
     *,
 };
+use scrypt::{scrypt, Params};
 use zeroize::Zeroize;
 
-use crate::constants::KDF_PATH_PREFIX;
+use crate::constants::{KDF_PATH_PREFIX, PASSPHRASE_SALT_PREFIX, PASSPHRASE_SCRYPT};
 use crate::spx_keygen;
 use crate::types::{AuthKey, SpxVariant};
 use crate::{db, utilities, KeyVault, SecureVec};
@@ -47,7 +48,7 @@ impl MasterSeed {
                 "Master seed not found".to_string()
             })?;
         let mut seed = utilities::decrypt(auth, payload)?;
-        utilities::apply_passphrase(&mut seed, passphrase)?;
+        Self::apply_passphrase(&mut seed, passphrase)?;
 
         let seed = MasterSeed {
             seed,
@@ -107,6 +108,76 @@ impl MasterSeed {
         }
     }
 
+    /// Mixes an optional passphrase into the master seed in place, turning it
+    /// into the seed that keys are derived from.
+    ///
+    /// The recipe, which can never change once a passphrase wallet holds funds:
+    ///
+    /// ```text
+    /// new seed = scrypt(password = seed,
+    ///                   salt     = PASSPHRASE_SALT_PREFIX || passphrase,
+    ///                   cost     = PASSPHRASE_SCRYPT (log_n, r, p),
+    ///                   output length = seed length)
+    /// ```
+    ///
+    /// - No passphrase (`None`) leaves the seed unchanged, so a wallet without
+    ///   one keeps its keys.
+    /// - An empty passphrase (`Some("")`) is refused, so "no passphrase" has
+    ///   one spelling, `None`, and a caller has to choose it on purpose.
+    /// - The whole seed is replaced, not only its two secret parts. The third
+    ///   part becomes the public half of every key, so leaving it alone would
+    ///   link a passphrase wallet to the plain one on-chain.
+    /// - Scrypt makes each passphrase guess slow for someone who holds the seed.
+    /// - Only printable ASCII is accepted. Other characters can be typed as
+    ///   different bytes on different systems, which would open a different,
+    ///   empty wallet.
+    ///
+    /// **Parameters**:
+    /// - `seed: &mut [u8]` - The master seed, overwritten with the new seed of the same length.
+    /// - `passphrase: Option<&str>` - The passphrase, or `None` for a wallet without one.
+    ///
+    /// **Returns**:
+    /// - `Result<(), String>` - Nothing on success, or an error message on failure, in which case the seed is untouched.
+    ///
+    /// Warning: Proper zeroization of the inputs is the responsibility of the caller.
+    fn apply_passphrase(seed: &mut [u8], passphrase: Option<&str>) -> Result<(), String> {
+        if seed.is_empty() {
+            return Err("The master seed is empty.".to_string());
+        }
+        let Some(passphrase) = passphrase else {
+            return Ok(());
+        };
+        if passphrase.is_empty() {
+            return Err("The passphrase is empty.".to_string());
+        }
+        // Every character must be printable ASCII, space to '~'. The error does
+        // not name the one that isn't, because it is part of a secret.
+        if !passphrase.chars().all(|c| matches!(c, ' '..='~')) {
+            return Err(
+                "The passphrase may only use English letters, digits, spaces and common symbols."
+                    .to_string(),
+            );
+        }
+
+        let mut salt = SecureVec::from_vec(PASSPHRASE_SALT_PREFIX.to_vec());
+        salt.extend(SecureVec::from_vec(passphrase.as_bytes().to_vec()));
+
+        // Scrypt fills the whole buffer it is given, so the output length is the
+        // seed's and not `PASSPHRASE_SCRYPT.len`.
+        let scrypt_param = Params::new(
+            PASSPHRASE_SCRYPT.log_n,
+            PASSPHRASE_SCRYPT.r,
+            PASSPHRASE_SCRYPT.p,
+            PASSPHRASE_SCRYPT.len,
+        )
+        .map_err(|e| format!("Scrypt params error: {:?}", e))?;
+        let mut new_seed = SecureVec::new_with_length(seed.len());
+        scrypt(seed, &salt, &scrypt_param, &mut new_seed)
+            .map_err(|e| format!("Scrypt error: {:?}", e))?;
+        seed.copy_from_slice(&new_seed);
+        Ok(())
+    }
+
     /// Refuses a passphrase that disagrees with how the wallet was created: a
     /// passphrase wallet given none, or a plain wallet given one. Either would
     /// derive the keys of a different, empty wallet without any error.
@@ -160,5 +231,64 @@ impl MasterSeed {
             return Err(msg.to_string());
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_no_passphrase_keeps_the_seed() {
+        let mut seed: Vec<u8> = (0..96).collect();
+        MasterSeed::apply_passphrase(&mut seed, None).unwrap();
+        assert_eq!(seed, (0..96).collect::<Vec<u8>>());
+    }
+
+    #[test]
+    fn test_empty_passphrase_is_rejected() {
+        let mut seed: Vec<u8> = (0..96).collect();
+        assert_eq!(
+            MasterSeed::apply_passphrase(&mut seed, Some("")),
+            Err("The passphrase is empty.".to_string())
+        );
+    }
+
+    #[test]
+    fn test_passphrase_rejects_an_empty_seed() {
+        for passphrase in [None, Some("correct horse battery staple")] {
+            assert_eq!(
+                MasterSeed::apply_passphrase(&mut [], passphrase),
+                Err("The master seed is empty.".to_string())
+            );
+        }
+    }
+
+    /// Pins the recipe: a change to the salt prefix, the scrypt cost, or what
+    /// goes in as password and salt moves every passphrase wallet's addresses.
+    /// The 96-byte seed is the longest one, past the 64 bytes scrypt's own
+    /// parameter check allows.
+    #[test]
+    fn test_passphrase_recipe_is_pinned() {
+        let mut seed: Vec<u8> = (0..96).collect();
+        MasterSeed::apply_passphrase(&mut seed, Some("correct horse battery staple")).unwrap();
+        assert_eq!(
+            hex::encode(&seed),
+            "7283cb0dcbfb83e7026a463fb000422ebcd68fab21b35a01471af0a4006a707f\
+             5d652708dd5592b4331aedfe0291428bb838b12ad31cb633b4a1cdd821e42b76\
+             2e29e22db3a257b23688f3ce247d5f5f4c40b8c92b5de4de994877a9828ab314"
+        );
+    }
+
+    #[test]
+    fn test_passphrase_rejects_characters_outside_printable_ascii() {
+        let mut seed: Vec<u8> = (0..96).collect();
+        for typed in ["caf\u{e9}", "tab\there", "line\nbreak"] {
+            assert!(
+                MasterSeed::apply_passphrase(&mut seed, Some(typed)).is_err(),
+                "{:?} was accepted",
+                typed
+            );
+        }
     }
 }

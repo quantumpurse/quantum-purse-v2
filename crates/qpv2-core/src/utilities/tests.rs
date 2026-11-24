@@ -257,60 +257,6 @@ fn test_import_accepts_distinct_sub_phrases_reordered() {
     assert!(seed_phrase_to_entropy(crate::types::SpxVariant::Shake128F, &phrase).is_ok());
 }
 
-#[test]
-fn test_no_passphrase_keeps_the_seed() {
-    let mut seed: Vec<u8> = (0..96).collect();
-    apply_passphrase(&mut seed, None).unwrap();
-    assert_eq!(seed, (0..96).collect::<Vec<u8>>());
-}
-
-#[test]
-fn test_empty_passphrase_is_rejected() {
-    let mut seed: Vec<u8> = (0..96).collect();
-    assert_eq!(
-        apply_passphrase(&mut seed, Some("")),
-        Err("The passphrase is empty.".to_string())
-    );
-}
-
-#[test]
-fn test_passphrase_rejects_an_empty_seed() {
-    for passphrase in [None, Some("correct horse battery staple")] {
-        assert_eq!(
-            apply_passphrase(&mut [], passphrase),
-            Err("The master seed is empty.".to_string())
-        );
-    }
-}
-
-/// Pins the recipe: a change to the salt prefix, the scrypt cost, or what
-/// goes in as password and salt moves every passphrase wallet's addresses.
-/// The 96-byte seed is the longest one, past the 64 bytes scrypt's own
-/// parameter check allows.
-#[test]
-fn test_passphrase_recipe_is_pinned() {
-    let mut seed: Vec<u8> = (0..96).collect();
-    apply_passphrase(&mut seed, Some("correct horse battery staple")).unwrap();
-    assert_eq!(
-        encode(&seed),
-        "7283cb0dcbfb83e7026a463fb000422ebcd68fab21b35a01471af0a4006a707f\
-         5d652708dd5592b4331aedfe0291428bb838b12ad31cb633b4a1cdd821e42b76\
-         2e29e22db3a257b23688f3ce247d5f5f4c40b8c92b5de4de994877a9828ab314"
-    );
-}
-
-#[test]
-fn test_passphrase_rejects_characters_outside_printable_ascii() {
-    let mut seed: Vec<u8> = (0..96).collect();
-    for typed in ["caf\u{e9}", "tab\there", "line\nbreak"] {
-        assert!(
-            apply_passphrase(&mut seed, Some(typed)).is_err(),
-            "{:?} was accepted",
-            typed
-        );
-    }
-}
-
 fn pin(s: &str) -> SecureString {
     SecureString::from_string(s.to_string())
 }
