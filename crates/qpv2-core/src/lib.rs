@@ -106,16 +106,6 @@ impl KeyVault {
         Ok(())
     }
 
-    /// Mixes the passphrase into a freshly decrypted master seed, so every
-    /// key derived from it afterwards belongs to the passphrase wallet. A
-    /// passphrase that disagrees with the wallet's `is_passphrase` is
-    /// refused first.
-    fn apply_passphrase(&self, seed: &mut [u8], passphrase: Option<&str>) -> Result<(), String> {
-        let wallet_info = Self::get_meta(self.wallet_id)?;
-        utilities::check_passphrase_compatibility(wallet_info.is_passphrase, passphrase)?;
-        utilities::apply_passphrase(seed, passphrase)
-    }
-
     /// Clears all data in the vault.
     ///
     /// **Returns**:
@@ -341,6 +331,7 @@ impl KeyVault {
         passphrase: Option<&str>,
     ) -> Result<SphincsPlusAccount, String> {
         Self::validate_auth(&auth)?;
+        self.check_passphrase_compatibility(passphrase)?;
 
         // Get and decrypt the master seed
         let payload = db::get_encrypted_seed(self.wallet_id)
@@ -350,7 +341,7 @@ impl KeyVault {
                 "Master seed not found".to_string()
             })?;
         let mut seed = utilities::decrypt(&auth, payload)?;
-        self.apply_passphrase(&mut seed, passphrase)?;
+        utilities::apply_passphrase(&mut seed, passphrase)?;
 
         let index = Self::get_singlesig_lock_args(self.wallet_id)?.len() as u32;
         tracing::info!(
@@ -557,6 +548,7 @@ impl KeyVault {
         message: Vec<u8>,
     ) -> Result<Vec<u8>, String> {
         Self::validate_auth(&auth)?;
+        self.check_passphrase_compatibility(passphrase)?;
 
         tracing::info!(
             "CKB signing (wallet_id={}, lock_args={}..)",
@@ -577,7 +569,7 @@ impl KeyVault {
                 "Master seed not found".to_string()
             })?;
         let mut seed = utilities::decrypt(&auth, payload)?;
-        self.apply_passphrase(&mut seed, passphrase)?;
+        utilities::apply_passphrase(&mut seed, passphrase)?;
 
         let (_, pri_key) = self.derive_spx_keys(&seed, account.index)?;
         let config = &account.config;
@@ -639,6 +631,7 @@ impl KeyVault {
         message: Vec<u8>,
     ) -> Result<(Vec<u8>, Vec<u8>), String> {
         Self::validate_auth(&auth)?;
+        self.check_passphrase_compatibility(passphrase)?;
 
         tracing::info!(
             "Raw signing (wallet_id={}, lock_args={}..)",
@@ -659,7 +652,7 @@ impl KeyVault {
                 "Master seed not found".to_string()
             })?;
         let mut seed = utilities::decrypt(&auth, payload)?;
-        self.apply_passphrase(&mut seed, passphrase)?;
+        utilities::apply_passphrase(&mut seed, passphrase)?;
 
         let (_, pri_key) = self.derive_spx_keys(&seed, account.index)?;
 
@@ -775,6 +768,7 @@ impl KeyVault {
         count: u32,
     ) -> Result<Vec<String>, String> {
         Self::validate_auth(&auth)?;
+        self.check_passphrase_compatibility(passphrase)?;
 
         // Get and decrypt the master seed
         let payload = db::get_encrypted_seed(self.wallet_id)
@@ -784,7 +778,7 @@ impl KeyVault {
                 "Master seed not found".to_string()
             })?;
         let mut seed = utilities::decrypt(&auth, payload)?;
-        self.apply_passphrase(&mut seed, passphrase)?;
+        utilities::apply_passphrase(&mut seed, passphrase)?;
         let single_sig_convention = Self::get_single_sig_convention(self.wallet_id)?;
         let mut lock_args_array: Vec<String> = Vec::new();
         for index in start_index..(start_index + count) {
@@ -821,6 +815,7 @@ impl KeyVault {
         count: u32,
     ) -> Result<Vec<String>, String> {
         Self::validate_auth(&auth)?;
+        self.check_passphrase_compatibility(passphrase)?;
         tracing::info!(
             "Recovering accounts (wallet_id={}, count={})",
             self.wallet_id,
@@ -836,7 +831,7 @@ impl KeyVault {
             })?;
         let mut lock_args_array: Vec<String> = Vec::new();
         let mut seed = utilities::decrypt(&auth, payload)?;
-        self.apply_passphrase(&mut seed, passphrase)?;
+        utilities::apply_passphrase(&mut seed, passphrase)?;
         let single_sig_convention = Self::get_single_sig_convention(self.wallet_id)?;
         for index in 0..count {
             let (pub_key, _) = self.derive_spx_keys(&seed, index).map_err(|e| {
@@ -903,6 +898,26 @@ impl KeyVault {
                 tracing::error!("{}", msg);
                 Err(msg)
             }
+        }
+    }
+
+    /// Refuses a passphrase that disagrees with how the wallet was created: a
+    /// passphrase wallet given none, or a plain wallet given one. Either would
+    /// derive the keys of a different, empty wallet without any error.
+    ///
+    /// **Parameters**:
+    /// - `passphrase: Option<&str>` - The passphrase about to be applied, or `None`.
+    ///
+    /// **Returns**:
+    /// - `Result<(), String>` - Nothing when the two agree, or an error message when they do not.
+    fn check_passphrase_compatibility(&self, passphrase: Option<&str>) -> Result<(), String> {
+        let wallet_info = Self::get_meta(self.wallet_id)?;
+        match (wallet_info.is_passphrase, passphrase.is_some()) {
+            (true, false) => Err("This wallet uses a passphrase, but none was given.".to_string()),
+            (false, true) => {
+                Err("This wallet does not use a passphrase, but one was given.".to_string())
+            }
+            _ => Ok(()),
         }
     }
 
