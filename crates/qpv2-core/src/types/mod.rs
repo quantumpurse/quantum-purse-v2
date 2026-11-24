@@ -1,15 +1,18 @@
-//! The wallet's data types. The wallet-level ones live here; the multisig
-//! and signing ones live in the two files below and are re-exported, so
-//! everything is still reached as `types::Name`.
+//! The wallet's data types. The wallet-level ones live here; the master
+//! seed, multisig and signing ones live in the files below and are
+//! re-exported, so everything is still reached as `types::Name`.
 
 use crate::containers::{SecureString, SecureVec};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{Shl, Shr};
 
+mod master_seed;
 mod multisig;
 mod signing;
 
+// The master seed stays inside this crate, so the apps can never hold one.
+pub(crate) use master_seed::MasterSeed;
 pub use multisig::*;
 pub use signing::*;
 

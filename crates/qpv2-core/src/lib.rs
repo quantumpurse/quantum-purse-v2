@@ -14,13 +14,11 @@ pub mod constants;
 mod containers;
 pub mod db;
 mod macros;
-mod master_seed;
 pub mod pinentry;
 pub mod types;
 pub mod utilities;
 
 pub use containers::{SecureString, SecureVec};
-use master_seed::MasterSeed;
 use types::*;
 
 ////////////////////////////////////////////////////////////////////////////////
