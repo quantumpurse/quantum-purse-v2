@@ -41,7 +41,7 @@ enum Commands {
         #[command(subcommand)]
         command: MnemonicCommands,
     },
-    /// Account operations (new/list/recover/try-gen-batch)
+    /// Account operations (new/list/try-gen-batch)
     Account {
         #[command(subcommand)]
         command: AccountCommands,
@@ -180,12 +180,6 @@ enum AccountCommands {
     },
     /// List all SPHINCS+ accounts
     List,
-    /// Recover accounts
-    Recover {
-        /// Number of accounts to recover
-        #[arg(short, long)]
-        count: u32,
-    },
     /// Generate account batch (for discovery)
     TryGenBatch {
         /// Start index
@@ -1711,19 +1705,6 @@ fn main() -> Result<(), String> {
                                 );
                             }
                         }
-                    }
-                }
-
-                AccountCommands::Recover { count } => {
-                    let variant = KeyVault::get_spx_variant(wallet_id)?;
-                    let vault = KeyVault::new(variant, wallet_id);
-
-                    let auth = resolve_auth_key(wallet_id, "recover accounts")?;
-                    let accounts = vault.recover_accounts(auth, None, count)?;
-
-                    println!("✓ Recovered {} accounts:", accounts.len());
-                    for (idx, lock_args) in accounts.iter().enumerate() {
-                        println!("  [{}] {}", idx, lock_args);
                     }
                 }
 
