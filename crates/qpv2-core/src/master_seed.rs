@@ -17,7 +17,7 @@ use crate::{db, utilities, KeyVault, SecureVec};
 /// from nothing else, so no key can come from a seed that skipped a step.
 /// The seed bytes never leave this type.
 pub(crate) struct MasterSeed {
-    seed: SecureVec,
+    entropy: SecureVec,
     /// The wallet's SPHINCS+ parameter set, which every key is derived with.
     variant: SpxVariant,
 }
@@ -47,11 +47,11 @@ impl MasterSeed {
                 tracing::error!("Master seed not found");
                 "Master seed not found".to_string()
             })?;
-        let mut seed = utilities::decrypt(auth, payload)?;
-        Self::apply_passphrase(&mut seed, passphrase)?;
+        let mut entropy = utilities::decrypt(auth, payload)?;
+        Self::apply_passphrase(&mut entropy, passphrase)?;
 
         let seed = MasterSeed {
-            seed,
+            entropy,
             variant: vault.variant,
         };
         seed.verify_passphrase(vault, passphrase)?;
@@ -67,7 +67,7 @@ impl MasterSeed {
     /// **Returns**:
     /// - `Result<(SecureVec, SecureVec), String>` - The SPHINCS+ key pair on success, or an error message on failure.
     pub(crate) fn derive_spx_keys(&self, index: u32) -> Result<(SecureVec, SecureVec), String> {
-        let seed = &self.seed;
+        let seed = &self.entropy;
         match self.variant {
             SpxVariant::Sha2128S => {
                 spx_keygen!(slh_dsa_sha2_128s::KG, slh_dsa_sha2_128s::N, seed, index)
