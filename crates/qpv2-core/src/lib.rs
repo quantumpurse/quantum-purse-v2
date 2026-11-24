@@ -6,21 +6,21 @@
 //! locally in files, with access authenticated via password (Scrypt) or pre-derived key (e.g. passkey PRF + HKDF).
 
 use fips205::{
-    traits::{KeyGen, SerDes, Signer, Verifier},
+    traits::{SerDes, Signer, Verifier},
     *,
 };
-use zeroize::Zeroize;
 
 pub mod constants;
 mod containers;
 pub mod db;
 mod macros;
+mod master_seed;
 pub mod pinentry;
 pub mod types;
 pub mod utilities;
 
-use crate::constants::KDF_PATH_PREFIX;
 pub use containers::{SecureString, SecureVec};
+use master_seed::MasterSeed;
 use types::*;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -34,57 +34,6 @@ pub struct KeyVault {
 impl KeyVault {
     pub fn new(variant: SpxVariant, wallet_id: u32) -> Self {
         KeyVault { variant, wallet_id }
-    }
-
-    /// To derive SPHINCS+ key pair. One master seed can derive multiple child index-based SPHINCS+ key pairs on demand.
-    ///
-    /// **Parameters**:
-    /// - `seed: &[u8]` - The master seed from which the child sphincs+ key is derived. MUST carry at least N*3 bytes of entropy or panics.
-    /// - `index: u32` - The index of the child sphincs+ key to be derived.
-    ///
-    /// **Returns**:
-    /// - `Result<(SecureVec, SecureVec), String>` - The SPHINCS+ key pair on success, or an error message on failure.
-    ///
-    /// Warning: Proper zeroization of the input seed is the responsibility of the caller.
-    fn derive_spx_keys(&self, seed: &[u8], index: u32) -> Result<(SecureVec, SecureVec), String> {
-        match self.variant {
-            SpxVariant::Sha2128S => {
-                spx_keygen!(slh_dsa_sha2_128s::KG, slh_dsa_sha2_128s::N, seed, index)
-            }
-            SpxVariant::Sha2128F => {
-                spx_keygen!(slh_dsa_sha2_128f::KG, slh_dsa_sha2_128f::N, seed, index)
-            }
-            SpxVariant::Sha2192S => {
-                spx_keygen!(slh_dsa_sha2_192s::KG, slh_dsa_sha2_192s::N, seed, index)
-            }
-            SpxVariant::Sha2192F => {
-                spx_keygen!(slh_dsa_sha2_192f::KG, slh_dsa_sha2_192f::N, seed, index)
-            }
-            SpxVariant::Sha2256S => {
-                spx_keygen!(slh_dsa_sha2_256s::KG, slh_dsa_sha2_256s::N, seed, index)
-            }
-            SpxVariant::Sha2256F => {
-                spx_keygen!(slh_dsa_sha2_256f::KG, slh_dsa_sha2_256f::N, seed, index)
-            }
-            SpxVariant::Shake128S => {
-                spx_keygen!(slh_dsa_shake_128s::KG, slh_dsa_shake_128s::N, seed, index)
-            }
-            SpxVariant::Shake128F => {
-                spx_keygen!(slh_dsa_shake_128f::KG, slh_dsa_shake_128f::N, seed, index)
-            }
-            SpxVariant::Shake192S => {
-                spx_keygen!(slh_dsa_shake_192s::KG, slh_dsa_shake_192s::N, seed, index)
-            }
-            SpxVariant::Shake192F => {
-                spx_keygen!(slh_dsa_shake_192f::KG, slh_dsa_shake_192f::N, seed, index)
-            }
-            SpxVariant::Shake256S => {
-                spx_keygen!(slh_dsa_shake_256s::KG, slh_dsa_shake_256s::N, seed, index)
-            }
-            SpxVariant::Shake256F => {
-                spx_keygen!(slh_dsa_shake_256f::KG, slh_dsa_shake_256f::N, seed, index)
-            }
-        }
     }
 
     /// Validates an authentication key, returning an error if it is empty or uninitialized.
@@ -331,18 +280,8 @@ impl KeyVault {
         passphrase: Option<&str>,
     ) -> Result<SphincsPlusAccount, String> {
         Self::validate_auth(&auth)?;
-        self.check_passphrase_compatibility(passphrase)?;
 
-        // Get and decrypt the master seed
-        let payload = db::get_encrypted_seed(self.wallet_id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| {
-                tracing::error!("Master seed not found");
-                "Master seed not found".to_string()
-            })?;
-        let mut seed = utilities::decrypt(&auth, payload)?;
-        utilities::apply_passphrase(&mut seed, passphrase)?;
-        self.verify_passphrase(&seed, passphrase)?;
+        let seed = MasterSeed::load(self, &auth, passphrase)?;
 
         let index = Self::get_singlesig_lock_args(self.wallet_id)?.len() as u32;
         tracing::info!(
@@ -350,7 +289,7 @@ impl KeyVault {
             self.wallet_id,
             index
         );
-        let (pub_key, _) = self.derive_spx_keys(&seed, index).map_err(|e| {
+        let (pub_key, _) = seed.derive_spx_keys(index).map_err(|e| {
             let msg = format!("Key derivation error: {}", e);
             tracing::error!("{}", msg);
             msg
@@ -549,7 +488,6 @@ impl KeyVault {
         message: Vec<u8>,
     ) -> Result<Vec<u8>, String> {
         Self::validate_auth(&auth)?;
-        self.check_passphrase_compatibility(passphrase)?;
 
         tracing::info!(
             "CKB signing (wallet_id={}, lock_args={}..)",
@@ -562,18 +500,9 @@ impl KeyVault {
             "Account not found".to_string()
         })?;
 
-        // Get and decrypt the master seed
-        let payload = db::get_encrypted_seed(self.wallet_id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| {
-                tracing::error!("Master seed not found");
-                "Master seed not found".to_string()
-            })?;
-        let mut seed = utilities::decrypt(&auth, payload)?;
-        utilities::apply_passphrase(&mut seed, passphrase)?;
-        self.verify_passphrase(&seed, passphrase)?;
+        let seed = MasterSeed::load(self, &auth, passphrase)?;
 
-        let (_, pri_key) = self.derive_spx_keys(&seed, account.index)?;
+        let (_, pri_key) = seed.derive_spx_keys(account.index)?;
         let config = &account.config;
 
         match self.variant {
@@ -633,7 +562,6 @@ impl KeyVault {
         message: Vec<u8>,
     ) -> Result<(Vec<u8>, Vec<u8>), String> {
         Self::validate_auth(&auth)?;
-        self.check_passphrase_compatibility(passphrase)?;
 
         tracing::info!(
             "Raw signing (wallet_id={}, lock_args={}..)",
@@ -646,18 +574,9 @@ impl KeyVault {
             "Account not found".to_string()
         })?;
 
-        // Get and decrypt the master seed
-        let payload = db::get_encrypted_seed(self.wallet_id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| {
-                tracing::error!("Master seed not found");
-                "Master seed not found".to_string()
-            })?;
-        let mut seed = utilities::decrypt(&auth, payload)?;
-        utilities::apply_passphrase(&mut seed, passphrase)?;
-        self.verify_passphrase(&seed, passphrase)?;
+        let seed = MasterSeed::load(self, &auth, passphrase)?;
 
-        let (_, pri_key) = self.derive_spx_keys(&seed, account.index)?;
+        let (_, pri_key) = seed.derive_spx_keys(account.index)?;
 
         match self.variant {
             SpxVariant::Sha2128S => {
@@ -771,22 +690,12 @@ impl KeyVault {
         count: u32,
     ) -> Result<Vec<String>, String> {
         Self::validate_auth(&auth)?;
-        self.check_passphrase_compatibility(passphrase)?;
 
-        // Get and decrypt the master seed
-        let payload = db::get_encrypted_seed(self.wallet_id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| {
-                tracing::error!("Master seed not found");
-                "Master seed not found".to_string()
-            })?;
-        let mut seed = utilities::decrypt(&auth, payload)?;
-        utilities::apply_passphrase(&mut seed, passphrase)?;
-        self.verify_passphrase(&seed, passphrase)?;
+        let seed = MasterSeed::load(self, &auth, passphrase)?;
         let single_sig_convention = Self::get_single_sig_convention(self.wallet_id)?;
         let mut lock_args_array: Vec<String> = Vec::new();
         for index in start_index..(start_index + count) {
-            let (pub_key, _) = self.derive_spx_keys(&seed, index).map_err(|e| {
+            let (pub_key, _) = seed.derive_spx_keys(index).map_err(|e| {
                 let msg = format!("Key derivation error: {}", e);
                 tracing::error!("{}", msg);
                 msg
@@ -819,27 +728,17 @@ impl KeyVault {
         count: u32,
     ) -> Result<Vec<String>, String> {
         Self::validate_auth(&auth)?;
-        self.check_passphrase_compatibility(passphrase)?;
         tracing::info!(
             "Recovering accounts (wallet_id={}, count={})",
             self.wallet_id,
             count
         );
 
-        // Get and decrypt the master seed
-        let payload = db::get_encrypted_seed(self.wallet_id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| {
-                tracing::error!("Master seed not found");
-                "Master seed not found".to_string()
-            })?;
+        let seed = MasterSeed::load(self, &auth, passphrase)?;
         let mut lock_args_array: Vec<String> = Vec::new();
-        let mut seed = utilities::decrypt(&auth, payload)?;
-        utilities::apply_passphrase(&mut seed, passphrase)?;
-        self.verify_passphrase(&seed, passphrase)?;
         let single_sig_convention = Self::get_single_sig_convention(self.wallet_id)?;
         for index in 0..count {
-            let (pub_key, _) = self.derive_spx_keys(&seed, index).map_err(|e| {
+            let (pub_key, _) = seed.derive_spx_keys(index).map_err(|e| {
                 let msg = format!("Key derivation error: {}", e);
                 tracing::error!("{}", msg);
                 msg
@@ -904,57 +803,6 @@ impl KeyVault {
                 Err(msg)
             }
         }
-    }
-
-    /// Refuses a passphrase that disagrees with how the wallet was created: a
-    /// passphrase wallet given none, or a plain wallet given one. Either would
-    /// derive the keys of a different, empty wallet without any error.
-    ///
-    /// **Parameters**:
-    /// - `passphrase: Option<&str>` - The passphrase about to be applied, or `None`.
-    ///
-    /// **Returns**:
-    /// - `Result<(), String>` - Nothing when the two agree, or an error message when they do not.
-    fn check_passphrase_compatibility(&self, passphrase: Option<&str>) -> Result<(), String> {
-        let wallet_info = Self::get_meta(self.wallet_id)?;
-        match (wallet_info.is_passphrase, passphrase.is_some()) {
-            (true, false) => Err("This wallet uses a passphrase, but none was given.".to_string()),
-            (false, true) => {
-                Err("This wallet does not use a passphrase, but one was given.".to_string())
-            }
-            _ => Ok(()),
-        }
-    }
-
-    /// Refuses a wrong passphrase. Nothing is encrypted with the passphrase,
-    /// so a wrong one still gives a seed, just one that derives other keys.
-    /// The first stored account's key is derived again from `seed` and
-    /// compared with the stored one. A wallet with no account yet has
-    /// nothing to compare with, so it passes. Without a passphrase there is
-    /// nothing to verify, because AES-GCM already refuses a wrong password
-    /// or key.
-    ///
-    /// **Parameters**:
-    /// - `seed: &[u8]` - The master seed with the passphrase already applied.
-    /// - `passphrase: Option<&str>` - The passphrase that was applied, or `None`.
-    ///
-    /// **Returns**:
-    /// - `Result<(), String>` - Nothing when the passphrase is right or can't be checked yet, or an error message when it is wrong.
-    fn verify_passphrase(&self, seed: &[u8], passphrase: Option<&str>) -> Result<(), String> {
-        if passphrase.is_none() {
-            return Ok(());
-        }
-        let accounts = Self::get_singlesig_accounts(self.wallet_id)?;
-        let Some(first) = accounts.first() else {
-            return Ok(());
-        };
-        let (pub_key, _) = self.derive_spx_keys(seed, first.index)?;
-        if pub_key.as_ref() != first.config.signers()[0].pubkey() {
-            let msg = "Wrong passphrase. It produced an account this wallet doesn't have.";
-            tracing::error!("{} (wallet_id={})", msg, self.wallet_id);
-            return Err(msg.to_string());
-        }
-        Ok(())
     }
 
     /// Whether a wallet is backed by a hardware device (Trezor). Such wallets
