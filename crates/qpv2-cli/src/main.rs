@@ -419,32 +419,55 @@ fn resolve_auth_key(wallet_id: u32, purpose: &str) -> Result<AuthKey, String> {
     }
 }
 
-fn init_with_keychain(vault: &KeyVault, name: &str) -> Result<(), String> {
-    let key = qpv2_core::utilities::get_random_bytes(32)
-        .map_err(|e| format!("Failed to generate key: {}", e))?;
-    keychain::store_key(vault.wallet_id, &key)?;
-    if let Err(e) =
-        vault.generate_master_seed(AuthKey::CryptoKey(key), AuthMethod::Keychain, name, false)
-    {
-        let _ = keychain::delete_key(vault.wallet_id);
-        return Err(e);
-    }
+/// Creates the wallet's first account right after its seed is stored, as the
+/// app does, and prints it. The wallet already exists if this fails, so the
+/// error says how to retry.
+fn create_first_account(vault: &KeyVault, auth: AuthKey) -> Result<(), String> {
+    let account = vault.gen_singlesig_account(auth, None).map_err(|e| {
+        format!(
+            "The wallet was created, but its first account failed: {}. Run 'account new' to retry.",
+            e.trim_end_matches('.')
+        )
+    })?;
+    println!("✓ First account created");
+    println!(
+        "Identifier(CKB quantum lock script args): {}",
+        account.lock_args
+    );
     Ok(())
 }
 
+/// Returns the key the seed was encrypted with, for the first account.
+fn init_with_keychain(vault: &KeyVault, name: &str) -> Result<AuthKey, String> {
+    let key = qpv2_core::utilities::get_random_bytes(32)
+        .map_err(|e| format!("Failed to generate key: {}", e))?;
+    keychain::store_key(vault.wallet_id, &key)?;
+    if let Err(e) = vault.generate_master_seed(
+        AuthKey::CryptoKey(key.clone()),
+        AuthMethod::Keychain,
+        name,
+        false,
+    ) {
+        let _ = keychain::delete_key(vault.wallet_id);
+        return Err(e);
+    }
+    Ok(AuthKey::CryptoKey(key))
+}
+
 // All wallets are imported as single-sig wallet by default.
+/// Returns the key the seed was encrypted with, for the first account.
 fn import_with_keychain(
     vault: &KeyVault,
     seed_phrase: SecureString,
     name: &str,
     single_sig_convention: SingleSigConvention,
-) -> Result<(), String> {
+) -> Result<AuthKey, String> {
     let key = qpv2_core::utilities::get_random_bytes(32)
         .map_err(|e| format!("Failed to generate key: {}", e))?;
     keychain::store_key(vault.wallet_id, &key)?;
     if let Err(e) = vault.import_seed_phrase(
         seed_phrase,
-        AuthKey::CryptoKey(key),
+        AuthKey::CryptoKey(key.clone()),
         AuthMethod::Keychain,
         name,
         single_sig_convention,
@@ -453,7 +476,7 @@ fn import_with_keychain(
         let _ = keychain::delete_key(vault.wallet_id);
         return Err(e);
     }
-    Ok(())
+    Ok(AuthKey::CryptoKey(key))
 }
 
 /// Asks the connected security key how it verifies its user, and prompts for
@@ -493,7 +516,8 @@ fn device_cue(text: &str) {
     }
 }
 
-fn init_with_fido2(vault: &KeyVault, name: &str) -> Result<(), String> {
+/// Returns the key the seed was encrypted with, for the first account.
+fn init_with_fido2(vault: &KeyVault, name: &str) -> Result<AuthKey, String> {
     let verification = fido2_verification("register a new credential")?;
     fido2_cue(&verification, "Registering credential");
     let credential = keychain::fido2::register(&verification, name)?;
@@ -504,12 +528,13 @@ fn init_with_fido2(vault: &KeyVault, name: &str) -> Result<(), String> {
     let key = qpv2_core::utilities::derive_vault_enc_key(&hmac_output)?;
 
     let auth_method = AuthMethod::Fido2 { credential_id };
-    vault.generate_master_seed(AuthKey::CryptoKey(key), auth_method, name, false)?;
-    Ok(())
+    vault.generate_master_seed(AuthKey::CryptoKey(key.clone()), auth_method, name, false)?;
+    Ok(AuthKey::CryptoKey(key))
 }
 
 /// Creates a Trezor wallet. The device keeps the seed, so only the wallet
-/// record is written, with no accounts yet, like the other `init`s.
+/// record is written, with no account yet, unlike the other `init`s:
+/// `account new` adds the first one from the device.
 /// Connecting first names the device's model and pairs it if needed.
 fn init_with_trezor(wallet_id: u32, name: &str, variant: SpxVariant) -> Result<(), String> {
     // Connecting can wait on the device: its PIN, a "Connect?" confirm, or a
@@ -528,12 +553,13 @@ fn init_with_trezor(wallet_id: u32, name: &str, variant: SpxVariant) -> Result<(
 }
 
 // All wallets are imported as single-sig wallet by default.
+/// Returns the key the seed was encrypted with, for the first account.
 fn import_with_fido2(
     vault: &KeyVault,
     seed_phrase: SecureString,
     name: &str,
     single_sig_convention: SingleSigConvention,
-) -> Result<(), String> {
+) -> Result<AuthKey, String> {
     let verification = fido2_verification("register a new credential")?;
     fido2_cue(&verification, "Registering credential");
     let credential = keychain::fido2::register(&verification, name)?;
@@ -546,13 +572,13 @@ fn import_with_fido2(
     let auth_method = AuthMethod::Fido2 { credential_id };
     vault.import_seed_phrase(
         seed_phrase,
-        AuthKey::CryptoKey(key),
+        AuthKey::CryptoKey(key.clone()),
         auth_method,
         name,
         single_sig_convention,
         false,
     )?;
-    Ok(())
+    Ok(AuthKey::CryptoKey(key))
 }
 
 /// Finds an existing wallet by name. Auto-selects if only one wallet exists.
@@ -1490,12 +1516,12 @@ fn main() -> Result<(), String> {
                 variant.required_bip39_size_in_word_total()
             );
 
-            if keychain && fido2 {
+            let auth = if keychain && fido2 {
                 return Err("Cannot use both --keychain and --fido2.".to_string());
             } else if fido2 {
-                init_with_fido2(&vault, &name)?;
+                init_with_fido2(&vault, &name)?
             } else if keychain {
-                init_with_keychain(&vault, &name)?;
+                init_with_keychain(&vault, &name)?
             } else {
                 let password = prompt_for_input("Enter password: ")?;
                 let confirm = prompt_for_input("Confirm password: ")?;
@@ -1511,16 +1537,18 @@ fn main() -> Result<(), String> {
                 }
 
                 vault.generate_master_seed(
-                    AuthKey::Password(password),
+                    AuthKey::Password(password.clone()),
                     AuthMethod::Password,
                     &name,
                     false,
                 )?;
-            }
+                AuthKey::Password(password)
+            };
             println!("✓ Master seed generated successfully");
             println!(
                 "⚠️  Make sure to backup your seed phrase using the 'mnemonic export' command"
             );
+            create_first_account(&vault, auth)?;
         }
 
         Commands::Mnemonic { command } => match command {
@@ -1544,12 +1572,12 @@ fn main() -> Result<(), String> {
                     prompt_for_input("Enter seed phrase: ")?
                 };
 
-                if keychain && fido2 {
+                let auth = if keychain && fido2 {
                     return Err("Cannot use both --keychain and --fido2.".to_string());
                 } else if fido2 {
-                    import_with_fido2(&vault, seed_phrase, &name, single_sig_convention)?;
+                    import_with_fido2(&vault, seed_phrase, &name, single_sig_convention)?
                 } else if keychain {
-                    import_with_keychain(&vault, seed_phrase, &name, single_sig_convention)?;
+                    import_with_keychain(&vault, seed_phrase, &name, single_sig_convention)?
                 } else {
                     let password = prompt_for_input("Enter password: ")?;
                     let confirm = prompt_for_input("Confirm password: ")?;
@@ -1566,14 +1594,16 @@ fn main() -> Result<(), String> {
 
                     vault.import_seed_phrase(
                         seed_phrase,
-                        AuthKey::Password(password),
+                        AuthKey::Password(password.clone()),
                         AuthMethod::Password,
                         &name,
                         single_sig_convention,
                         false,
                     )?;
-                }
+                    AuthKey::Password(password)
+                };
                 println!("✓ Seed phrase imported successfully");
+                create_first_account(&vault, auth)?;
             }
 
             MnemonicCommands::Export { output } => {
