@@ -35,6 +35,11 @@ enum Commands {
         /// accounts from it
         #[arg(long)]
         trezor: bool,
+        /// Protect the wallet with a passphrase, asked for at every command
+        /// that uses its keys and never stored. A forgotten passphrase
+        /// cannot be recovered
+        #[arg(long)]
+        passphrase: bool,
     },
     /// Mnemonic operations (import/export)
     Mnemonic {
@@ -148,6 +153,12 @@ enum MnemonicCommands {
         /// Import from the Quantum Purse v1 wallet (uses its legacy address format)
         #[arg(long)]
         v1: bool,
+
+        /// Protect the wallet with a passphrase, asked for at every command
+        /// that uses its keys and never stored. A forgotten passphrase
+        /// cannot be recovered
+        #[arg(long)]
+        passphrase: bool,
     },
     Export {
         #[arg(short, long)]
@@ -419,11 +430,44 @@ fn resolve_auth_key(wallet_id: u32, purpose: &str) -> Result<AuthKey, String> {
     }
 }
 
+/// Asks for a new wallet's passphrase twice, so a typo is caught before the
+/// wallet's first account is made from it.
+fn prompt_new_passphrase() -> Result<SecureString, String> {
+    let passphrase = prompt_for_input("Enter passphrase: ")?;
+    let confirm = prompt_for_input("Confirm passphrase: ")?;
+    if passphrase != confirm {
+        return Err("Passphrases do not match".to_string());
+    }
+    qpv2_core::utilities::validate_passphrase(&passphrase)?;
+    Ok(passphrase)
+}
+
+/// Asks for the wallet's passphrase when the wallet uses one. It is never
+/// stored, so every command that uses the wallet's keys asks again. A wallet
+/// with no account yet has nothing to check a typo against, so there the
+/// passphrase is typed twice.
+fn resolve_passphrase(wallet_id: u32) -> Result<Option<SecureString>, String> {
+    if !KeyVault::get_meta(wallet_id)?.is_passphrase {
+        return Ok(None);
+    }
+    if KeyVault::get_singlesig_accounts(wallet_id)?.is_empty() {
+        println!(
+            "This wallet has no account yet to check the passphrase against, so type it twice."
+        );
+        return Ok(Some(prompt_new_passphrase()?));
+    }
+    Ok(Some(prompt_for_input("Enter your wallet passphrase: ")?))
+}
+
 /// Creates the wallet's first account right after its seed is stored, as the
 /// app does, and prints it. The wallet already exists if this fails, so the
 /// error says how to retry.
-fn create_first_account(vault: &KeyVault, auth: AuthKey) -> Result<(), String> {
-    let account = vault.gen_singlesig_account(auth, None).map_err(|e| {
+fn create_first_account(
+    vault: &KeyVault,
+    auth: AuthKey,
+    passphrase: Option<&str>,
+) -> Result<(), String> {
+    let account = vault.gen_singlesig_account(auth, passphrase).map_err(|e| {
         format!(
             "The wallet was created, but its first account failed: {}. Run 'account new' to retry.",
             e.trim_end_matches('.')
@@ -438,7 +482,11 @@ fn create_first_account(vault: &KeyVault, auth: AuthKey) -> Result<(), String> {
 }
 
 /// Returns the key the seed was encrypted with, for the first account.
-fn init_with_keychain(vault: &KeyVault, name: &str) -> Result<AuthKey, String> {
+fn init_with_keychain(
+    vault: &KeyVault,
+    name: &str,
+    is_passphrase: bool,
+) -> Result<AuthKey, String> {
     let key = qpv2_core::utilities::get_random_bytes(32)
         .map_err(|e| format!("Failed to generate key: {}", e))?;
     keychain::store_key(vault.wallet_id, &key)?;
@@ -446,7 +494,7 @@ fn init_with_keychain(vault: &KeyVault, name: &str) -> Result<AuthKey, String> {
         AuthKey::CryptoKey(key.clone()),
         AuthMethod::Keychain,
         name,
-        false,
+        is_passphrase,
     ) {
         let _ = keychain::delete_key(vault.wallet_id);
         return Err(e);
@@ -461,6 +509,7 @@ fn import_with_keychain(
     seed_phrase: SecureString,
     name: &str,
     single_sig_convention: SingleSigConvention,
+    is_passphrase: bool,
 ) -> Result<AuthKey, String> {
     let key = qpv2_core::utilities::get_random_bytes(32)
         .map_err(|e| format!("Failed to generate key: {}", e))?;
@@ -471,7 +520,7 @@ fn import_with_keychain(
         AuthMethod::Keychain,
         name,
         single_sig_convention,
-        false,
+        is_passphrase,
     ) {
         let _ = keychain::delete_key(vault.wallet_id);
         return Err(e);
@@ -517,7 +566,7 @@ fn device_cue(text: &str) {
 }
 
 /// Returns the key the seed was encrypted with, for the first account.
-fn init_with_fido2(vault: &KeyVault, name: &str) -> Result<AuthKey, String> {
+fn init_with_fido2(vault: &KeyVault, name: &str, is_passphrase: bool) -> Result<AuthKey, String> {
     let verification = fido2_verification("register a new credential")?;
     fido2_cue(&verification, "Registering credential");
     let credential = keychain::fido2::register(&verification, name)?;
@@ -528,7 +577,12 @@ fn init_with_fido2(vault: &KeyVault, name: &str) -> Result<AuthKey, String> {
     let key = qpv2_core::utilities::derive_vault_enc_key(&hmac_output)?;
 
     let auth_method = AuthMethod::Fido2 { credential_id };
-    vault.generate_master_seed(AuthKey::CryptoKey(key.clone()), auth_method, name, false)?;
+    vault.generate_master_seed(
+        AuthKey::CryptoKey(key.clone()),
+        auth_method,
+        name,
+        is_passphrase,
+    )?;
     Ok(AuthKey::CryptoKey(key))
 }
 
@@ -559,6 +613,7 @@ fn import_with_fido2(
     seed_phrase: SecureString,
     name: &str,
     single_sig_convention: SingleSigConvention,
+    is_passphrase: bool,
 ) -> Result<AuthKey, String> {
     let verification = fido2_verification("register a new credential")?;
     fido2_cue(&verification, "Registering credential");
@@ -576,7 +631,7 @@ fn import_with_fido2(
         auth_method,
         name,
         single_sig_convention,
-        false,
+        is_passphrase,
     )?;
     Ok(AuthKey::CryptoKey(key))
 }
@@ -806,12 +861,13 @@ fn handle_dao_deposit(
         let message = qpv2_core::utilities::compute_signing_message(&unsigned_tx, &input_cells, 0)
             .map_err(|e| format!("Failed to compute tx message: {}", e))?;
 
+        let passphrase = resolve_passphrase(wallet_id)?;
         let auth = resolve_auth_key(wallet_id, "deposit into Nervos DAO")?;
         let variant = KeyVault::get_spx_variant(wallet_id)?;
         let vault = KeyVault::new(variant, wallet_id);
         let signature_bytes = vault.ckb_sign(
             auth,
-            None,
+            passphrase.as_deref(),
             lock_args.to_string(),
             message.as_bytes().to_vec(),
         )?;
@@ -867,12 +923,13 @@ fn handle_dao_prepare(
         let message = qpv2_core::utilities::compute_signing_message(&unsigned_tx, &input_cells, 0)
             .map_err(|e| format!("Failed to compute tx message: {}", e))?;
 
+        let passphrase = resolve_passphrase(wallet_id)?;
         let auth = resolve_auth_key(wallet_id, "request a DAO withdrawal")?;
         let variant = KeyVault::get_spx_variant(wallet_id)?;
         let vault = KeyVault::new(variant, wallet_id);
         let signature_bytes = vault.ckb_sign(
             auth,
-            None,
+            passphrase.as_deref(),
             lock_args.to_string(),
             message.as_bytes().to_vec(),
         )?;
@@ -928,12 +985,13 @@ fn handle_dao_withdraw(
         let message = qpv2_core::utilities::compute_signing_message(&unsigned_tx, &input_cells, 0)
             .map_err(|e| format!("Failed to compute tx message: {}", e))?;
 
+        let passphrase = resolve_passphrase(wallet_id)?;
         let auth = resolve_auth_key(wallet_id, "complete the DAO withdrawal")?;
         let variant = KeyVault::get_spx_variant(wallet_id)?;
         let vault = KeyVault::new(variant, wallet_id);
         let signature_bytes = vault.ckb_sign(
             auth,
-            None,
+            passphrase.as_deref(),
             lock_args.to_string(),
             message.as_bytes().to_vec(),
         )?;
@@ -1010,12 +1068,13 @@ fn handle_transfer(
         let message = qpv2_core::utilities::compute_signing_message(&unsigned_tx, &input_cells, 0)
             .map_err(|e| format!("Failed to compute tx message: {}", e))?;
 
+        let passphrase = resolve_passphrase(wallet_id)?;
         let auth = resolve_auth_key(wallet_id, "sign and send the transfer")?;
         let variant = KeyVault::get_spx_variant(wallet_id)?;
         let vault = KeyVault::new(variant, wallet_id);
         let signature_bytes = vault.ckb_sign(
             auth,
-            None,
+            passphrase.as_deref(),
             lock_args.to_string(),
             message.as_bytes().to_vec(),
         )?;
@@ -1368,6 +1427,10 @@ fn handle_msig_sign(
     let message_bytes = request.signing_message().as_bytes().to_vec();
     let vault = KeyVault::new(variant, wallet_id);
 
+    // The passphrase is the wallet's, the same for every key, so it is asked
+    // for once.
+    let passphrase = resolve_passphrase(wallet_id)?;
+
     // One unlock per key this wallet holds in the request, so every
     // signature is approved on its own; all of them go in one response.
     let total = local_signers.len();
@@ -1382,8 +1445,12 @@ fn handle_msig_sign(
         println!("Matched local account as S{}{}.", signer_index + 1, key);
 
         let auth = resolve_auth_key(wallet_id, &format!("co-sign a multisig transaction{}", key))?;
-        let (signature, _pubkey) =
-            vault.raw_sign(auth, None, local_signer.lock_args, message_bytes.clone())?;
+        let (signature, _pubkey) = vault.raw_sign(
+            auth,
+            passphrase.as_deref(),
+            local_signer.lock_args,
+            message_bytes.clone(),
+        )?;
         signed.push(qpv2_core::types::MsigSignature {
             signer_index,
             signature,
@@ -1489,10 +1556,16 @@ fn main() -> Result<(), String> {
             keychain,
             fido2,
             trezor,
+            passphrase,
         } => {
             let variant = parse_variant(&variant)?;
             if trezor && (keychain || fido2) {
                 return Err("Cannot use --trezor with --keychain or --fido2.".to_string());
+            }
+            // The device derives a Trezor wallet's keys, so no passphrase
+            // can be mixed in here.
+            if trezor && passphrase {
+                return Err("Cannot use --passphrase with --trezor.".to_string());
             }
             let (wallet_id, name) = prepare_new_wallet(&cli.wallet)?;
 
@@ -1516,12 +1589,19 @@ fn main() -> Result<(), String> {
                 variant.required_bip39_size_in_word_total()
             );
 
+            let is_passphrase = passphrase;
+            let passphrase = if is_passphrase {
+                Some(prompt_new_passphrase()?)
+            } else {
+                None
+            };
+
             let auth = if keychain && fido2 {
                 return Err("Cannot use both --keychain and --fido2.".to_string());
             } else if fido2 {
-                init_with_fido2(&vault, &name)?
+                init_with_fido2(&vault, &name, is_passphrase)?
             } else if keychain {
-                init_with_keychain(&vault, &name)?
+                init_with_keychain(&vault, &name, is_passphrase)?
             } else {
                 let password = prompt_for_input("Enter password: ")?;
                 let confirm = prompt_for_input("Confirm password: ")?;
@@ -1540,7 +1620,7 @@ fn main() -> Result<(), String> {
                     AuthKey::Password(password.clone()),
                     AuthMethod::Password,
                     &name,
-                    false,
+                    is_passphrase,
                 )?;
                 AuthKey::Password(password)
             };
@@ -1548,7 +1628,10 @@ fn main() -> Result<(), String> {
             println!(
                 "⚠️  Make sure to backup your seed phrase using the 'mnemonic export' command"
             );
-            create_first_account(&vault, auth)?;
+            if is_passphrase {
+                println!("⚠️  A forgotten passphrase cannot be recovered, and it is not part of the seed phrase backup");
+            }
+            create_first_account(&vault, auth, passphrase.as_deref())?;
         }
 
         Commands::Mnemonic { command } => match command {
@@ -1558,8 +1641,15 @@ fn main() -> Result<(), String> {
                 keychain,
                 fido2,
                 v1,
+                passphrase,
             } => {
                 let variant = parse_variant(&variant)?;
+                // `--v1` exists to reach a v1 wallet's addresses, and v1 had
+                // no passphrase, so the two together could only open an
+                // empty wallet.
+                if v1 && passphrase {
+                    return Err("Cannot use --passphrase with --v1: a Quantum Purse v1 wallet has no passphrase.".to_string());
+                }
                 let (wallet_id, name) = prepare_new_wallet(&cli.wallet)?;
                 let vault = KeyVault::new(variant, wallet_id);
                 let single_sig_convention = SingleSigConvention::new(v1);
@@ -1572,12 +1662,31 @@ fn main() -> Result<(), String> {
                     prompt_for_input("Enter seed phrase: ")?
                 };
 
+                let is_passphrase = passphrase;
+                let passphrase = if is_passphrase {
+                    Some(prompt_new_passphrase()?)
+                } else {
+                    None
+                };
+
                 let auth = if keychain && fido2 {
                     return Err("Cannot use both --keychain and --fido2.".to_string());
                 } else if fido2 {
-                    import_with_fido2(&vault, seed_phrase, &name, single_sig_convention)?
+                    import_with_fido2(
+                        &vault,
+                        seed_phrase,
+                        &name,
+                        single_sig_convention,
+                        is_passphrase,
+                    )?
                 } else if keychain {
-                    import_with_keychain(&vault, seed_phrase, &name, single_sig_convention)?
+                    import_with_keychain(
+                        &vault,
+                        seed_phrase,
+                        &name,
+                        single_sig_convention,
+                        is_passphrase,
+                    )?
                 } else {
                     let password = prompt_for_input("Enter password: ")?;
                     let confirm = prompt_for_input("Confirm password: ")?;
@@ -1598,12 +1707,15 @@ fn main() -> Result<(), String> {
                         AuthMethod::Password,
                         &name,
                         single_sig_convention,
-                        false,
+                        is_passphrase,
                     )?;
                     AuthKey::Password(password)
                 };
                 println!("✓ Seed phrase imported successfully");
-                create_first_account(&vault, auth)?;
+                if is_passphrase {
+                    println!("⚠️  A forgotten passphrase cannot be recovered, and it is not part of the seed phrase backup");
+                }
+                create_first_account(&vault, auth, passphrase.as_deref())?;
             }
 
             MnemonicCommands::Export { output } => {
@@ -1643,8 +1755,9 @@ fn main() -> Result<(), String> {
                         let variant = KeyVault::get_spx_variant(wallet_id)?;
                         let vault = KeyVault::new(variant, wallet_id);
 
+                        let passphrase = resolve_passphrase(wallet_id)?;
                         let auth = resolve_auth_key(wallet_id, "create a new account")?;
-                        vault.gen_singlesig_account(auth, None)?
+                        vault.gen_singlesig_account(auth, passphrase.as_deref())?
                     };
                     println!("✓ New account created");
                     println!(
@@ -1742,8 +1855,10 @@ fn main() -> Result<(), String> {
                     let variant = KeyVault::get_spx_variant(wallet_id)?;
                     let vault = KeyVault::new(variant, wallet_id);
 
+                    let passphrase = resolve_passphrase(wallet_id)?;
                     let auth = resolve_auth_key(wallet_id, "derive an account batch")?;
-                    let accounts = vault.try_gen_account_batch(auth, None, start, count)?;
+                    let accounts =
+                        vault.try_gen_account_batch(auth, passphrase.as_deref(), start, count)?;
 
                     println!("Generated {} accounts:", accounts.len());
                     for (idx, lock_args) in accounts.iter().enumerate() {
@@ -1762,9 +1877,11 @@ fn main() -> Result<(), String> {
             let vault = KeyVault::new(variant, wallet_id);
 
             let message_bytes = hex::decode(&message).map_err(|e| e.to_string())?;
+            let passphrase = resolve_passphrase(wallet_id)?;
             let auth = resolve_auth_key(wallet_id, "sign the message")?;
 
-            let (signature, pub_key) = vault.raw_sign(auth, None, identifier, message_bytes)?;
+            let (signature, pub_key) =
+                vault.raw_sign(auth, passphrase.as_deref(), identifier, message_bytes)?;
             println!("Signature: {}", hex::encode(signature));
             println!("Public Key: {}", hex::encode(pub_key));
         }
@@ -1796,9 +1913,11 @@ fn main() -> Result<(), String> {
                 let vault = KeyVault::new(variant, wallet_id);
 
                 let message_bytes = hex::decode(&message).map_err(|e| e.to_string())?;
+                let passphrase = resolve_passphrase(wallet_id)?;
                 let auth = resolve_auth_key(wallet_id, "sign the CKB message")?;
 
-                let signature = vault.ckb_sign(auth, None, lock_args, message_bytes)?;
+                let signature =
+                    vault.ckb_sign(auth, passphrase.as_deref(), lock_args, message_bytes)?;
                 println!("Signature: {}", hex::encode(signature));
             }
 

@@ -32,13 +32,16 @@ fn check_qr_lock_dep_ready(qp_client: &QpClient) -> Result<(), String> {
 }
 
 /// Signs `unsigned_tx` for `account`, unlocking the wallet with `unlock` for
-/// each signature. A single-sig transaction comes back ready to broadcast; a
-/// multisig one comes back with this wallet's signatures and the request to
-/// send its co-signers. Touches no UI state, so it can run on a worker.
+/// each signature. `passphrase` is the wallet's, the same for every
+/// signature, or `None` for a wallet without one. A single-sig transaction
+/// comes back ready to broadcast; a multisig one comes back with this
+/// wallet's signatures and the request to send its co-signers. Touches no UI
+/// state, so it can run on a worker.
 #[allow(clippy::too_many_arguments)]
 fn sign_transaction(
     vault: &KeyVault,
     mut unlock: impl FnMut(&str) -> Result<AuthKey, String>,
+    passphrase: Option<&str>,
     account: &SphincsPlusAccount,
     kind: TransactionKind,
     unsigned_tx: ckb_types::core::TransactionView,
@@ -61,7 +64,7 @@ fn sign_transaction(
         let signature = vault
             .ckb_sign(
                 auth,
-                None,
+                passphrase,
                 account.lock_args.clone(),
                 message.as_bytes().to_vec(),
             )
@@ -89,7 +92,7 @@ fn sign_transaction(
         let (signature, _pubkey) = vault
             .raw_sign(
                 auth,
-                None,
+                passphrase,
                 local_signer.lock_args,
                 message.as_bytes().to_vec(),
             )
@@ -646,10 +649,19 @@ impl App {
                 return;
             }
         };
+        let passphrase = match self.resolve_passphrase("sign and send the TX") {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::error!("{}", e);
+                self.tx_status = TransactionStatus::Error(e);
+                return;
+            }
+        };
         let is_mainnet = self.qp_client.is_mainnet();
         let signed = sign_transaction(
             &vault,
             |purpose| self.resolve_auth_key(purpose),
+            passphrase.as_deref(),
             &account,
             kind,
             unsigned_tx,
@@ -658,7 +670,10 @@ impl App {
             is_mainnet,
         );
         match signed {
-            Ok(signed) => self.forward_signed_tx(kind, signed),
+            Ok(signed) => {
+                self.keep_proven_passphrase(passphrase);
+                self.forward_signed_tx(kind, signed)
+            }
             Err(e) => {
                 tracing::error!("{}", e);
                 self.tx_status = TransactionStatus::Error(e);
@@ -694,11 +709,23 @@ impl App {
                 return;
             }
         };
+        // Asked for here, before the worker starts, as the password dialog
+        // is for the other wallets. The worker hands it back with its result,
+        // and `poll_fido2_sign` keeps it only if the signing worked.
+        let passphrase = match self.resolve_passphrase("sign and send the TX") {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::error!("{}", e);
+                self.tx_status = TransactionStatus::Error(e);
+                return;
+            }
+        };
         let is_mainnet = self.qp_client.is_mainnet();
         let job = move || {
             let signed = sign_transaction(
                 &vault,
                 |purpose| get_fido2_dek(&credential_id, purpose),
+                passphrase.as_deref(),
                 &account,
                 kind,
                 unsigned_tx,
@@ -706,7 +733,7 @@ impl App {
                 &headers,
                 is_mainnet,
             );
-            (kind, signed)
+            (kind, signed, passphrase)
         };
         match spawn_fido2_job(job) {
             Ok(rx) => self.fido2_sign_rx = Some(rx),

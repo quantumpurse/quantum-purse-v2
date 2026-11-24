@@ -574,6 +574,28 @@ pub(crate) fn data_row_colored(
 /// Shared by the setup screen and the import modal so the two entry
 /// points can never drift apart.
 pub(crate) fn v1_import_checkbox(ui: &mut egui::Ui, colors: &AppColors, checked: &mut bool) {
+    warn_checkbox(
+        ui,
+        colors,
+        checked,
+        "User comes from the Quantum Purse V1 wallet.",
+    );
+}
+
+/// Checkbox turning on a passphrase for the wallet being created or
+/// imported. Drawn like the v1 one, as both change which addresses the
+/// wallet gets.
+pub(crate) fn passphrase_checkbox(ui: &mut egui::Ui, colors: &AppColors, checked: &mut bool) {
+    warn_checkbox(
+        ui,
+        colors,
+        checked,
+        "Protect this wallet with a passphrase.",
+    );
+}
+
+/// A checkbox in a frame that turns to the warning colour when ticked.
+fn warn_checkbox(ui: &mut egui::Ui, colors: &AppColors, checked: &mut bool, text: &str) {
     let w = colors.warn;
     let (fill, stroke, label) = if *checked {
         (
@@ -598,12 +620,7 @@ pub(crate) fn v1_import_checkbox(ui: &mut egui::Ui, colors: &AppColors, checked:
                 v.widgets.hovered.fg_stroke.color = w;
                 v.widgets.active.fg_stroke.color = w;
             }
-            ui.checkbox(
-                checked,
-                egui::RichText::new("User comes from the Quantum Purse V1 wallet.")
-                    .size(12.0)
-                    .color(label),
-            );
+            ui.checkbox(checked, egui::RichText::new(text).size(12.0).color(label));
         });
 }
 

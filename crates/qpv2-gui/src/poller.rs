@@ -697,9 +697,9 @@ impl App {
         };
 
         match rx.try_recv() {
-            Ok(Ok(auth)) => {
+            Ok(Ok((auth, passphrase))) => {
                 self.fido2_new_account_rx = None;
-                self.finish_create_fido2_wallet_account(auth);
+                self.finish_create_fido2_wallet_account(auth, passphrase);
             }
             Ok(Err(e)) => {
                 self.fido2_new_account_rx = None;
@@ -725,11 +725,12 @@ impl App {
         };
 
         match rx.try_recv() {
-            Ok((kind, Ok(signed))) => {
+            Ok((kind, Ok(signed), passphrase)) => {
                 self.fido2_sign_rx = None;
+                self.keep_proven_passphrase(passphrase);
                 self.forward_signed_tx(kind, signed);
             }
-            Ok((_, Err(e))) => {
+            Ok((_, Err(e), _)) => {
                 self.fido2_sign_rx = None;
                 tracing::error!("{}", e);
                 self.tx_status = TransactionStatus::Error(e);
@@ -753,11 +754,12 @@ impl App {
         };
 
         match rx.try_recv() {
-            Ok(Ok(response)) => {
+            Ok((Ok(response), passphrase)) => {
                 self.fido2_cosign_rx = None;
+                self.keep_proven_passphrase(passphrase);
                 self.show_cosign_response(response);
             }
-            Ok(Err(e)) => {
+            Ok((Err(e), _)) => {
                 self.fido2_cosign_rx = None;
                 tracing::error!("{}", e);
                 self.status = Status::Error(e);

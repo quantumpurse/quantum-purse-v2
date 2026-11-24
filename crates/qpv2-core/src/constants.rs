@@ -59,6 +59,12 @@ pub const VAULT_ENC_KEY_HKDF_INFO: &[u8] = b"quantum-purse-v2/vault-encryption/a
 /// Changing it moves every passphrase wallet to different addresses.
 pub const PASSPHRASE_SALT_PREFIX: &[u8] = b"quantum-purse-v2/passphrase/v1";
 
+/// The longest passphrase a wallet accepts, in characters. It is the limit of
+/// the app's secure entry dialog (`PINENTRY_MAX_PASSPHRASE_LENGTH` in
+/// `vendor/pinentry/pinentry/pinentry.h`), so a passphrase chosen in the CLI
+/// can always be typed in the app too.
+pub const PASSPHRASE_MAX_LENGTH: usize = 1024;
+
 /// CKB quantum-resistant lock script deployment info per network.
 /// Source: https://github.com/cryptape/quantum-resistant-lock-script
 ///

@@ -52,12 +52,16 @@ impl App {
             }
         };
 
+        let wants_passphrase = self.new_wallet_passphrase;
         let (tx, rx) = std::sync::mpsc::channel();
         self.fido2_connect_rx = Some(rx);
 
         let worker = std::thread::Builder::new().name(FIDO2_SETUP_THREAD.to_string());
         let spawned = worker.spawn(move || {
             let result = (|| -> Fido2WalletUpdate {
+                // Before the key steps, so a cancelled passphrase leaves no
+                // credential behind on the key.
+                let passphrase = super::prompt_new_passphrase(wants_passphrase)?;
                 let verification = fido2_verification("register a new credential")?;
                 let credential = keychain::fido2::register(&verification, &wallet_name)
                     .map_err(|e| format!("FIDO2 registration failed: {}", e))?;
@@ -71,6 +75,7 @@ impl App {
                     variant,
                     credential_id: hex::encode(&credential.credential_id),
                     key,
+                    passphrase,
                 }))
             })();
             let _ = tx.send(result);
@@ -91,6 +96,7 @@ impl App {
             variant,
             credential_id,
             key,
+            passphrase,
         } = setup;
         let wallet_id = match qpv2_core::db::wallets::next_wallet_id() {
             Ok(id) => id,
@@ -108,9 +114,12 @@ impl App {
         };
 
         let vault = KeyVault::new(variant, wallet_id);
-        if let Err(e) =
-            vault.generate_master_seed(AuthKey::CryptoKey(key), auth_method, &wallet_name, false)
-        {
+        if let Err(e) = vault.generate_master_seed(
+            AuthKey::CryptoKey(key),
+            auth_method,
+            &wallet_name,
+            passphrase.is_some(),
+        ) {
             let msg = format!("Failed to create wallet: {}", e);
             tracing::error!("{}", msg);
             self.status = Status::Error(msg);
@@ -119,7 +128,8 @@ impl App {
 
         // The wallet exists now, so it opens even if this fails: empty, for
         // NEW ACCOUNT to retry.
-        let first_account = vault.gen_singlesig_account(AuthKey::CryptoKey(key_for_account), None);
+        let first_account =
+            vault.gen_singlesig_account(AuthKey::CryptoKey(key_for_account), passphrase.as_deref());
 
         self.finalize_wallet_setup(
             AuthMethod::Fido2 { credential_id },
@@ -128,6 +138,8 @@ impl App {
             wallet_name,
             StartingBlock::Tip,
         );
+        // Typed twice just now, so it is kept for this session.
+        self.passphrase = passphrase;
         if let Err(e) = first_account {
             let msg = format!(
                 "Failed to create first account: {}. Press NEW ACCOUNT to retry.",
@@ -163,15 +175,17 @@ impl App {
             }
         };
 
+        let wants_passphrase = self.new_wallet_passphrase;
         let (tx, rx) = std::sync::mpsc::channel();
         self.fido2_connect_rx = Some(rx);
 
         let worker = std::thread::Builder::new().name(FIDO2_SETUP_THREAD.to_string());
         let spawned = worker.spawn(move || {
             let result = (|| -> Fido2WalletUpdate {
-                // Before the key steps, so a cancelled phrase leaves no
-                // credential behind on the key.
+                // Before the key steps, so a cancelled phrase or passphrase
+                // leaves no credential behind on the key.
                 let seed_phrase = qpv2_core::pinentry::prompt_seed_phrase(variant)?;
+                let passphrase = super::prompt_new_passphrase(wants_passphrase)?;
                 let verification = fido2_verification("register a new credential")?;
                 let credential = keychain::fido2::register(&verification, &wallet_name)
                     .map_err(|e| format!("FIDO2 registration failed: {}", e))?;
@@ -186,6 +200,7 @@ impl App {
                         variant,
                         credential_id: hex::encode(&credential.credential_id),
                         key,
+                        passphrase,
                     },
                     seed_phrase,
                     single_sig_convention,
@@ -214,6 +229,7 @@ impl App {
             variant,
             credential_id,
             key,
+            passphrase,
         } = setup;
         let wallet_id = match qpv2_core::db::wallets::next_wallet_id() {
             Ok(id) => id,
@@ -237,7 +253,7 @@ impl App {
             auth_method,
             &wallet_name,
             single_sig_convention,
-            false,
+            passphrase.is_some(),
         ) {
             let msg = format!("Failed to import wallet: {}", e);
             tracing::error!("{}", msg);
@@ -247,7 +263,8 @@ impl App {
 
         // The wallet exists now, so it opens even if this fails: empty, for
         // NEW ACCOUNT to retry.
-        let first_account = vault.gen_singlesig_account(AuthKey::CryptoKey(key_for_account), None);
+        let first_account =
+            vault.gen_singlesig_account(AuthKey::CryptoKey(key_for_account), passphrase.as_deref());
 
         // The other import buttons clear this at the click; this one keeps
         // it for a retry until the wallet exists.
@@ -259,6 +276,8 @@ impl App {
             wallet_name,
             StartingBlock::Detect,
         );
+        // Typed twice just now, so it is kept for this session.
+        self.passphrase = passphrase;
         if let Err(e) = first_account {
             let msg = format!(
                 "Failed to create first account: {}. Press NEW ACCOUNT to retry.",
@@ -288,6 +307,16 @@ impl App {
                 return;
             }
         };
+        // Asked for here, before the worker starts, as the password dialog
+        // is for the other wallets.
+        let passphrase = match self.resolve_passphrase("create a new account") {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::error!("{}", e);
+                self.status = Status::Error(e);
+                return;
+            }
+        };
 
         let (tx, rx) = std::sync::mpsc::channel();
         self.fido2_new_account_rx = Some(rx);
@@ -297,9 +326,9 @@ impl App {
             let result = (|| -> Fido2AccountCreate {
                 let verification = fido2_verification("create a new account")?;
                 let hmac_output = keychain::fido2::authenticate(&cred_bytes, &verification)?;
-                qpv2_core::utilities::derive_vault_enc_key(&hmac_output)
-                    .map(AuthKey::CryptoKey)
-                    .map_err(|e| format!("Key derivation failed: {}", e))
+                let key = qpv2_core::utilities::derive_vault_enc_key(&hmac_output)
+                    .map_err(|e| format!("Key derivation failed: {}", e))?;
+                Ok((AuthKey::CryptoKey(key), passphrase))
             })();
             let _ = tx.send(result);
         });
@@ -311,7 +340,11 @@ impl App {
 
     /// Derive and store the account `start_create_fido2_wallet_account`
     /// got the vault key for. Called by `poll_fido2_new_account` on the UI thread.
-    pub(crate) fn finish_create_fido2_wallet_account(&mut self, auth: AuthKey) {
+    pub(crate) fn finish_create_fido2_wallet_account(
+        &mut self,
+        auth: AuthKey,
+        passphrase: Option<qpv2_core::SecureString>,
+    ) {
         let variant = match KeyVault::get_spx_variant(self.wallet_id) {
             Ok(v) => v,
             Err(e) => {
@@ -322,8 +355,9 @@ impl App {
             }
         };
         let vault = KeyVault::new(variant, self.wallet_id);
-        match vault.gen_singlesig_account(auth, None) {
+        match vault.gen_singlesig_account(auth, passphrase.as_deref()) {
             Ok(account) => {
+                self.keep_proven_passphrase(passphrase);
                 tracing::info!(
                     "Account created (wallet_id={}, lock_args={}...)",
                     self.wallet_id,

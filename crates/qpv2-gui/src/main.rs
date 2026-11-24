@@ -40,9 +40,10 @@ pub(crate) const QR_ADOPTION_RETRY: Duration = Duration::from_secs(300);
 
 use types::{
     AppColors, BalanceChartCache, BalanceResult, DaoQueryResult, DaoView, Fido2AccountCreate,
-    Fido2SignResult, Fido2WalletUpdate, NodeStatus, NodeStatusUpdate, QrAdoptionUpdate, Screen,
-    Series, Status, Tab, TransactionKind, TransactionSendResult, TransactionStatus,
-    TrezorAccountCreate, TrezorConnectUpdate, TxBuildResult, TxHistoryEvent, TxRecord,
+    Fido2CosignResult, Fido2SignResult, Fido2WalletUpdate, NodeStatus, NodeStatusUpdate,
+    QrAdoptionUpdate, Screen, Series, Status, Tab, TransactionKind, TransactionSendResult,
+    TransactionStatus, TrezorAccountCreate, TrezorConnectUpdate, TxBuildResult, TxHistoryEvent,
+    TxRecord,
 };
 
 pub(crate) struct App {
@@ -70,6 +71,12 @@ pub(crate) struct App {
     // Whether the mnemonic being imported comes from the Quantum Purse
     // v1 web wallet, which used a different single-sig address convention.
     pub(crate) import_from_v1: bool,
+    // Whether the wallet being created or imported gets a passphrase.
+    pub(crate) new_wallet_passphrase: bool,
+    // The open wallet's passphrase, kept for the session once an action has
+    // succeeded with it, so a mistyped one is never kept. Never written to
+    // disk; wiped on LOCK and whenever the wallet state is cleared.
+    pub(crate) passphrase: Option<qpv2_core::SecureString>,
 
     // Wallet create/import modal state.
     pub(crate) wallet_modal: types::WalletModal,
@@ -231,7 +238,7 @@ pub(crate) struct App {
     // signs, co-signs or decrypts the seed phrase. Some(_) while the PIN dialog
     // is open or the key waits for a touch or an on-device confirm.
     pub(crate) fido2_sign_rx: Option<mpsc::Receiver<Fido2SignResult>>,
-    pub(crate) fido2_cosign_rx: Option<mpsc::Receiver<Result<String, String>>>,
+    pub(crate) fido2_cosign_rx: Option<mpsc::Receiver<Fido2CosignResult>>,
     pub(crate) fido2_export_rx: Option<mpsc::Receiver<Result<qpv2_core::SecureString, String>>>,
     // How the seed-export thread tells the main UI thread it is done. Some while
     // that thread owns the pinentry dialog; the overlay locks the wallet meanwhile.
@@ -512,6 +519,8 @@ impl App {
             new_wallet_name: String::new(),
             new_wallet_variant: types::DEFAULT_SPX_VARIANT,
             import_from_v1: false,
+            new_wallet_passphrase: false,
+            passphrase: None,
             wallet_modal: types::WalletModal::None,
             is_import_mode: false,
             active_tab: Tab::Dashboard,

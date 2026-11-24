@@ -285,6 +285,9 @@ pub(crate) struct Fido2WalletSetup {
     pub(crate) credential_id: String,
     /// The vault encryption key derived from the key's hmac-secret output.
     pub(crate) key: qpv2_core::SecureVec,
+    /// The passphrase typed for the new wallet, or `None` for a wallet
+    /// without one.
+    pub(crate) passphrase: Option<qpv2_core::SecureString>,
 }
 
 /// Which button a background FIDO2 setup came from, so the poller hands the
@@ -307,8 +310,10 @@ pub(crate) type TrezorAccountCreate = Result<qpv2_core::types::SphincsPlusAccoun
 
 /// Result of the security-key step of a background new account: the vault key
 /// derived from the key's hmac-secret output, for the UI thread to derive and
-/// store the account with.
-pub(crate) type Fido2AccountCreate = Result<qpv2_core::types::AuthKey, String>;
+/// store the account with. The wallet's passphrase, asked for before the key
+/// step, rides along so it reaches that same derivation.
+pub(crate) type Fido2AccountCreate =
+    Result<(qpv2_core::types::AuthKey, Option<qpv2_core::SecureString>), String>;
 
 /// A transaction signed with the wallet key, for `forward_signed_tx`.
 pub(crate) enum SignedTx {
@@ -326,8 +331,19 @@ pub(crate) enum SignedTx {
 }
 
 /// Result of signing a transaction with the security key in the background:
-/// the transaction's kind, and the signed transaction or why it isn't.
-pub(crate) type Fido2SignResult = (TransactionKind, Result<SignedTx, String>);
+/// the transaction's kind, the signed transaction or why it isn't, and the
+/// passphrase this signing used, so the UI thread keeps only the one that
+/// worked.
+pub(crate) type Fido2SignResult = (
+    TransactionKind,
+    Result<SignedTx, String>,
+    Option<qpv2_core::SecureString>,
+);
+
+/// Result of co-signing with the security key in the background: the response
+/// to send back or why there is none, and the passphrase this co-signing
+/// used, so the UI thread keeps only the one that worked.
+pub(crate) type Fido2CosignResult = (Result<String, String>, Option<qpv2_core::SecureString>);
 
 /// Application state machine.
 #[derive(Debug, Clone, PartialEq)]

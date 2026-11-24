@@ -257,6 +257,18 @@ fn test_import_accepts_distinct_sub_phrases_reordered() {
     assert!(seed_phrase_to_entropy(crate::types::SpxVariant::Shake128F, &phrase).is_ok());
 }
 
+#[test]
+fn test_passphrase_length_limit() {
+    assert_eq!(
+        validate_passphrase(&"a".repeat(PASSPHRASE_MAX_LENGTH)),
+        Ok(())
+    );
+    assert_eq!(
+        validate_passphrase(&"a".repeat(PASSPHRASE_MAX_LENGTH + 1)),
+        Err("The passphrase is longer than 1024 characters.".to_string())
+    );
+}
+
 fn pin(s: &str) -> SecureString {
     SecureString::from_string(s.to_string())
 }

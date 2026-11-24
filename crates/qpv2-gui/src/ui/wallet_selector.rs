@@ -191,6 +191,7 @@ impl App {
             self.new_wallet_name.clear();
             self.new_wallet_variant = crate::types::DEFAULT_SPX_VARIANT;
             self.import_from_v1 = false;
+            self.new_wallet_passphrase = false;
             self.wallet_selector_open = false;
         }
     }

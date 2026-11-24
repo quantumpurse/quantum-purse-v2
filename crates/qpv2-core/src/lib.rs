@@ -413,6 +413,13 @@ impl KeyVault {
         Self::validate_auth(&auth)?;
         db::wallets::validate_wallet_name(name, None).map_err(|e| e.to_string())?;
 
+        // The v1 convention exists to reach a v1 wallet's addresses, and v1
+        // had no passphrase, so the two together could only open an empty
+        // wallet.
+        if single_sig_convention == SingleSigConvention::V1 && is_passphrase {
+            return Err("A Quantum Purse v1 wallet has no passphrase.".to_string());
+        }
+
         if seed_phrase.is_empty() || seed_phrase.is_uninitialized() {
             tracing::error!("Seed phrase cannot be empty or uninitialized");
             return Err("Seed phrase cannot be empty or uninitialized".to_string());

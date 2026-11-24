@@ -147,17 +147,7 @@ impl MasterSeed {
         let Some(passphrase) = passphrase else {
             return Ok(());
         };
-        if passphrase.is_empty() {
-            return Err("The passphrase is empty.".to_string());
-        }
-        // Every character must be printable ASCII, space to '~'. The error does
-        // not name the one that isn't, because it is part of a secret.
-        if !passphrase.chars().all(|c| matches!(c, ' '..='~')) {
-            return Err(
-                "The passphrase may only use English letters, digits, spaces and common symbols."
-                    .to_string(),
-            );
-        }
+        utilities::validate_passphrase(passphrase)?;
 
         let mut salt = SecureVec::from_vec(PASSPHRASE_SALT_PREFIX.to_vec());
         salt.extend(SecureVec::from_vec(passphrase.as_bytes().to_vec()));

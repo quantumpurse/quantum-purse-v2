@@ -9,8 +9,8 @@ use qpv2_core::types::{SingleSigConvention, SpxVariant};
 
 use crate::types::{label_font, WalletModal};
 use crate::ui::utils::{
-    device_waiting_line, fido2_waiting_line, ghost_button, pin_popup_above_modal, section_header,
-    v1_import_checkbox, SectionCounter, TREZOR_WAITING_TEXT,
+    device_waiting_line, fido2_waiting_line, ghost_button, passphrase_checkbox,
+    pin_popup_above_modal, section_header, v1_import_checkbox, SectionCounter, TREZOR_WAITING_TEXT,
 };
 use crate::App;
 
@@ -91,6 +91,7 @@ impl App {
                             self.wallet_modal = WalletModal::None;
                             self.new_wallet_name.clear();
                             self.import_from_v1 = false;
+                            self.new_wallet_passphrase = false;
                         }
                     });
             });
@@ -100,6 +101,7 @@ impl App {
             self.wallet_modal = WalletModal::None;
             self.new_wallet_name.clear();
             self.import_from_v1 = false;
+            self.new_wallet_passphrase = false;
         }
     }
 
@@ -231,10 +233,13 @@ impl App {
         // ── Source (import only) ──
         // v1 web-wallet mnemonics derive the same keys but need the v1
         // single-sig address convention for existing funds to stay visible.
+        // A v1 wallet had no passphrase, so v1 together with a passphrase
+        // could only open an empty wallet: while either box is ticked, the
+        // other is disabled.
         if is_import {
             section_header(ui, &self.colors, &sec.next_code(), "Source");
             ui.add_space(6.0);
-            ui.add_enabled_ui(!connecting, |ui| {
+            ui.add_enabled_ui(!connecting && !self.new_wallet_passphrase, |ui| {
                 v1_import_checkbox(ui, &self.colors, &mut self.import_from_v1);
             });
             ui.add_space(4.0);
@@ -245,6 +250,21 @@ impl App {
             );
             ui.add_space(14.0);
         }
+
+        // ── Passphrase ──
+        section_header(ui, &self.colors, &sec.next_code(), "Passphrase");
+        ui.add_space(6.0);
+        let from_v1 = is_import && self.import_from_v1;
+        ui.add_enabled_ui(!connecting && !from_v1, |ui| {
+            passphrase_checkbox(ui, &self.colors, &mut self.new_wallet_passphrase);
+        });
+        ui.add_space(4.0);
+        ui.label(
+            egui::RichText::new("Optional. It is never stored: you type it again in every session, and a forgotten passphrase cannot be recovered.")
+                .size(10.0)
+                .color(c_muted),
+        );
+        ui.add_space(14.0);
 
         // ── Authentication ──
         section_header(ui, &self.colors, &sec.next_code(), "Authentication");
@@ -277,6 +297,7 @@ impl App {
                 }
                 self.wallet_modal = WalletModal::None;
                 self.import_from_v1 = false;
+                self.new_wallet_passphrase = false;
             }
 
             // Unlike the buttons around it, this one and the Trezor button
@@ -310,16 +331,23 @@ impl App {
                 }
                 self.wallet_modal = WalletModal::None;
                 self.import_from_v1 = false;
+                self.new_wallet_passphrase = false;
             }
 
             // A Trezor holds its own seed, so it has nothing to restore from a
             // phrase and is offered only when creating. The device checks the
             // chosen parameter set against its seed and names the ones that fit
-            // if it doesn't. Like FIDO2, it leaves the dialog open.
+            // if it doesn't. Like FIDO2, it leaves the dialog open. The
+            // device derives a Trezor wallet's keys, so no passphrase can be
+            // mixed in here, and the button is off while that box is ticked.
             if !is_import {
                 ui.add_space(6.0);
                 if ui
-                    .add(ghost_button(&self.colors, "Trezor", btn_size))
+                    .add_enabled(
+                        !self.new_wallet_passphrase,
+                        ghost_button(&self.colors, "Trezor", btn_size),
+                    )
+                    .on_disabled_hover_text("A Trezor wallet cannot use a passphrase.")
                     .clicked()
                 {
                     self.start_create_trezor_watch_only_wallet(self.new_wallet_variant, 1);

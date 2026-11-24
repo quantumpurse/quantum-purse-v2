@@ -1,4 +1,6 @@
-use super::constants::{ENC_SCRYPT, IV_LENGTH, SALT_LENGTH, VAULT_ENC_KEY_HKDF_INFO};
+use super::constants::{
+    ENC_SCRYPT, IV_LENGTH, PASSPHRASE_MAX_LENGTH, SALT_LENGTH, VAULT_ENC_KEY_HKDF_INFO,
+};
 use super::types::{AuthKey, CipherPayload, ScryptParam, SpxVariant};
 use crate::containers::{SecureString, SecureVec};
 use aes_gcm::{
@@ -398,6 +400,39 @@ pub fn address_of(lock: &Script, is_mainnet: bool) -> String {
         NetworkType::Testnet
     };
     Address::new(network, AddressPayload::from(lock.clone()), true).to_string()
+}
+
+/// Checks that a passphrase can be used: not empty, at most
+/// `PASSPHRASE_MAX_LENGTH` characters, and only printable ASCII. Other
+/// characters can be typed as different bytes on different systems, which
+/// would open a different, empty wallet. The apps call this before a
+/// passphrase wallet is written, so a wallet is never created with a
+/// passphrase that key derivation would refuse afterwards.
+///
+/// **Parameters**:
+/// - `passphrase: &str` - The passphrase.
+///
+/// **Returns**:
+/// - `Result<(), String>` - Nothing when the passphrase can be used, or an error message when it cannot.
+pub fn validate_passphrase(passphrase: &str) -> Result<(), String> {
+    if passphrase.is_empty() {
+        return Err("The passphrase is empty.".to_string());
+    }
+    if passphrase.chars().count() > PASSPHRASE_MAX_LENGTH {
+        return Err(format!(
+            "The passphrase is longer than {} characters.",
+            PASSPHRASE_MAX_LENGTH
+        ));
+    }
+    // Every character must be printable ASCII, space to '~'. The error does
+    // not name the one that isn't, because it is part of a secret.
+    if !passphrase.chars().all(|c| matches!(c, ' '..='~')) {
+        return Err(
+            "The passphrase may only use English letters, digits, spaces and common symbols."
+                .to_string(),
+        );
+    }
+    Ok(())
 }
 
 /// Check strength of a password.

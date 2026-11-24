@@ -14,6 +14,27 @@ mod with_trezor;
 
 pub(crate) use with_fido2::{get_fido2_dek, spawn_fido2_job};
 
+/// Asks for a new wallet's passphrase in the secure dialog, typed twice so a
+/// typo is caught before the wallet's first account is made from it, and
+/// checks it can be used. Returns `None` when the form's passphrase box is
+/// not ticked. Takes no `App`, so a security-key setup can call it on its
+/// worker.
+pub(crate) fn prompt_new_passphrase(wanted: bool) -> Result<Option<SecureString>, String> {
+    if !wanted {
+        return Ok(None);
+    }
+    let passphrase = qpv2_core::pinentry::prompt_password_with_confirmation(
+        "Choose a passphrase for your wallet. It is never stored, so you'll \
+         be asked for it again in every session, and a forgotten passphrase \
+         cannot be recovered.",
+        "Passphrase:",
+        "Confirm:",
+        "Passphrases do not match.",
+    )?;
+    qpv2_core::utilities::validate_passphrase(&passphrase)?;
+    Ok(Some(passphrase))
+}
+
 /// Where light-client registration starts scanning for new scripts.
 pub(crate) enum StartingBlock {
     /// Freshly generated key — no history can exist, scan from the tip.
@@ -156,6 +177,7 @@ impl App {
                 self.register_lock_scripts_with_light_client(&lock_args, start);
                 self.last_poll_time = std::time::Instant::now();
                 self.new_wallet_name.clear();
+                self.new_wallet_passphrase = false;
                 self.wallet_selector_open = false;
                 save_last_wallet_id(self.wallet_id);
                 self.refresh_wallet_cache();
@@ -244,6 +266,8 @@ impl App {
     /// change `screen` or `status` — callers decide what transition
     /// follows.
     fn clear_wallet_state(&mut self) {
+        // The passphrase belongs to the wallet being left.
+        self.passphrase = None;
         self.accounts.clear();
         self.balances.clear();
         self.spendable_balances.clear();
@@ -318,11 +342,13 @@ impl App {
         tracing::info!("Wallet locked (wallet_id={})", self.wallet_id);
     }
 
-    /// Cover the open wallet. Nothing is cleared: balances, history and any
-    /// work in flight (a Trezor signature, a broadcast) stay, so showing it
-    /// again is instant and loses nothing. Popups close so none draws over
-    /// the cover, and the status line clears so it reveals nothing.
+    /// Cover the open wallet. Only the kept passphrase is wiped, so the next
+    /// action that uses the wallet's keys asks for it again. Balances,
+    /// history and any work in flight (a Trezor signature, a broadcast) stay,
+    /// so showing it again is instant and loses nothing. Popups close so none
+    /// draws over the cover, and the status line clears so it reveals nothing.
     pub(crate) fn hide_wallet(&mut self) {
+        self.passphrase = None;
         self.wallet_selector_open = false;
         self.node_selector_open = false;
         self.device_popup_open = false;
@@ -557,6 +583,52 @@ impl App {
         }
     }
 
+    /// The open wallet's passphrase for an action that uses its keys, or
+    /// `None` for a wallet without one. Returns the kept copy when an earlier
+    /// action has proven it; otherwise asks in the secure dialog. The answer
+    /// is not kept here: the action hands it to `keep_proven_passphrase`
+    /// only when it succeeds. Synchronous, like `resolve_auth_key`.
+    ///
+    /// A wallet with no account yet has nothing to check a typo against, so
+    /// there the passphrase is typed twice.
+    pub(crate) fn resolve_passphrase(&self, purpose: &str) -> Result<Option<SecureString>, String> {
+        if !KeyVault::get_meta(self.wallet_id)?.is_passphrase {
+            return Ok(None);
+        }
+        if let Some(kept) = &self.passphrase {
+            return Ok(Some(kept.clone()));
+        }
+        let typed = if KeyVault::get_singlesig_accounts(self.wallet_id)?.is_empty() {
+            qpv2_core::pinentry::prompt_password_with_confirmation(
+                &format!(
+                    "Enter your wallet passphrase to {}. This wallet has no \
+                     account yet to check it against, so type it twice.",
+                    purpose
+                ),
+                "Passphrase:",
+                "Confirm:",
+                "Passphrases do not match.",
+            )?
+        } else {
+            qpv2_core::pinentry::prompt_password(
+                &format!("Enter your wallet passphrase to {}.", purpose),
+                "Passphrase:",
+            )?
+        };
+        Ok(Some(typed))
+    }
+
+    /// Keeps the passphrase an action just succeeded with, for the rest of
+    /// the session. The action passes the one it used, so one action can
+    /// never confirm another's passphrase. Nothing is kept while the wallet
+    /// is covered: LOCK wiped the passphrase, and a background action that
+    /// finishes afterwards must not bring it back.
+    pub(crate) fn keep_proven_passphrase(&mut self, passphrase: Option<SecureString>) {
+        if passphrase.is_some() && self.screen == Screen::Unlocked {
+            self.passphrase = passphrase;
+        }
+    }
+
     pub(crate) fn create_singlesig_account(&mut self) {
         match &self.auth_method {
             Some(AuthMethod::Trezor { .. }) => {
@@ -573,6 +645,14 @@ impl App {
             _ => {}
         }
 
+        let passphrase = match self.resolve_passphrase("create a new account") {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::error!("{}", e);
+                self.status = Status::Error(e);
+                return;
+            }
+        };
         let auth = match self.resolve_auth_key("create a new account") {
             Ok(a) => a,
             Err(e) => {
@@ -592,8 +672,9 @@ impl App {
             }
         };
         let vault = KeyVault::new(variant, self.wallet_id);
-        match vault.gen_singlesig_account(auth, None) {
+        match vault.gen_singlesig_account(auth, passphrase.as_deref()) {
             Ok(account) => {
+                self.keep_proven_passphrase(passphrase);
                 tracing::info!(
                     "Account created (wallet_id={}, lock_args={}...)",
                     self.wallet_id,

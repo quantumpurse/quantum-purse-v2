@@ -87,12 +87,28 @@ impl App {
             return;
         }
 
-        let signed = sign(self.wallet_id, &request, local_signers, |purpose| {
-            self.resolve_auth_key(purpose)
-                .map_err(|e| format!("Auth failed: {}", e))
-        });
+        let passphrase = match self.resolve_passphrase("co-sign a multisig transaction") {
+            Ok(p) => p,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+        let signed = sign(
+            self.wallet_id,
+            &request,
+            local_signers,
+            passphrase.as_deref(),
+            |purpose| {
+                self.resolve_auth_key(purpose)
+                    .map_err(|e| format!("Auth failed: {}", e))
+            },
+        );
         match signed {
-            Ok(response) => self.show_cosign_response(response),
+            Ok(response) => {
+                self.keep_proven_passphrase(passphrase);
+                self.show_cosign_response(response)
+            }
             Err(e) => self.status = Status::Error(e),
         }
     }
@@ -117,11 +133,29 @@ impl App {
                 return;
             }
         };
+        // Asked for here, before the worker starts, as the password dialog
+        // is for the other wallets. The worker hands it back with its result,
+        // and `poll_fido2_cosign` keeps it only if the co-signing worked.
+        let passphrase = match self.resolve_passphrase("co-sign a multisig transaction") {
+            Ok(p) => p,
+            Err(e) => {
+                self.status = Status::Error(e);
+                return;
+            }
+        };
         let wallet_id = self.wallet_id;
         let job = move || {
-            sign(wallet_id, &request, local_signers, |purpose| {
-                get_fido2_dek(&credential_id, purpose).map_err(|e| format!("Auth failed: {}", e))
-            })
+            let signed = sign(
+                wallet_id,
+                &request,
+                local_signers,
+                passphrase.as_deref(),
+                |purpose| {
+                    get_fido2_dek(&credential_id, purpose)
+                        .map_err(|e| format!("Auth failed: {}", e))
+                },
+            );
+            (signed, passphrase)
         };
         match spawn_fido2_job(job) {
             Ok(rx) => self.fido2_cosign_rx = Some(rx),
@@ -138,12 +172,14 @@ impl App {
 
 /// Signs a co-signer's request as each of `local_signers`, the signers whose
 /// keys this wallet holds, unlocking the wallet with `unlock` for each, and
-/// returns the response to send back. Touches no UI state, so it can run on
-/// a worker.
+/// returns the response to send back. `passphrase` is the wallet's, the same
+/// for every key, or `None` for a wallet without one. Touches no UI state,
+/// so it can run on a worker.
 fn sign(
     wallet_id: u32,
     request: &SigningRequest,
     local_signers: Vec<LocalSigner>,
+    passphrase: Option<&str>,
     mut unlock: impl FnMut(&str) -> Result<AuthKey, String>,
 ) -> Result<String, String> {
     let variant = KeyVault::get_spx_variant(wallet_id)
@@ -165,7 +201,7 @@ fn sign(
         };
         let auth = unlock(&purpose)?;
         let (signature, _pubkey) = vault
-            .raw_sign(auth, None, local_signer.lock_args, message.clone())
+            .raw_sign(auth, passphrase, local_signer.lock_args, message.clone())
             .map_err(|e| format!("Signing failed: {}", e))?;
         signed.push(MsigSignature {
             signer_index: usize::from(local_signer.signer.index()),

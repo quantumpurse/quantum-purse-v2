@@ -25,6 +25,14 @@ impl App {
                 return;
             }
         };
+        let passphrase = match super::prompt_new_passphrase(self.new_wallet_passphrase) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::error!("{}", e);
+                self.status = Status::Error(e);
+                return;
+            }
+        };
         let pw = match qpv2_core::pinentry::prompt_password_with_confirmation(
             "Choose a password for your wallet. You'll be prompted for it \
              again on every signing operation.",
@@ -56,7 +64,7 @@ impl App {
             AuthKey::Password(pw),
             AuthMethod::Password,
             &wallet_name,
-            false,
+            passphrase.is_some(),
         ) {
             let msg = format!("Failed to create wallet: {}", e);
             tracing::error!("{}", msg);
@@ -66,7 +74,8 @@ impl App {
 
         // The wallet exists now, so it opens even if this fails: empty, for
         // NEW ACCOUNT to retry.
-        let first_account = vault.gen_singlesig_account(AuthKey::Password(pw_for_account), None);
+        let first_account =
+            vault.gen_singlesig_account(AuthKey::Password(pw_for_account), passphrase.as_deref());
 
         self.finalize_wallet_setup(
             AuthMethod::Password,
@@ -75,6 +84,8 @@ impl App {
             wallet_name,
             StartingBlock::Tip,
         );
+        // Typed twice just now, so it is kept for this session.
+        self.passphrase = passphrase;
         if let Err(e) = first_account {
             let msg = format!(
                 "Failed to create first account: {}. Press NEW ACCOUNT to retry.",
@@ -100,6 +111,15 @@ impl App {
         };
         let seed_phrase = match qpv2_core::pinentry::prompt_seed_phrase(variant) {
             Ok(s) => s,
+            Err(e) => {
+                tracing::error!("{}", e);
+                self.status = Status::Error(e);
+                return;
+            }
+        };
+
+        let passphrase = match super::prompt_new_passphrase(self.new_wallet_passphrase) {
+            Ok(p) => p,
             Err(e) => {
                 tracing::error!("{}", e);
                 self.status = Status::Error(e);
@@ -141,7 +161,7 @@ impl App {
             AuthMethod::Password,
             &wallet_name,
             single_sig_convention,
-            false,
+            passphrase.is_some(),
         ) {
             let msg = format!("Failed to import wallet: {}", e);
             tracing::error!("{}", msg);
@@ -151,7 +171,8 @@ impl App {
 
         // The wallet exists now, so it opens even if this fails: empty, for
         // NEW ACCOUNT to retry.
-        let first_account = vault.gen_singlesig_account(AuthKey::Password(pw_for_account), None);
+        let first_account =
+            vault.gen_singlesig_account(AuthKey::Password(pw_for_account), passphrase.as_deref());
 
         self.finalize_wallet_setup(
             AuthMethod::Password,
@@ -160,6 +181,8 @@ impl App {
             wallet_name,
             StartingBlock::Detect,
         );
+        // Typed twice just now, so it is kept for this session.
+        self.passphrase = passphrase;
         if let Err(e) = first_account {
             let msg = format!(
                 "Failed to create first account: {}. Press NEW ACCOUNT to retry.",
