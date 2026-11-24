@@ -342,6 +342,7 @@ impl KeyVault {
             })?;
         let mut seed = utilities::decrypt(&auth, payload)?;
         utilities::apply_passphrase(&mut seed, passphrase)?;
+        self.verify_passphrase(&seed, passphrase)?;
 
         let index = Self::get_singlesig_lock_args(self.wallet_id)?.len() as u32;
         tracing::info!(
@@ -570,6 +571,7 @@ impl KeyVault {
             })?;
         let mut seed = utilities::decrypt(&auth, payload)?;
         utilities::apply_passphrase(&mut seed, passphrase)?;
+        self.verify_passphrase(&seed, passphrase)?;
 
         let (_, pri_key) = self.derive_spx_keys(&seed, account.index)?;
         let config = &account.config;
@@ -653,6 +655,7 @@ impl KeyVault {
             })?;
         let mut seed = utilities::decrypt(&auth, payload)?;
         utilities::apply_passphrase(&mut seed, passphrase)?;
+        self.verify_passphrase(&seed, passphrase)?;
 
         let (_, pri_key) = self.derive_spx_keys(&seed, account.index)?;
 
@@ -779,6 +782,7 @@ impl KeyVault {
             })?;
         let mut seed = utilities::decrypt(&auth, payload)?;
         utilities::apply_passphrase(&mut seed, passphrase)?;
+        self.verify_passphrase(&seed, passphrase)?;
         let single_sig_convention = Self::get_single_sig_convention(self.wallet_id)?;
         let mut lock_args_array: Vec<String> = Vec::new();
         for index in start_index..(start_index + count) {
@@ -832,6 +836,7 @@ impl KeyVault {
         let mut lock_args_array: Vec<String> = Vec::new();
         let mut seed = utilities::decrypt(&auth, payload)?;
         utilities::apply_passphrase(&mut seed, passphrase)?;
+        self.verify_passphrase(&seed, passphrase)?;
         let single_sig_convention = Self::get_single_sig_convention(self.wallet_id)?;
         for index in 0..count {
             let (pub_key, _) = self.derive_spx_keys(&seed, index).map_err(|e| {
@@ -919,6 +924,37 @@ impl KeyVault {
             }
             _ => Ok(()),
         }
+    }
+
+    /// Refuses a wrong passphrase. Nothing is encrypted with the passphrase,
+    /// so a wrong one still gives a seed, just one that derives other keys.
+    /// The first stored account's key is derived again from `seed` and
+    /// compared with the stored one. A wallet with no account yet has
+    /// nothing to compare with, so it passes. Without a passphrase there is
+    /// nothing to verify, because AES-GCM already refuses a wrong password
+    /// or key.
+    ///
+    /// **Parameters**:
+    /// - `seed: &[u8]` - The master seed with the passphrase already applied.
+    /// - `passphrase: Option<&str>` - The passphrase that was applied, or `None`.
+    ///
+    /// **Returns**:
+    /// - `Result<(), String>` - Nothing when the passphrase is right or can't be checked yet, or an error message when it is wrong.
+    fn verify_passphrase(&self, seed: &[u8], passphrase: Option<&str>) -> Result<(), String> {
+        if passphrase.is_none() {
+            return Ok(());
+        }
+        let accounts = Self::get_singlesig_accounts(self.wallet_id)?;
+        let Some(first) = accounts.first() else {
+            return Ok(());
+        };
+        let (pub_key, _) = self.derive_spx_keys(seed, first.index)?;
+        if pub_key.as_ref() != first.config.signers()[0].pubkey() {
+            let msg = "Wrong passphrase. It produced an account this wallet doesn't have.";
+            tracing::error!("{} (wallet_id={})", msg, self.wallet_id);
+            return Err(msg.to_string());
+        }
+        Ok(())
     }
 
     /// Whether a wallet is backed by a hardware device (Trezor). Such wallets
