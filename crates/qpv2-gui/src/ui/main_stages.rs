@@ -270,11 +270,6 @@ impl App {
             self.node_selector_open = !self.node_selector_open;
             self.wallet_selector_open = false;
             self.device_popup_open = false;
-            if self.node_selector_open {
-                let cfg = self.qp_client.config();
-                self.network = cfg.network;
-                self.node_type = cfg.node_type;
-            }
         }
         // Recolor of the network half happens via badge color below
         // the generic segment; repaint while offline so the dot

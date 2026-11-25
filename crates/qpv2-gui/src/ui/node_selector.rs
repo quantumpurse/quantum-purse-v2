@@ -1,13 +1,12 @@
-//! Node selector popup: network + backend draft selection, anchored
-//! below the telemetry strip's NODE segment. Drafts (`self.network`,
-//! `self.node_type`) are seeded by the chrome when the popup opens and
-//! committed only on APPLY, so closing the popup discards edits.
+//! Node selector popup: network + backend selection, anchored below the
+//! telemetry strip's NODE segment. A click on a network or a backend
+//! takes effect at once.
 
-use ckb_node::{NetworkType, NodeConfig, NodeType};
+use ckb_node::{NetworkType, NodeType};
 use eframe::egui;
 
-use crate::types::{label_font, Status};
-use crate::ui::utils::{accent_button, breathing_dot, row_hover};
+use crate::types::label_font;
+use crate::ui::utils::{breathing_dot, row_hover};
 use crate::App;
 
 const POPUP_W: f32 = 250.0;
@@ -43,7 +42,7 @@ impl App {
         // The live backend's breathing dot animates while open.
         ctx.request_repaint_after(std::time::Duration::from_millis(50));
 
-        // Click outside to close (discarding draft edits).
+        // Click outside to close.
         if ctx.input(|i| i.pointer.any_click()) {
             let pointer_pos = ctx.input(|i| i.pointer.hover_pos());
             if let Some(pos) = pointer_pos {
@@ -68,6 +67,11 @@ impl App {
         let c_border2 = self.colors.border2;
         let online = self.node_status.online;
         let live_type = self.qp_client.config().node_type;
+        let live_network = self.qp_client.config().network;
+        // What the user clicked this frame. Applied after rendering, so the
+        // frame draws against the pre-switch state.
+        let mut clicked_network = None;
+        let mut clicked_type = None;
 
         // ── Title bar ──
         let (bar, _) =
@@ -120,9 +124,9 @@ impl App {
             );
             let resp = ui.interact(rect, ui.id().with(("net-cell", i)), egui::Sense::click());
             if resp.clicked() {
-                self.network = net;
+                clicked_network = Some(net);
             }
-            let selected = self.network == net;
+            let selected = live_network == net;
             let painter = ui.painter();
             if selected {
                 painter.rect_filled(
@@ -180,14 +184,13 @@ impl App {
                 egui::Sense::click(),
             );
             if resp.clicked() {
-                self.node_type = ntype;
+                clicked_type = Some(ntype);
             }
-            let selected = self.node_type == ntype;
             let live = live_type == ntype;
             let painter = ui.painter();
 
-            if selected {
-                // Draft selection: accent tick + tint.
+            if live {
+                // Active backend: accent tick + tint.
                 painter.rect_filled(rect, 0.0, c_accent_tint);
                 painter.rect_filled(
                     egui::Rect::from_min_size(rect.left_top(), egui::vec2(2.0, rect.height())),
@@ -207,7 +210,7 @@ impl App {
                 egui::Align2::LEFT_CENTER,
                 name,
                 egui::FontId::proportional(11.5),
-                if selected { c_accent } else { c_text },
+                if live { c_accent } else { c_text },
             );
 
             // Right cluster: live backend gets a breathing status dot
@@ -240,55 +243,13 @@ impl App {
             );
         }
 
-        // ── Apply ──
-        ui.add_space(10.0);
-        ui.horizontal(|ui| {
-            ui.add_space(PAD);
-            let apply = accent_button(&self.colors, "Apply", egui::vec2(POPUP_W - 2.0 * PAD, 30.0));
-            if ui.add(apply).clicked() {
-                self.apply_node_selection();
-                self.node_selector_open = false;
-            }
-        });
         ui.add_space(PAD);
-    }
 
-    /// Commit the drafted (network, backend) pair. Mirrors the node
-    /// manager's commit path (private to that module): refresh the RPC
-    /// URL preview, persist via `apply_node_config`, restart the local
-    /// node process, and reload the per-network tx history cache when
-    /// the network changed.
-    fn apply_node_selection(&mut self) {
-        let cfg = self.qp_client.config();
-        let old_network = cfg.network;
-        let backend_changed = cfg.node_type != self.node_type;
-        let network_changed = old_network != self.network;
-        if !backend_changed && !network_changed {
-            return;
-        }
-
-        if backend_changed {
-            self.on_node_type_changed();
-        } else if self.node_type == NodeType::PublicRpc {
-            // Network flip on the public backend: retarget the default
-            // endpoint for the new network.
-            self.settings_rpc_url =
-                NodeConfig::default_rpc_url_for(self.node_type, self.network).to_string();
-        }
-
-        self.local_node.stop();
-        self.apply_node_config();
-        if let Err(e) = self.local_node.spawn() {
-            let msg = format!("Failed to start local node: {}", e);
-            tracing::error!("{}", msg);
-            self.status = Status::Error(msg);
-        }
-        if self.network != old_network {
-            self.tx_history_rx = None;
-            self.load_tx_history_from_disk();
-        }
-        if !matches!(self.status, Status::Error(_)) {
-            self.status = Status::Info("Connecting...".to_string());
+        if clicked_network.is_some() || clicked_type.is_some() {
+            self.switch_node(
+                clicked_type.unwrap_or(live_type),
+                clicked_network.unwrap_or(live_network),
+            );
         }
     }
 }

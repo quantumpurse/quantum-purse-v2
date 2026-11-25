@@ -1,7 +1,7 @@
 //! Settings tab: backend selection, the wallet's colors and live node
 //! instrumentation.
 
-use ckb_node::{NetworkType, NodeConfig, NodeType};
+use ckb_node::{NetworkType, NodeType};
 use eframe::egui;
 
 use crate::palette::{self, ColorRole};
@@ -154,7 +154,8 @@ impl App {
                 // Applied after rendering so the frame draws against the
                 // pre-switch state instead of half-updated config.
                 if let Some(backend) = switch_to {
-                    self.switch_to_backend(backend);
+                    let network = self.qp_client.config().network;
+                    self.switch_node(backend, network);
                 }
 
                 ui.add_space(20.0);
@@ -188,42 +189,8 @@ impl App {
         });
 
         if selected != current_network {
-            self.network = selected;
-            self.node_type = self.qp_client.config().node_type;
-            if self.node_type == NodeType::PublicRpc {
-                self.settings_rpc_url =
-                    NodeConfig::default_rpc_url_for(self.node_type, self.network).to_string();
-            }
-            self.commit_node_switch();
-        }
-    }
-
-    pub(crate) fn switch_to_backend(&mut self, backend: NodeType) {
-        let current = self.qp_client.config();
-        if current.node_type == backend {
-            return;
-        }
-        self.node_type = backend;
-        self.network = current.network;
-        self.on_node_type_changed();
-        self.commit_node_switch();
-    }
-
-    fn commit_node_switch(&mut self) {
-        let old_network = self.qp_client.config().network;
-        self.local_node.stop();
-        self.apply_node_config();
-        if let Err(e) = self.local_node.spawn() {
-            let msg = format!("Failed to start local node: {}", e);
-            tracing::error!("{}", msg);
-            self.status = Status::Error(msg);
-        }
-        if self.network != old_network {
-            self.tx_history_rx = None;
-            self.load_tx_history_from_disk();
-        }
-        if !matches!(self.status, Status::Error(_)) {
-            self.status = Status::Info("Connecting...".to_string());
+            let node_type = self.qp_client.config().node_type;
+            self.switch_node(node_type, selected);
         }
     }
 

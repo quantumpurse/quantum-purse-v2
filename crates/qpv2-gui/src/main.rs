@@ -15,7 +15,7 @@ mod ui;
 mod utils;
 mod wallet;
 
-use ckb_node::{LocalNodeProcess, NodeConfig, NodeType, QpClient};
+use ckb_node::{LocalNodeProcess, NodeConfig, QpClient};
 use eframe::egui;
 use qpv2_core::types::SpxVariant;
 use qpv2_core::KeyVault;
@@ -105,20 +105,12 @@ pub(crate) struct App {
     /// and a fistful of config scalars separately.
     pub(crate) qp_client: QpClient,
 
-    // Editable settings fields (buffered until saved).
-    pub(crate) settings_rpc_url: String,
-    pub(crate) settings_binary_path: String,
-    pub(crate) settings_data_dir: String,
-
     // Receives balance results from background thread.
     pub(crate) balance_receiver: Option<mpsc::Receiver<BalanceResult>>,
 
     // Node selector popup state.
     pub(crate) node_selector_open: bool,
     pub(crate) node_selector_rect: Option<egui::Rect>,
-    // Temporary values for node manager page (buffered until applied).
-    pub(crate) network: ckb_node::NetworkType,
-    pub(crate) node_type: NodeType,
 
     // Transaction state shared by both transfer and DAO flows.
     pub(crate) tx_status: TransactionStatus,
@@ -492,18 +484,6 @@ impl App {
             startup_status = Status::Error(msg);
         }
 
-        let settings_rpc_url = node_config.rpc_url.clone();
-        let settings_binary_path = node_config
-            .binary_path
-            .as_ref()
-            .map(|p| p.display().to_string())
-            .unwrap_or_default();
-        let settings_data_dir = node_config.data_dir.display().to_string();
-
-        // Store temp values before moving node_config
-        let network = node_config.network;
-        let node_type = node_config.node_type;
-
         let wallet_cache = Self::current_wallet_cache();
 
         Self {
@@ -529,14 +509,9 @@ impl App {
             spendable_balances: HashMap::new(),
             local_node,
             qp_client,
-            settings_rpc_url,
-            settings_binary_path,
-            settings_data_dir,
             balance_receiver: None,
             node_selector_open: false,
             node_selector_rect: None,
-            network,
-            node_type,
             transfer_recipient: String::new(),
             transfer_amount: String::new(),
             transfer_fee_rate: "1000".to_string(),

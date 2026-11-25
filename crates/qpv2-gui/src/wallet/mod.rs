@@ -389,22 +389,37 @@ impl App {
         self.refresh_wallet_cache();
     }
 
-    /// Called when the node type or network changes in the UI. Refreshes
-    /// `settings_rpc_url` to the default URL for the pending
-    /// `(node_type, network)` pair so the form preview matches
-    /// what the user is about to commit.
-    pub(crate) fn on_node_type_changed(&mut self) {
-        self.settings_rpc_url =
-            ckb_node::NodeConfig::default_rpc_url_for(self.node_type, self.network).to_string();
+    /// Switches the wallet to `node_type` on `network`: stops its own node,
+    /// applies the new config and starts the node that config needs. Does
+    /// nothing when both already match the active config.
+    pub(crate) fn switch_node(
+        &mut self,
+        node_type: ckb_node::NodeType,
+        network: ckb_node::NetworkType,
+    ) {
+        let cfg = self.qp_client.config();
+        if cfg.node_type == node_type && cfg.network == network {
+            return;
+        }
+
+        self.local_node.stop();
+        self.apply_node_config(node_type, network);
+        if let Err(e) = self.local_node.spawn() {
+            let msg = format!("Failed to start local node: {}", e);
+            tracing::error!("{}", msg);
+            self.status = Status::Error(msg);
+        }
+        if !matches!(self.status, Status::Error(_)) {
+            self.status = Status::Info("Connecting...".to_string());
+        }
     }
 
-    /// Commit the staged settings edits as the active node config:
+    /// Make `node_type` on `network` the active node config:
     ///
-    /// 1. Build the new `NodeConfig` from the settings-buffer fields
-    ///    (`settings_*`, `temp_*`) on top of the current
+    /// 1. Build the new `NodeConfig` on top of the current
     ///    `qp_client.config()` snapshot. There is no separate mutable
-    ///    `node_config` on `App`, so this is the only place where an
-    ///    edit becomes committed state.
+    ///    `node_config` on `App`, so this is the only place where a
+    ///    choice becomes committed state.
     /// 2. Persist the config to disk.
     /// 3. Replace `qp_client` and `local_node` with fresh instances
     ///    bound to it.
@@ -412,21 +427,15 @@ impl App {
     ///    poll receiver from the previous backend so its result can't
     ///    land after the swap and resurrect stale values.
     /// 5. Kick off fresh balance + node-status fetches.
-    pub(crate) fn apply_node_config(&mut self) {
+    pub(crate) fn apply_node_config(
+        &mut self,
+        node_type: ckb_node::NodeType,
+        network: ckb_node::NetworkType,
+    ) {
         let mut new_cfg = self.qp_client.config().clone();
-        new_cfg.node_type = self.node_type;
-        new_cfg.network = self.network;
-        new_cfg.rpc_url = self.settings_rpc_url.clone();
-
-        if new_cfg.requires_binary() && !self.settings_binary_path.is_empty() {
-            new_cfg.binary_path = Some(self.settings_binary_path.clone().into());
-        } else if !new_cfg.requires_binary() {
-            new_cfg.binary_path = None;
-        }
-
-        if !self.settings_data_dir.is_empty() {
-            new_cfg.data_dir = self.settings_data_dir.clone().into();
-        }
+        new_cfg.rpc_url = ckb_node::NodeConfig::default_rpc_url_for(node_type, network).to_string();
+        new_cfg.node_type = node_type;
+        new_cfg.network = network;
 
         if let Err(e) = new_cfg.save() {
             let msg = format!("Failed to save config: {}", e);
@@ -494,8 +503,8 @@ impl App {
         self.status = Status::Info("Configuration saved. RPC reconnected.".to_string());
         tracing::info!(
             "Node config applied (node_type={:?}, network={:?})",
-            self.node_type,
-            self.network
+            node_type,
+            network
         );
 
         // Refresh balances + node status against the new connection so
@@ -525,12 +534,8 @@ impl App {
             return;
         };
 
-        // Apply the active backend with only the network changed, not
-        // whatever is drafted in the node selector.
-        self.node_type = cfg.node_type;
-        self.settings_rpc_url = cfg.rpc_url.clone();
-        self.network = network;
-        self.apply_node_config();
+        let node_type = cfg.node_type;
+        self.apply_node_config(node_type, network);
         let msg = format!(
             "A {} node is already running on this port, so the wallet switched to {}.",
             network, network

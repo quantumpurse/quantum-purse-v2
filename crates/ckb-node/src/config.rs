@@ -113,7 +113,8 @@ pub struct NodeConfig {
     /// Which CKB network to connect to. Defaults to `Testnet`.
     pub network: NetworkType,
 
-    /// Path to the node binary on disk. `None` when using `PublicRpc`.
+    /// Path to the node binary on disk, when the user set one. Only read
+    /// when a local node is started, so it is unused with `PublicRpc`.
     pub binary_path: Option<PathBuf>,
 
     /// Directory where the node stores its chain data.
