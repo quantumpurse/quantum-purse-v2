@@ -456,7 +456,9 @@ impl App {
         // Both LC latches are per-instance. Reset so the poller
         // re-warms the cell dep and re-registers lock scripts against
         // the new backend (and skips both for FullNode / PublicRpc).
-        self.lc_qr_dep_warmup_done = false;
+        // A warmup still running belongs to the old backend: this also
+        // drops its result so it can't mark the new one done.
+        self.lc_qr_dep_warmup = crate::types::QrLockDepWarmup::Idle;
         self.lc_script_registration_reeval = false;
 
         // The adoption series is per-network: drop any in-flight

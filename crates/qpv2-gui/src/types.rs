@@ -155,6 +155,22 @@ pub(crate) enum TxHistoryEvent {
     Aborted,
 }
 
+/// Where the light client's warm-up of the lock script's code cell stands.
+/// The poller moves it along on each status tick while the light client is
+/// online, and a backend switch puts it back to `Idle`.
+pub(crate) enum QrLockDepWarmup {
+    /// No attempt is running: the next tick starts one.
+    Idle,
+    /// An attempt is running on a worker; its result arrives here.
+    Running(std::sync::mpsc::Receiver<Result<bool, String>>),
+    /// The last attempt failed or is still pending: the next one starts at
+    /// this time, not on the next frame, so a failing public RPC isn't
+    /// asked again many times a second.
+    RetryAt(std::time::Instant),
+    /// The light client has the cell in its store: nothing more to do.
+    Done,
+}
+
 /// Pre-fetched wallet metadata so rendering never hits the filesystem.
 pub(crate) struct CurrentWallet {
     pub id: u32,

@@ -12,19 +12,24 @@
 //! and don't need (or expose) this surface. The downcast is enforced
 //! here at the boundary so call sites don't repeat it.
 
-use ckb_types::H256;
-
 use crate::client::{LightClient, QpClient};
-use crate::config::NetworkType;
 use crate::error::NodeManagerError;
 
-/// Asks the light client to pull the QR-lock-script deployment cell
-/// into its local store. The LC otherwise wouldn't index it (its lock
-/// isn't one of ours) and would reject any transfer that uses it as a
-/// cell dep.
+/// Asks the light client to pull the QR-lock-script code cell into its
+/// local store. The LC otherwise wouldn't index it (its lock isn't one
+/// of ours) and would reject any transfer that uses it as a cell dep.
 ///
-/// Returns `true` once the dep is in the LC's store; `false` while the
-/// fetch is still pending. Idempotent.
+/// The cell is the one a lookup by the lock's Type ID names, so after an
+/// upgrade of the lock the new cell is fetched. Once fetched, the cell is
+/// checked to carry that Type ID, and only then does the transaction
+/// builder use it (`utils::qr_lock_cell_dep`).
+///
+/// The lookup asks the public RPC when it is due, which can block for up
+/// to the RPC timeout, so call this off the UI thread.
+///
+/// Returns `true` once the dep is in the LC's store and checked; `false`
+/// while the fetch is still pending. An error when the cell can't be
+/// looked up or fails the check. Idempotent.
 pub fn fetch_qr_lock_dep(qp_client: &QpClient) -> Result<bool, NodeManagerError> {
     let Some(light) = qp_client.as_any().downcast_ref::<LightClient>() else {
         return Err(NodeManagerError::UnsupportedOperation {
@@ -32,15 +37,14 @@ pub fn fetch_qr_lock_dep(qp_client: &QpClient) -> Result<bool, NodeManagerError>
             reason: "fetch_qr_lock_dep is light-client-only.".to_string(),
         });
     };
-    let dep_tx_hash_hex = match qp_client.config().network {
-        NetworkType::Mainnet => qpv2_core::constants::CKB_MAINNET_CELL_DEP_TX_HASH,
-        NetworkType::Testnet => qpv2_core::constants::CKB_TESTNET_CELL_DEP_TX_HASH,
-    };
-    let tx_hash: H256 = dep_tx_hash_hex
-        .trim_start_matches("0x")
-        .parse()
-        .map_err(|e| NodeManagerError::RpcError(format!("Invalid QR lock dep tx hash: {}", e)))?;
-    light.fetch_transaction(tx_hash)
+
+    // using public full node rpc to bootstrap.
+    let out_point = super::utils::locate_qr_lock_dep(qp_client)?;
+    if !light.fetch_transaction(out_point.tx_hash.clone())? {
+        return Ok(false);
+    }
+    // verify the fetched cell with the light client store.
+    super::utils::confirm_qr_lock_dep(qp_client, &out_point)
 }
 
 /// Registers wallet lock scripts with the LC's indexer at the given

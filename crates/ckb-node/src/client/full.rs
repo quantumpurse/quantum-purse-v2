@@ -11,7 +11,9 @@
 use std::any::Any;
 
 use ckb_jsonrpc_types::JsonBytes;
-use ckb_sdk::rpc::ckb_indexer::{CellsCapacity, Order, Pagination, ScriptType, SearchKey, Tx};
+use ckb_sdk::rpc::ckb_indexer::{
+    CellsCapacity, Order, Pagination, ScriptType, SearchKey, SearchMode, Tx,
+};
 use ckb_sdk::rpc::{CkbRpcClient, ResponseFormatGetter};
 use ckb_sdk::traits::{
     CellCollector, CellQueryOptions, DefaultCellCollector, DefaultHeaderDepResolver,
@@ -135,6 +137,38 @@ impl FullNodeClient {
             }
         }
         Ok(earliest)
+    }
+
+    /// Finds the live cell whose type script is exactly `type_script` and
+    /// returns where it sits, or `None` when no live cell carries it.
+    ///
+    /// Made for a Type ID, which the chain keeps to one live cell at a time:
+    /// the cell moves when its owner replaces it, and this finds it again.
+    /// More than one match means the script is not such an identity, and is
+    /// an error instead of a guess between them.
+    pub fn find_live_cell_by_type_script(
+        &self,
+        type_script: ckb_jsonrpc_types::Script,
+    ) -> Result<Option<ckb_jsonrpc_types::OutPoint>, NodeManagerError> {
+        let search_key = SearchKey {
+            script: type_script,
+            script_type: ScriptType::Type,
+            script_search_mode: Some(SearchMode::Exact),
+            filter: None,
+            with_data: Some(false),
+            group_by_transaction: None,
+        };
+        let page = self
+            .client
+            .get_cells(search_key, Order::Asc, 2u32.into(), None)
+            .map_err(|e| NodeManagerError::RpcError(format!("get_cells: {}", e)))?;
+        match page.objects.as_slice() {
+            [] => Ok(None),
+            [cell] => Ok(Some(cell.out_point.clone())),
+            _ => Err(NodeManagerError::RpcError(
+                "More than one live cell carries this type script.".to_string(),
+            )),
+        }
     }
 
     /// Full node `sync_state` RPC. Reports IBD progress (header sync,

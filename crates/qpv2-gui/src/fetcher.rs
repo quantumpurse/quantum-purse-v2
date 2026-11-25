@@ -6,7 +6,9 @@ use std::fmt::Display;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use crate::types::{DaoQueryEvent, NodeStatus, NodeStatusUpdate, TxHistoryEvent, TxKind, TxRecord};
+use crate::types::{
+    DaoQueryEvent, NodeStatus, NodeStatusUpdate, QrLockDepWarmup, TxHistoryEvent, TxKind, TxRecord,
+};
 use crate::App;
 
 /// Initial backoff between retry attempts on a transient RPC failure.
@@ -209,6 +211,31 @@ impl App {
                     }
                 }
             }
+            let _ = tx.send(result);
+        });
+    }
+
+    /// Asks the light client to fetch the lock script's code cell into its
+    /// store, in a background thread: on mainnet it first asks the public
+    /// RPC where the cell sits now, which can take up to the RPC timeout.
+    /// Starts an attempt only when the warm-up is idle, or waiting to retry
+    /// and the wait is over.
+    pub(crate) fn fetch_qr_lock_dep(&mut self) {
+        let time_to_fetch = match &self.lc_qr_dep_warmup {
+            QrLockDepWarmup::Idle => true,
+            QrLockDepWarmup::RetryAt(at) => std::time::Instant::now() >= *at,
+            QrLockDepWarmup::Running(_) | QrLockDepWarmup::Done => false,
+        };
+        if !time_to_fetch {
+            return;
+        }
+
+        let qp_client = self.qp_client.clone();
+        let (tx, rx) = mpsc::channel();
+        self.lc_qr_dep_warmup = QrLockDepWarmup::Running(rx);
+
+        std::thread::spawn(move || {
+            let result = ckb_node::lc::fetch_qr_lock_dep(&qp_client).map_err(|e| e.to_string());
             let _ = tx.send(result);
         });
     }

@@ -38,11 +38,17 @@ pub(crate) const QR_ADOPTION_INTERVAL: Duration = Duration::from_secs(1800);
 /// shouldn't strand the UI in "Querying..." for the full interval).
 pub(crate) const QR_ADOPTION_RETRY: Duration = Duration::from_secs(300);
 
+/// Wait between two attempts of the light client's lock-script cell-dep
+/// warmup. The poller runs every frame, so without it a failing attempt
+/// would be repeated at the frame rate.
+pub(crate) const QR_LOCK_DEP_WARMUP_RETRY: Duration = Duration::from_secs(5);
+
 use types::{
     AppColors, BalanceChartCache, BalanceResult, DaoQueryResult, DaoView, Fido2AccountCreate,
-    Fido2SignResult, Fido2WalletUpdate, NodeStatus, NodeStatusUpdate, QrAdoptionUpdate, Screen,
-    Series, Status, Tab, TransactionKind, TransactionSendResult, TransactionStatus,
-    TrezorAccountCreate, TrezorConnectUpdate, TxBuildResult, TxHistoryEvent, TxRecord,
+    Fido2SignResult, Fido2WalletUpdate, NodeStatus, NodeStatusUpdate, QrAdoptionUpdate,
+    QrLockDepWarmup, Screen, Series, Status, Tab, TransactionKind, TransactionSendResult,
+    TransactionStatus, TrezorAccountCreate, TrezorConnectUpdate, TxBuildResult, TxHistoryEvent,
+    TxRecord,
 };
 
 pub(crate) struct App {
@@ -191,12 +197,13 @@ pub(crate) struct App {
     // running; the poller swaps the result into `set_block_input`.
     pub(crate) earliest_funding_block_rx: Option<mpsc::Receiver<Result<Option<u64>, String>>>,
 
-    // Latched: `true` once `fetch_qr_lock_dep` has confirmed the
-    // QR-lock-script cell dep is in the LC's local store. The poller
-    // retries the warmup on every status tick where this is still
-    // false and the LC is reachable, so the post-spawn race against
-    // RPC readiness is invisible to the user. Reset on backend switch.
-    pub(crate) lc_qr_dep_warmup_done: bool,
+    // `Done` once `fetch_qr_lock_dep` has confirmed the QR-lock-script
+    // cell dep is in the LC's local store. The poller retries the warmup
+    // every `QR_LOCK_DEP_WARMUP_RETRY` until then while the LC is
+    // reachable, so the post-spawn race against RPC readiness is
+    // invisible to the user.
+    // Reset to `Idle` on backend switch.
+    pub(crate) lc_qr_dep_warmup: QrLockDepWarmup,
 
     // `true` while LC script registration needs re-evaluation — set at
     // startup, on wallet switch, and on node config apply; cleared by
@@ -568,7 +575,7 @@ impl App {
             set_block_input: String::new(),
             set_block_editing: false,
             earliest_funding_block_rx: None,
-            lc_qr_dep_warmup_done: false,
+            lc_qr_dep_warmup: QrLockDepWarmup::Idle,
             lc_script_registration_reeval: false,
             // Auth method is read from meta.json on demand by
             // each flow that needs it; cached `None` here. Setup screen

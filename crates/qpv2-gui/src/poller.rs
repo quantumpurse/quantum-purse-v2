@@ -1,8 +1,8 @@
 //! Async polling for background operations (balances, transactions).
 
 use crate::types::{
-    BalanceResult, DaoQueryEvent, Fido2WalletFlow, Status, TransactionKind, TransactionStatus,
-    TxHistoryEvent, TxKind,
+    BalanceResult, DaoQueryEvent, Fido2WalletFlow, QrLockDepWarmup, Status, TransactionKind,
+    TransactionStatus, TxHistoryEvent, TxKind,
 };
 use crate::App;
 use qpv2_core::types::AuthMethod;
@@ -449,6 +449,30 @@ impl App {
         }
     }
 
+    /// Collect a finished lock-script cell-dep warmup attempt: `Done` on
+    /// success, otherwise wait `QR_LOCK_DEP_WARMUP_RETRY` before the next.
+    fn poll_qr_lock_dep(&mut self) {
+        let QrLockDepWarmup::Running(rx) = &self.lc_qr_dep_warmup else {
+            return;
+        };
+
+        let succeeded = match rx.try_recv() {
+            // `false`: the light client is still fetching the cell.
+            Ok(Ok(fetched)) => fetched,
+            Ok(Err(e)) => {
+                tracing::error!("lc warmup: fetch_qr_lock_dep: {}", e);
+                false
+            }
+            Err(mpsc::TryRecvError::Empty) => return,
+            Err(mpsc::TryRecvError::Disconnected) => false,
+        };
+        self.lc_qr_dep_warmup = if succeeded {
+            QrLockDepWarmup::Done
+        } else {
+            QrLockDepWarmup::RetryAt(std::time::Instant::now() + crate::QR_LOCK_DEP_WARMUP_RETRY)
+        };
+    }
+
     /// Drain the node-status channel into `self.node_status`. A status
     /// refresh is scheduled every `POLL_INTERVAL` by `update()`.
     pub(crate) fn poll_node_status(&mut self) {
@@ -493,21 +517,17 @@ impl App {
         // screen. Doing it here gates the call on `online == true`,
         // which is exactly the signal we needed.
         //
-        // Idempotent locally (`fetch_transaction` is a memoized
-        // localhost roundtrip after the first hit), so the worst case
-        // is one cheap RPC per ~10 s tick until `Ok(true)` latches the
-        // flag. Errors are logged, not banner'd — by definition we'll
-        // try again next tick.
+        // Runs on a worker: on mainnet the warmup first asks the public
+        // RPC where the lock's code cell sits now, which can take up to
+        // the RPC timeout, and the window must keep painting meanwhile.
+        // One attempt at a time, retried after `QR_LOCK_DEP_WARMUP_RETRY`
+        // until `Ok(true)` moves the warmup to `Done`. Errors are logged,
+        // not banner'd — by definition we'll try again.
         if self.node_status.online
             && self.qp_client.config().node_type == ckb_node::NodeType::LightClient
         {
-            if !self.lc_qr_dep_warmup_done {
-                match ckb_node::lc::fetch_qr_lock_dep(&self.qp_client) {
-                    Ok(true) => self.lc_qr_dep_warmup_done = true,
-                    Ok(false) => {} // pending — retry next tick
-                    Err(e) => tracing::error!("lc warmup: fetch_qr_lock_dep: {}", e),
-                }
-            }
+            self.poll_qr_lock_dep();
+            self.fetch_qr_lock_dep();
 
             // This code is here because half the triggers involve node
             // shutdown and restarts, and light node takes time to start up.

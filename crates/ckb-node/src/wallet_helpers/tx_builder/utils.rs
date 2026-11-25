@@ -17,8 +17,8 @@ use qpv2_core::constants;
 /// full node (`get_block_by_number(0)`) and the light client
 /// (`get_genesis_block`). The genesis block contains the system script
 /// cell deps (sighash, multisig, DAO). The quantum-resistant lock
-/// script is a custom deployment and must be registered explicitly
-/// using the known deployment OutPoint.
+/// script is a custom deployment and must be registered explicitly,
+/// at the out point its code cell sits at now (`qr_lock_cell_dep`).
 pub fn cell_dep_resolver_from_rpc(
     qp_client: &QpClient,
 ) -> Result<DefaultCellDepResolver, NodeManagerError> {
@@ -29,19 +29,15 @@ pub fn cell_dep_resolver_from_rpc(
     })?;
 
     // Register the quantum-resistant lock script cell dep.
-    let (code_hash_hex, hash_type, dep_tx_hash_hex, dep_index) = if qp_client.is_mainnet() {
+    let (code_hash_hex, hash_type) = if qp_client.is_mainnet() {
         (
             constants::CKB_MAINNET_CODE_HASH,
             constants::CKB_MAINNET_HASH_TYPE,
-            constants::CKB_MAINNET_CELL_DEP_TX_HASH,
-            constants::CKB_MAINNET_CELL_DEP_INDEX,
         )
     } else {
         (
             constants::CKB_TESTNET_CODE_HASH,
             constants::CKB_TESTNET_HASH_TYPE,
-            constants::CKB_TESTNET_CELL_DEP_TX_HASH,
-            constants::CKB_TESTNET_CELL_DEP_INDEX,
         )
     };
 
@@ -49,19 +45,11 @@ pub fn cell_dep_resolver_from_rpc(
         .trim_start_matches("0x")
         .parse()
         .map_err(|e| NodeManagerError::RpcError(format!("Invalid QR lock code_hash: {}", e)))?;
-    let dep_tx_hash: H256 = dep_tx_hash_hex
-        .trim_start_matches("0x")
-        .parse()
-        .map_err(|e| NodeManagerError::RpcError(format!("Invalid QR lock dep tx_hash: {}", e)))?;
+    let dep_out_point: OutPoint = crate::wallet_helpers::utils::qr_lock_cell_dep(qp_client)?.into();
 
     let script_id = ScriptId::new(code_hash.clone(), hash_type);
     let cell_dep = CellDep::new_builder()
-        .out_point(
-            OutPoint::new_builder()
-                .tx_hash(dep_tx_hash.pack())
-                .index(dep_index)
-                .build(),
-        )
+        .out_point(dep_out_point)
         .dep_type(DepType::Code)
         .build();
 

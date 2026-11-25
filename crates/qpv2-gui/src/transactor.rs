@@ -17,6 +17,11 @@ use std::sync::mpsc;
 /// `Ok(())` for non-LightClient backends (full nodes / public RPC have
 /// every cell); `Ok(())` for LightClient when the dep is already in the
 /// store. Otherwise returns a user-facing message ready for `App.status`.
+///
+/// Called on the build worker, never the UI thread: on mainnet it may
+/// first ask the public RPC where the lock's code cell sits now. The
+/// builder that follows only uses a cell that was fetched and checked this
+/// way, and refuses to build when there is none.
 fn check_qr_lock_dep_ready(qp_client: &QpClient) -> Result<(), String> {
     if qp_client.config().node_type != NodeType::LightClient {
         return Ok(());
