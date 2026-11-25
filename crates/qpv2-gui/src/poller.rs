@@ -498,6 +498,7 @@ impl App {
                 }
                 self.node_status = status;
                 self.node_status_rx = None;
+                self.follow_foreign_node_network();
             }
             Ok(Err(e)) => {
                 self.node_status_rx = None;

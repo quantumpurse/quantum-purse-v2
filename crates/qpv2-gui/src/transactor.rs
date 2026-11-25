@@ -136,12 +136,31 @@ fn sign_transaction(
 }
 
 impl App {
+    /// The error to show instead of building a transaction while the node is
+    /// on another chain than the wallet is set to. Building there would look
+    /// for the account's cells on the wrong chain and fail with a balance
+    /// error that hides the real cause. `None` when the networks agree.
+    fn node_network_mismatch(&self) -> Option<String> {
+        let detected = self.node_status.mismatched_network.as_ref()?;
+        Some(format!(
+            "Network mismatch: the wallet is set to {} but the node is on {}.",
+            self.qp_client.config().network,
+            detected
+        ))
+    }
+
     /// Kick off a transfer: validate inputs, then build the unsigned tx in a background thread.
     pub(crate) fn transfer_async(&mut self) {
         // Claim the tx slot for this screen BEFORE any validation:
         // pre-flight errors must display under the flow that caused
         // them, and the status log is gated on this kind.
         self.active_tx_kind = Some(TransactionKind::Transfer);
+
+        if let Some(msg) = self.node_network_mismatch() {
+            tracing::error!("{}", msg);
+            self.tx_status = TransactionStatus::Error(msg);
+            return;
+        }
 
         // Validate inputs
         if self.accounts.is_empty() {
@@ -309,6 +328,12 @@ impl App {
         // them, and the status log is gated on this kind.
         self.active_tx_kind = Some(TransactionKind::DaoDeposit);
 
+        if let Some(msg) = self.node_network_mismatch() {
+            tracing::error!("{}", msg);
+            self.tx_status = TransactionStatus::Error(msg);
+            return;
+        }
+
         if self.accounts.is_empty() {
             tracing::error!("No accounts available.");
             self.tx_status = TransactionStatus::Error("No accounts available.".to_string());
@@ -420,6 +445,12 @@ impl App {
         // them, and the status log is gated on this kind.
         self.active_tx_kind = Some(TransactionKind::DaoPrepare);
 
+        if let Some(msg) = self.node_network_mismatch() {
+            tracing::error!("{}", msg);
+            self.tx_status = TransactionStatus::Error(msg);
+            return;
+        }
+
         let is_mainnet = self.qp_client.is_mainnet();
         let from_address = match crate::utils::lock_args_to_address(&lock_args, is_mainnet) {
             Ok(a) => a,
@@ -489,6 +520,12 @@ impl App {
         // pre-flight errors must display under the flow that caused
         // them, and the status log is gated on this kind.
         self.active_tx_kind = Some(TransactionKind::DaoWithdraw);
+
+        if let Some(msg) = self.node_network_mismatch() {
+            tracing::error!("{}", msg);
+            self.tx_status = TransactionStatus::Error(msg);
+            return;
+        }
 
         let is_mainnet = self.qp_client.is_mainnet();
         let from_address = match crate::utils::lock_args_to_address(&lock_args, is_mainnet) {

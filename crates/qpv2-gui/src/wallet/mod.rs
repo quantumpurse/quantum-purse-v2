@@ -505,6 +505,40 @@ impl App {
         self.fetch_node_status();
     }
 
+    /// When a node the wallet did not start answers on its port and is on
+    /// the other network, switches the wallet to that node's network, so the
+    /// wallet is never set to one network while reading from a node on the
+    /// other. No node of its own is started: the foreign one holds the port.
+    /// A node on a chain the wallet doesn't know is left alone, and sending
+    /// stays blocked for it (`node_network_mismatch`).
+    pub(crate) fn follow_foreign_node_network(&mut self) {
+        let Some((_, detected)) = self.foreign_node() else {
+            return;
+        };
+        let cfg = self.qp_client.config();
+        let Some(network) = [
+            ckb_node::NetworkType::Mainnet,
+            ckb_node::NetworkType::Testnet,
+        ]
+        .into_iter()
+        .find(|n| *n != cfg.network && n.to_string() == detected) else {
+            return;
+        };
+
+        // Apply the active backend with only the network changed, not
+        // whatever is drafted in the node selector.
+        self.node_type = cfg.node_type;
+        self.settings_rpc_url = cfg.rpc_url.clone();
+        self.network = network;
+        self.apply_node_config();
+        let msg = format!(
+            "A {} node is already running on this port, so the wallet switched to {}.",
+            network, network
+        );
+        tracing::info!("{}", msg);
+        self.status = Status::Info(msg);
+    }
+
     /// Seeds `tx_history` from the active network's on-disk cache so the
     /// dashboard renders instantly on unlock instead of waiting for the
     /// first sync tick. The incremental-sync floor (`tx_history_watermark`)
