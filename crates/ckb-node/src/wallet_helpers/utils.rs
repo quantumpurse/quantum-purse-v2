@@ -15,8 +15,9 @@ use crate::error::NodeManagerError;
 const QR_LOCK_DEP_FOUND_TTL: Duration = Duration::from_secs(600);
 
 /// How long to wait after a lookup that failed or found nothing before the
-/// lookup is tried again. Meanwhile the last cell found is reused. Short, so
-/// a node that was briefly unreachable doesn't hide an upgrade for long.
+/// lookup is tried again. Meanwhile the last cell found is reused, or the
+/// pinned one when none ever was. Short, so a node that was briefly
+/// unreachable doesn't hide an upgrade for long.
 const QR_LOCK_DEP_FALLBACK_TTL: Duration = Duration::from_secs(60);
 
 /// The mainnet code cell chosen for one backend. Mainnet only: the testnet
@@ -30,7 +31,7 @@ struct CachedQrLockDep {
     out_point: OutPoint,
     /// Whether the last lookup found the cell. `false` after one that failed
     /// or found nothing: the out point is then the last one a lookup did
-    /// find for this backend.
+    /// find for this backend, or the pinned one when none ever did.
     found: bool,
     /// Light client only: whether the cell's transaction is in the light
     /// client's store and the cell was checked to carry the lock's Type ID.
@@ -51,15 +52,26 @@ fn is_light_client(qp_client: &QpClient) -> bool {
     qp_client.config().node_type == NodeType::LightClient
 }
 
-/// The testnet code cell's out point, as written in the constants.
-fn testnet_qr_lock_dep() -> Result<OutPoint, NodeManagerError> {
-    let tx_hash: ckb_types::H256 = qpv2_core::constants::CKB_TESTNET_CELL_DEP_TX_HASH
+/// The out point pinned in the constants for `network`: the testnet code
+/// cell, or where the mainnet one sat when the constants were written.
+fn fallback_qr_lock_dep(network: NetworkType) -> Result<OutPoint, NodeManagerError> {
+    let (tx_hash_hex, index) = match network {
+        NetworkType::Mainnet => (
+            qpv2_core::constants::CKB_MAINNET_CELL_DEP_TX_HASH,
+            qpv2_core::constants::CKB_MAINNET_CELL_DEP_INDEX,
+        ),
+        NetworkType::Testnet => (
+            qpv2_core::constants::CKB_TESTNET_CELL_DEP_TX_HASH,
+            qpv2_core::constants::CKB_TESTNET_CELL_DEP_INDEX,
+        ),
+    };
+    let tx_hash: ckb_types::H256 = tx_hash_hex
         .trim_start_matches("0x")
         .parse()
         .map_err(|e| NodeManagerError::RpcError(format!("Invalid QR lock dep tx hash: {}", e)))?;
     Ok(OutPoint {
         tx_hash,
-        index: qpv2_core::constants::CKB_TESTNET_CELL_DEP_INDEX.into(),
+        index: index.into(),
     })
 }
 
@@ -85,14 +97,19 @@ fn mainnet_qr_lock_type_id() -> Result<Script, NodeManagerError> {
 /// A full node or the public RPC runs the lookup itself, and a light client
 /// asks the public RPC, since it can't search by Type ID.
 ///
+/// A lookup that fails or finds nothing keeps the last cell found for this
+/// backend, or falls back to the pinned out point when none ever was, so a
+/// brief outage doesn't stop sending while the lock hasn't been upgraded.
+///
 /// The choice is kept per backend for a while, so a node is not asked on
 /// every transaction.
 pub(crate) fn locate_qr_lock_dep(qp_client: &QpClient) -> Result<OutPoint, NodeManagerError> {
     let network = qp_client.config().network;
+    let pinned = fallback_qr_lock_dep(network)?;
 
     // QR lock testnet deployment uses data2, not type id, so no need to look up.
     if network != NetworkType::Mainnet {
-        return testnet_qr_lock_dep();
+        return Ok(pinned);
     }
     let rpc_url = &qp_client.config().rpc_url;
 
@@ -129,19 +146,9 @@ pub(crate) fn locate_qr_lock_dep(qp_client: &QpClient) -> Result<OutPoint, NodeM
     let (out_point, found) = match (looked_up, previous) {
         (Ok(Some(out_point)), _) => (out_point, true),
         // A lookup that failed or found nothing says nothing about where the
-        // cell is, so the last answer for this backend stands.
-        (Ok(None) | Err(_), Some(previous)) => (previous.out_point.clone(), false),
-        (Ok(None), None) => {
-            return Err(NodeManagerError::RpcError(
-                "Couldn't find the lock script's code cell on the chain.".to_string(),
-            ))
-        }
-        (Err(e), None) => {
-            return Err(NodeManagerError::RpcError(format!(
-                "Couldn't look up the lock script's code cell: {}",
-                e
-            )))
-        }
+        // cell is, so the last answer for this backend stands, or the pinned
+        // cell when there is none yet.
+        (Ok(None) | Err(_), previous) => (previous.map_or(pinned, |e| e.out_point.clone()), false),
     };
 
     // A cell the light client already holds and checked stays ready when it
@@ -174,7 +181,7 @@ pub fn qr_lock_cell_dep(qp_client: &QpClient) -> Result<OutPoint, NodeManagerErr
     }
     let network = qp_client.config().network;
     if network != NetworkType::Mainnet {
-        return testnet_qr_lock_dep();
+        return fallback_qr_lock_dep(network);
     }
     let rpc_url = &qp_client.config().rpc_url;
     let cache = lock_qr_lock_dep_cache();

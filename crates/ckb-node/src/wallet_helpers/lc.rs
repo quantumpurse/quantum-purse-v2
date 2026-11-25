@@ -28,8 +28,8 @@ use crate::error::NodeManagerError;
 /// to the RPC timeout, so call this off the UI thread.
 ///
 /// Returns `true` once the dep is in the LC's store and checked; `false`
-/// while the fetch is still pending. An error when the cell can't be
-/// looked up or fails the check. Idempotent.
+/// while the fetch is still pending. An error when the cell fails the
+/// check. Idempotent.
 pub fn fetch_qr_lock_dep(qp_client: &QpClient) -> Result<bool, NodeManagerError> {
     let Some(light) = qp_client.as_any().downcast_ref::<LightClient>() else {
         return Err(NodeManagerError::UnsupportedOperation {

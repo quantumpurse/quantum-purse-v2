@@ -71,21 +71,18 @@ pub const CKB_TESTNET_CODE_HASH: &str =
     "0x147ecbb5c5127d982ee1362d2c2bb4267803da2eb006d150e88af6caaa0a7eaf";
 pub const CKB_TESTNET_HASH_TYPE: ScriptHashType = ScriptHashType::Data2;
 
+/// Fallback code cell when the Type ID lookup fails; update it whenever the lock is upgraded.
+pub const CKB_MAINNET_CELL_DEP_TX_HASH: &str =
+    "0x4598d00df2f3dc8bc40eee38689a539c94f6cc3720b7a2a6746736daa60f500a";
+pub const CKB_MAINNET_CELL_DEP_INDEX: u32 = 0;
+
 /// The Type ID of the mainnet lock script's code cell: the args of that
 /// cell's type script, whose hash is `CKB_MAINNET_CODE_HASH`. It stays the
 /// same across upgrades of the lock, so the live code cell is found by it.
-/// Read from the type script of output 0 of the transaction that deployed
-/// the lock,
-/// `0x4598d00df2f3dc8bc40eee38689a539c94f6cc3720b7a2a6746736daa60f500a`.
+/// Read from the type script of output 0 of `CKB_MAINNET_CELL_DEP_TX_HASH`.
 pub const CKB_MAINNET_TYPE_ID_ARGS: &str =
     "0xf75c922a8abc94895eecf172b9efcea049f4a9f666f9be3c9f6494fa71c7c25b";
 
-/// Cell dep OutPoint — the on-chain cell that contains the lock script binary.
-/// Used to construct the CellDep when building transactions.
-///
-/// Testnet only. The mainnet lock is referenced by Type ID, so an upgrade
-/// moves its code to a new cell and spends the old one: no out point stays
-/// right, and the live cell is looked up by `CKB_MAINNET_TYPE_ID_ARGS`.
 pub const CKB_TESTNET_CELL_DEP_TX_HASH: &str =
     "0x631d9a6049fb1fc3790e89d9daf35abe535b5e754cd8c3404319319710f0b106";
 pub const CKB_TESTNET_CELL_DEP_INDEX: u32 = 0;
