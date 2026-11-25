@@ -33,10 +33,6 @@ struct CachedQrLockDep {
     /// or found nothing: the out point is then the last one a lookup did
     /// find for this backend, or the pinned one when none ever did.
     found: bool,
-    /// Light client only: whether the cell's transaction is in the light
-    /// client's store and the cell was checked to carry the lock's Type ID.
-    /// Always `true` on a full node or the public RPC, which hold every cell.
-    ready: bool,
 }
 
 /// Stores the outpoint for different backends.
@@ -46,10 +42,6 @@ static QR_LOCK_DEP_CACHE: Mutex<Vec<CachedQrLockDep>> = Mutex::new(Vec::new());
 
 fn lock_qr_lock_dep_cache() -> std::sync::MutexGuard<'static, Vec<CachedQrLockDep>> {
     QR_LOCK_DEP_CACHE.lock().unwrap_or_else(|e| e.into_inner())
-}
-
-fn is_light_client(qp_client: &QpClient) -> bool {
-    qp_client.config().node_type == NodeType::LightClient
 }
 
 /// The out point pinned in the constants for `network`: the testnet code
@@ -151,10 +143,6 @@ pub(crate) fn locate_qr_lock_dep(qp_client: &QpClient) -> Result<OutPoint, NodeM
         (Ok(None) | Err(_), previous) => (previous.map_or(pinned, |e| e.out_point.clone()), false),
     };
 
-    // A cell the light client already holds and checked stays ready when it
-    // is named again.
-    let ready = !is_light_client(qp_client)
-        || previous.is_some_and(|e| e.out_point == out_point && e.ready);
     // Replace this backend's entry.
     cache.retain(|e| e.rpc_url != *rpc_url);
     cache.push(CachedQrLockDep {
@@ -162,57 +150,22 @@ pub(crate) fn locate_qr_lock_dep(qp_client: &QpClient) -> Result<OutPoint, NodeM
         at: Instant::now(),
         out_point: out_point.clone(),
         found,
-        ready,
     });
     Ok(out_point)
 }
 
-/// The out point the transaction builder puts in the lock's cell dep.
-///
-/// On a full node or the public RPC this is [`locate_qr_lock_dep`], and
-/// may ask the node. On a mainnet light client it never asks anything: it is
-/// the cell `lc::fetch_qr_lock_dep` has fetched and checked for this
-/// backend. When there is none, the build is refused instead of pointing at
-/// a cell the light client may not hold, which the network would reject;
-/// calling `lc::fetch_qr_lock_dep` until it returns `true` makes one.
-pub fn qr_lock_cell_dep(qp_client: &QpClient) -> Result<OutPoint, NodeManagerError> {
-    if !is_light_client(qp_client) {
-        return locate_qr_lock_dep(qp_client);
-    }
-    let network = qp_client.config().network;
-    if network != NetworkType::Mainnet {
-        return fallback_qr_lock_dep(network);
-    }
-    let rpc_url = &qp_client.config().rpc_url;
-    let cache = lock_qr_lock_dep_cache();
-    cache
-        .iter()
-        .find(|e| e.rpc_url == *rpc_url && e.ready)
-        .map(|e| e.out_point.clone())
-        .ok_or_else(|| {
-            NodeManagerError::RpcError(
-                "The light client hasn't fetched and checked the lock script's code cell yet. \
-                 Try again in a moment."
-                    .to_string(),
-            )
-        })
-}
-
 /// Checks, on a light client that has fetched `out_point`'s transaction,
-/// that the cell there really carries the lock's Type ID, and marks it ready
-/// for the builder. This catches a public RPC that pointed at some other
-/// cell. It does not prove the cell is still live, which only the network
-/// decides when the transaction is sent. On a mismatch the cell is forgotten,
-/// so the next call looks it up again, and this is an error.
-///
-/// Returns whether the builder will now use `out_point`. A testnet one
-/// needs no check.
+/// that the cell there really carries the lock's Type ID. This catches a
+/// public RPC that pointed at some other cell. It does not prove the cell is
+/// still live, which only the network decides when the transaction is sent.
+/// On a mismatch the cell is forgotten, so the next call looks it up again,
+/// and this is an error. A testnet cell needs no check.
 pub(crate) fn confirm_qr_lock_dep(
     qp_client: &QpClient,
     out_point: &OutPoint,
-) -> Result<bool, NodeManagerError> {
+) -> Result<(), NodeManagerError> {
     if qp_client.config().network != NetworkType::Mainnet {
-        return Ok(true);
+        return Ok(());
     }
     let type_id = mainnet_qr_lock_type_id()?;
     let carried = qp_client
@@ -225,28 +178,17 @@ pub(crate) fn confirm_qr_lock_dep(
                 .cloned()
         })
         .and_then(|output| output.type_);
-    let confirmed = carried == Some(type_id);
-
-    // The verdict only applies to the entry this check was made for. Another
-    // worker's lookup may have named a different cell while the light client
-    // was fetching: that entry is left alone, whether it is still to be
-    // checked or already ready, and the next call deals with it.
-    let rpc_url = &qp_client.config().rpc_url;
-    let mut cache = lock_qr_lock_dep_cache();
-    let Some(position) = cache
-        .iter()
-        .position(|e| e.rpc_url == *rpc_url && e.out_point == *out_point)
-    else {
-        return Ok(false);
-    };
-    if !confirmed {
-        cache.remove(position);
-        return Err(NodeManagerError::RpcError(
-            "The cell the public RPC named doesn't carry the lock script's Type ID.".to_string(),
-        ));
+    if carried == Some(type_id) {
+        return Ok(());
     }
-    cache[position].ready = true;
-    Ok(true)
+
+    // Forget only the entry that names this cell: another worker's lookup
+    // may have replaced it meanwhile, and that one is left alone.
+    let rpc_url = &qp_client.config().rpc_url;
+    lock_qr_lock_dep_cache().retain(|e| !(e.rpc_url == *rpc_url && e.out_point == *out_point));
+    Err(NodeManagerError::RpcError(
+        "The cell the public RPC named doesn't carry the lock script's Type ID.".to_string(),
+    ))
 }
 
 /// Builds the Quantum Resistant lock script for `network` with the given

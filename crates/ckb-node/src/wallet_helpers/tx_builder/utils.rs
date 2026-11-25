@@ -18,7 +18,7 @@ use qpv2_core::constants;
 /// (`get_genesis_block`). The genesis block contains the system script
 /// cell deps (sighash, multisig, DAO). The quantum-resistant lock
 /// script is a custom deployment and must be registered explicitly,
-/// at the out point its code cell sits at now (`qr_lock_cell_dep`).
+/// at the out point its code cell sits at now (`locate_qr_lock_dep`).
 pub fn cell_dep_resolver_from_rpc(
     qp_client: &QpClient,
 ) -> Result<DefaultCellDepResolver, NodeManagerError> {
@@ -45,7 +45,8 @@ pub fn cell_dep_resolver_from_rpc(
         .trim_start_matches("0x")
         .parse()
         .map_err(|e| NodeManagerError::RpcError(format!("Invalid QR lock code_hash: {}", e)))?;
-    let dep_out_point: OutPoint = crate::wallet_helpers::utils::qr_lock_cell_dep(qp_client)?.into();
+    let dep_out_point: OutPoint =
+        crate::wallet_helpers::utils::locate_qr_lock_dep(qp_client)?.into();
 
     let script_id = ScriptId::new(code_hash.clone(), hash_type);
     let cell_dep = CellDep::new_builder()

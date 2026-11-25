@@ -20,8 +20,8 @@ use std::sync::mpsc;
 ///
 /// Called on the build worker, never the UI thread: on mainnet it may
 /// first ask the public RPC where the lock's code cell sits now. The
-/// builder that follows only uses a cell that was fetched and checked this
-/// way, and refuses to build when there is none.
+/// builder that follows names the same cell, so this must run right before
+/// every build.
 fn check_qr_lock_dep_ready(qp_client: &QpClient) -> Result<(), String> {
     if qp_client.config().node_type != NodeType::LightClient {
         return Ok(());

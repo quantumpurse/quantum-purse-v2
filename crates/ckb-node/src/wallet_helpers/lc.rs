@@ -21,8 +21,8 @@ use crate::error::NodeManagerError;
 ///
 /// The cell is the one a lookup by the lock's Type ID names, so after an
 /// upgrade of the lock the new cell is fetched. Once fetched, the cell is
-/// checked to carry that Type ID, and only then does the transaction
-/// builder use it (`utils::qr_lock_cell_dep`).
+/// checked to carry that Type ID. The transaction builder names the same
+/// cell (`utils::locate_qr_lock_dep`), so call this right before a build.
 ///
 /// The lookup asks the public RPC when it is due, which can block for up
 /// to the RPC timeout, so call this off the UI thread.
@@ -44,7 +44,8 @@ pub fn fetch_qr_lock_dep(qp_client: &QpClient) -> Result<bool, NodeManagerError>
         return Ok(false);
     }
     // verify the fetched cell with the light client store.
-    super::utils::confirm_qr_lock_dep(qp_client, &out_point)
+    super::utils::confirm_qr_lock_dep(qp_client, &out_point)?;
+    Ok(true)
 }
 
 /// Registers wallet lock scripts with the LC's indexer at the given
