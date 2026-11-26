@@ -870,7 +870,7 @@ impl App {
     /// Looks up again a transaction whose send got no usable answer, once
     /// its wait is over, and sends it again when the node doesn't have it.
     /// The result comes back on the send channel, like a send's.
-    pub(crate) fn settle_uncertain_submission(&mut self) {
+    pub(crate) fn submit_uncertain(&mut self) {
         let (kind, tx, retry_at) = match &self.tx_status {
             TransactionStatus::Uncertain {
                 kind, tx, retry_at, ..
@@ -895,7 +895,7 @@ impl App {
     /// Gives up on a transaction whose send got no usable answer, when the
     /// user chooses to: sending is allowed again, and the hash is reported so
     /// the user can look the transaction up first.
-    pub(crate) fn stop_checking_send(&mut self) {
+    pub(crate) fn stop_checking_submission(&mut self) {
         let TransactionStatus::Uncertain { hash, .. } = &self.tx_status else {
             return;
         };

@@ -117,7 +117,7 @@ impl App {
                     kind,
                     tx,
                     hash,
-                    retry_at: std::time::Instant::now() + ckb_node::tx_builder::SETTLE_WAIT,
+                    retry_at: std::time::Instant::now() + ckb_node::tx_builder::SUBMIT_WAIT,
                 };
             }
             Err(mpsc::TryRecvError::Empty) => {}

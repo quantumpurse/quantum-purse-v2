@@ -763,11 +763,11 @@ fn handle_dao_list(
 }
 
 /// How many times a send that got no answer is checked before giving up.
-const SETTLE_ATTEMPTS: u32 = 3;
+const SUBMIT_ATTEMPTS: u32 = 3;
 
 /// Sends `signed_tx` and returns its hash. A send that gets no answer may
 /// still have reached the node, so it is looked up by hash and sent again a
-/// few times. If that settles nothing, the result is reported as uncertain
+/// few times. If it stays uncertain, the result is reported as uncertain
 /// with the hash, never as a failure, so the user looks it up instead of
 /// paying a second time.
 fn submit_transaction(
@@ -779,7 +779,7 @@ fn submit_transaction(
 
     let hash: ckb_types::H256 = signed_tx.hash().unpack();
     let mut outcome = ckb_node::tx_builder::send_transaction(qp_client, signed_tx);
-    for _ in 0..SETTLE_ATTEMPTS {
+    for _ in 0..SUBMIT_ATTEMPTS {
         let SendOutcome::Uncertain(e) = &outcome else {
             break;
         };
@@ -787,7 +787,7 @@ fn submit_transaction(
             "No answer from the node ({}). Checking transaction {:#x}...",
             e, hash
         );
-        std::thread::sleep(ckb_node::tx_builder::SETTLE_WAIT);
+        std::thread::sleep(ckb_node::tx_builder::SUBMIT_WAIT);
         outcome = ckb_node::tx_builder::resubmit(qp_client, signed_tx);
     }
     match outcome {

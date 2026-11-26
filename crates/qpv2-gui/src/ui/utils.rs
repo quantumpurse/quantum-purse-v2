@@ -241,7 +241,7 @@ impl App {
         }
 
         if stop_checking {
-            self.stop_checking_send();
+            self.stop_checking_submission();
         }
     }
 }

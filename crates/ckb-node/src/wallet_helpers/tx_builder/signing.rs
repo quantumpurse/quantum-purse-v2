@@ -266,12 +266,12 @@ pub fn send_transaction(qp_client: &QpClient, tx: &TransactionView) -> SendOutco
 
 /// How long to wait before each [`resubmit`] call on the same
 /// transaction.
-pub const SETTLE_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+pub const SUBMIT_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 
-/// Settles a transaction whose send got no usable answer: asks the node for
-/// it by hash, and sends it again when the node doesn't have it. Sending
-/// again is safe, because the same transaction has the same hash and so
-/// can't pay twice.
+/// Submits a transaction again after a send that got no usable answer:
+/// asks the node for it by hash first, and sends it only when the node
+/// doesn't have it. Sending again is safe, because the same transaction has
+/// the same hash and so can't pay twice.
 pub fn resubmit(qp_client: &QpClient, tx: &TransactionView) -> SendOutcome {
     if let Some(outcome) = look_up_transaction(qp_client, tx) {
         return outcome;

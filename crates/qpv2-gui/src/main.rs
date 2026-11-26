@@ -693,7 +693,7 @@ impl eframe::App for App {
             self.fetch_tx_history(true);
             self.fetch_dao_cells();
             self.fetch_node_status();
-            self.settle_uncertain_submission();
+            self.submit_uncertain();
 
             // Adoption series rebuild, on its own schedule. Every RPC
             // call is bounded by ckb-node's `RPC_TIMEOUT`, so an

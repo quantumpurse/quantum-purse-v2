@@ -448,7 +448,7 @@ impl App {
         // new one would refuse it and report a failure for a transaction
         // that may have gone through, so the check ends here instead.
         if self.qp_client.config().network != network {
-            self.stop_checking_send();
+            self.stop_checking_submission();
         }
 
         // Replace the manager + client with fresh ones bound to the

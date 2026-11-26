@@ -15,7 +15,7 @@ pub mod utils;
 pub use dao::{QpDaoDepositBuilder, QpDaoPrepareBuilder, QpDaoWithdrawBuilder};
 pub use signing::{
     fetch_hardware_signing_context, fetch_header_deps, fetch_input_cells, fetch_prev_txs,
-    fill_witness, send_transaction, resubmit, SETTLE_WAIT,
+    fill_witness, resubmit, send_transaction, SUBMIT_WAIT,
 };
 pub use transfer::QpTransferBuilder;
 
@@ -35,7 +35,8 @@ pub struct HardwareSigningContext {
     pub headers: Vec<HeaderView>,
 }
 
-/// What a send attempt says about a signed transaction.
+/// What became of a signed transaction, as learned from sending it or
+/// looking it up by hash.
 #[derive(Debug)]
 pub enum SendOutcome {
     /// The node has the transaction: it accepted it, or already had it.
