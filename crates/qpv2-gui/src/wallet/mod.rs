@@ -444,6 +444,13 @@ impl App {
             return;
         }
 
+        // A send whose result is uncertain belongs to the old network. The
+        // new one would refuse it and report a failure for a transaction
+        // that may have gone through, so the check ends here instead.
+        if self.qp_client.config().network != network {
+            self.stop_checking_send();
+        }
+
         // Replace the manager + client with fresh ones bound to the
         // newly-saved config. The old LocalNodeProcess's drop stops its
         // child cleanly via the inner *Process::drop; the old
