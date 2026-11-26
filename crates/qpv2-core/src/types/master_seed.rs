@@ -1,4 +1,4 @@
-//! The master seed, opened for key derivation.
+//! The master seed, loaded for key derivation.
 
 use fips205::{
     traits::{KeyGen, SerDes},
@@ -13,7 +13,7 @@ use crate::types::{AuthKey, SpxVariant};
 use crate::{db, utilities, KeyVault, SecureVec};
 
 /// A wallet's master seed, decrypted, with the wallet's passphrase mixed in
-/// and verified. Only [`MasterSeed::open`] makes one, and keys are derived
+/// and verified. Only [`MasterSeed::load`] makes one, and keys are derived
 /// from nothing else, so no key can come from a seed that skipped a step.
 /// The seed bytes never leave this type.
 pub(crate) struct MasterSeed {
@@ -23,17 +23,17 @@ pub(crate) struct MasterSeed {
 }
 
 impl MasterSeed {
-    /// Opens the wallet's master seed for key derivation. A passphrase that
+    /// Loads the wallet's master seed for key derivation. A passphrase that
     /// disagrees with the wallet's `is_passphrase` is refused before the seed
     /// is decrypted, and a wrong one is refused after it is mixed in.
     ///
     /// **Parameters**:
-    /// - `vault: &KeyVault` - The wallet whose master seed is opened.
+    /// - `vault: &KeyVault` - The wallet whose master seed is loaded.
     /// - `auth: &AuthKey` - The authentication key used to decrypt the master seed.
     /// - `passphrase: Option<&str>` - The wallet's passphrase, or `None` for a wallet without one.
     ///
     /// **Returns**:
-    /// - `Result<MasterSeed, String>` - The opened master seed on success, or an error message on failure.
+    /// - `Result<MasterSeed, String>` - The loaded master seed on success, or an error message on failure.
     pub(crate) fn load(
         vault: &KeyVault,
         auth: &AuthKey,

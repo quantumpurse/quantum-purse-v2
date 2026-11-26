@@ -710,7 +710,7 @@ impl KeyVault {
         Ok(lock_args_array)
     }
 
-    /// Supporting wallet recovery - Recovers the wallet by deriving and storing private keys for the first N accounts.
+    /// Supporting wallet recovery - Recovers the wallet by deriving and storing its first N single-sig accounts. Only the accounts are stored; private keys never are.
     ///
     /// **Parameters**:
     /// - `auth: AuthKey` - The authentication key used to decrypt the master seed.
