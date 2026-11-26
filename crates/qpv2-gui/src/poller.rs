@@ -129,8 +129,8 @@ impl App {
                         "Send thread terminated unexpectedly.".to_string(),
                     );
                 }
-                // A lookup that died leaves `Uncertain` as it was, so the
-                // next one starts after its wait.
+                // A lookup that died leaves `Uncertain` as it was. Its wait
+                // is already over, so the next one starts within a second.
             }
         }
     }

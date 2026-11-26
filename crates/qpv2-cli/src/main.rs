@@ -788,7 +788,7 @@ fn submit_transaction(
             e, hash
         );
         std::thread::sleep(ckb_node::tx_builder::SETTLE_WAIT);
-        outcome = ckb_node::tx_builder::settle_transaction(qp_client, signed_tx);
+        outcome = ckb_node::tx_builder::resubmit(qp_client, signed_tx);
     }
     match outcome {
         SendOutcome::Accepted => Ok(hash),

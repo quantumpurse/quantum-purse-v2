@@ -887,7 +887,7 @@ impl App {
         self.transaction_submission_rx = Some(rx_send);
 
         std::thread::spawn(move || {
-            let outcome = ckb_node::tx_builder::settle_transaction(&qp_client, &signed_tx);
+            let outcome = ckb_node::tx_builder::resubmit(&qp_client, &signed_tx);
             let _ = tx_send.send((kind, SubmissionResult::new(outcome, signed_tx)));
         });
     }
