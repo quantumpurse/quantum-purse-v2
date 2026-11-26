@@ -1,6 +1,10 @@
 # QPV2
 
-QPV2 is a pure Rust Quantum Purse built on top of [Quantum Purse V1's core](https://github.com/quantumpurse/key-vault-wasm). QPV2 is Optimized for security and performance. Design by human, developed in collaboration with Claude Opus and Fable.
+QPV2 is a pure Rust Quantum Purse built on top of [Quantum Purse V1's core](https://github.com/quantumpurse/key-vault-wasm). QPV2 is Optimized for security and performance. Design by human, developed in collaboration with Claude AI.
+
+<img width="1093" height="676" alt="sample" src="https://github.com/user-attachments/assets/7e9ef990-96ac-4b81-9229-8528234b901f" />
+
+
 
 ### Crates
 
