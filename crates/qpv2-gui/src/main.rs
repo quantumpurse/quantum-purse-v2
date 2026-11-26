@@ -119,7 +119,7 @@ pub(crate) struct App {
     /// the other flow's transaction as their own. Only meaningful while
     /// `tx_status` is non-Idle.
     pub(crate) active_tx_kind: Option<TransactionKind>,
-    pub(crate) transaction_send_rx: Option<mpsc::Receiver<TransactionSendResult>>,
+    pub(crate) transaction_submission_rx: Option<mpsc::Receiver<TransactionSendResult>>,
     pub(crate) transaction_build_rx: Option<mpsc::Receiver<TxBuildResult>>,
 
     // Transfer form state.
@@ -520,7 +520,7 @@ impl App {
             tx_status: TransactionStatus::Idle,
             active_tx_kind: None,
             transaction_build_rx: None,
-            transaction_send_rx: None,
+            transaction_submission_rx: None,
             dao_view: DaoView::Overview,
             dao_deposited_cells: Vec::new(),
             dao_prepared_cells: Vec::new(),
@@ -675,7 +675,7 @@ impl eframe::App for App {
         if self.screen == Screen::Unlocked {
             self.poll_all_balances();
             self.poll_transaction_build();
-            self.poll_transaction_send();
+            self.poll_transaction_submission();
             self.poll_dao_cells();
             self.poll_deposit_headers();
             self.poll_tx_history();
@@ -693,6 +693,7 @@ impl eframe::App for App {
             self.fetch_tx_history(true);
             self.fetch_dao_cells();
             self.fetch_node_status();
+            self.settle_uncertain_submission();
 
             // Adoption series rebuild, on its own schedule. Every RPC
             // call is bounded by ckb-node's `RPC_TIMEOUT`, so an
@@ -760,7 +761,7 @@ impl eframe::App for App {
         // Request repaint while an async operation is pending so we poll promptly.
         let async_pending = self.balance_receiver.is_some()
             || self.transaction_build_rx.is_some()
-            || self.transaction_send_rx.is_some()
+            || self.transaction_submission_rx.is_some()
             || self.dao_cells_query_rx.is_some()
             || self.deposit_headers_rx.is_some()
             || self.tx_history_rx.is_some();

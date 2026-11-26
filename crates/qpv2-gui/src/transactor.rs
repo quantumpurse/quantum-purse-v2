@@ -1,9 +1,10 @@
 //! Transaction building, signing, and sending.
 
-use crate::types::{SignedTx, TransactionKind, TransactionStatus};
+use crate::types::{SignedTx, SubmissionResult, TransactionKind, TransactionStatus};
 use crate::wallet::{get_fido2_dek, spawn_fido2_job};
 use crate::App;
 use ckb_node::{NodeType, QpClient};
+use ckb_types::core::TransactionView;
 use qpv2_core::types::{AuthKey, MsigSignature, SphincsPlusAccount};
 use qpv2_core::KeyVault;
 use std::sync::mpsc;
@@ -628,12 +629,12 @@ impl App {
         );
 
         // Poller set AwaitingSignature; the worker does fetch → sign → send and
-        // reports over the shared send channel, finalized by poll_transaction_send.
+        // reports over the shared send channel, finalized by poll_transaction_submission.
         let (tx_send, rx_send) = mpsc::channel();
-        self.transaction_send_rx = Some(rx_send);
+        self.transaction_submission_rx = Some(rx_send);
 
         std::thread::spawn(move || {
-            let result = (|| -> Result<String, String> {
+            let signed = (|| -> Result<TransactionView, String> {
                 let sign_group: Vec<u32> = (0..unsigned_tx.inputs().len() as u32).collect();
 
                 let signing_context =
@@ -657,14 +658,16 @@ impl App {
                     )
                     .map_err(|e| format!("Trezor signing failed: {}", e))?;
 
-                let signed_tx =
-                    ckb_node::tx_builder::fill_witness(unsigned_tx, 0, signed.witness_lock)
-                        .map_err(|e| format!("Failed to fill witness: {}", e))?;
-
-                ckb_node::tx_builder::send_transaction(&qp_client, &signed_tx)
-                    .map(|hash| format!("{:#x}", hash))
-                    .map_err(|e| format!("Failed to send transaction: {}", e))
+                ckb_node::tx_builder::fill_witness(unsigned_tx, 0, signed.witness_lock)
+                    .map_err(|e| format!("Failed to fill witness: {}", e))
             })();
+            let result = match signed {
+                Ok(signed_tx) => {
+                    let outcome = ckb_node::tx_builder::send_transaction(&qp_client, &signed_tx);
+                    SubmissionResult::new(outcome, signed_tx)
+                }
+                Err(e) => SubmissionResult::Failed(e),
+            };
             let _ = tx_send.send((kind, result));
         });
     }
@@ -784,13 +787,11 @@ impl App {
                 self.tx_status = TransactionStatus::Sending;
                 let qp_client = self.qp_client.clone();
                 let (tx_send, rx_send) = mpsc::channel();
-                self.transaction_send_rx = Some(rx_send);
+                self.transaction_submission_rx = Some(rx_send);
 
                 std::thread::spawn(move || {
-                    let result = ckb_node::tx_builder::send_transaction(&qp_client, &signed_tx)
-                        .map(|hash| format!("{:#x}", hash))
-                        .map_err(|e| format!("Failed to send transaction: {}", e));
-                    let _ = tx_send.send((kind, result));
+                    let outcome = ckb_node::tx_builder::send_transaction(&qp_client, &signed_tx);
+                    let _ = tx_send.send((kind, SubmissionResult::new(outcome, signed_tx)));
                 });
             }
             SignedTx::Multisig {
@@ -858,13 +859,53 @@ impl App {
         self.tx_status = TransactionStatus::Sending;
         let qp_client = self.qp_client.clone();
         let (tx_send, rx_send) = mpsc::channel();
-        self.transaction_send_rx = Some(rx_send);
+        self.transaction_submission_rx = Some(rx_send);
 
         std::thread::spawn(move || {
-            let result = ckb_node::tx_builder::send_transaction(&qp_client, &signed_tx)
-                .map(|hash| format!("{:#x}", hash))
-                .map_err(|e| format!("Failed to send transaction: {}", e));
-            let _ = tx_send.send((kind, result));
+            let outcome = ckb_node::tx_builder::send_transaction(&qp_client, &signed_tx);
+            let _ = tx_send.send((kind, SubmissionResult::new(outcome, signed_tx)));
         });
+    }
+
+    /// Looks up again a transaction whose send got no usable answer, once
+    /// its wait is over, and sends it again when the node doesn't have it.
+    /// The result comes back on the send channel, like a send's.
+    pub(crate) fn settle_uncertain_submission(&mut self) {
+        let (kind, tx, retry_at) = match &self.tx_status {
+            TransactionStatus::Uncertain {
+                kind, tx, retry_at, ..
+            } => (*kind, tx, *retry_at),
+            _ => return,
+        };
+        if self.transaction_submission_rx.is_some() || std::time::Instant::now() < retry_at {
+            return;
+        }
+
+        let signed_tx = (**tx).clone();
+        let qp_client = self.qp_client.clone();
+        let (tx_send, rx_send) = mpsc::channel();
+        self.transaction_submission_rx = Some(rx_send);
+
+        std::thread::spawn(move || {
+            let outcome = ckb_node::tx_builder::settle_transaction(&qp_client, &signed_tx);
+            let _ = tx_send.send((kind, SubmissionResult::new(outcome, signed_tx)));
+        });
+    }
+
+    /// Gives up on a transaction whose send got no usable answer, when the
+    /// user chooses to: sending is allowed again, and the hash is reported so
+    /// the user can look the transaction up first.
+    pub(crate) fn stop_checking_send(&mut self) {
+        let TransactionStatus::Uncertain { hash, .. } = &self.tx_status else {
+            return;
+        };
+        let msg = format!(
+            "Stopped checking transaction 0x{}. It may still have been sent: look it up before sending again.",
+            hash
+        );
+        tracing::warn!("{}", msg);
+        // A lookup still running belongs to the abandoned check.
+        self.transaction_submission_rx = None;
+        self.tx_status = TransactionStatus::Error(msg);
     }
 }

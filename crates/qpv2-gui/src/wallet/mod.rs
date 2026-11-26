@@ -259,7 +259,7 @@ impl App {
         self.tx_history_rx = None;
         self.balance_receiver = None;
         self.transaction_build_rx = None;
-        self.transaction_send_rx = None;
+        self.transaction_submission_rx = None;
         self.node_status_rx = None;
         self.earliest_funding_block_rx = None;
         // Also cancels a pending Trezor import when the user creates or

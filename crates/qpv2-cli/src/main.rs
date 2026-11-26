@@ -762,6 +762,44 @@ fn handle_dao_list(
     Ok(())
 }
 
+/// How many times a send that got no answer is checked before giving up.
+const SETTLE_ATTEMPTS: u32 = 3;
+
+/// Sends `signed_tx` and returns its hash. A send that gets no answer may
+/// still have reached the node, so it is looked up by hash and sent again a
+/// few times. If that settles nothing, the result is reported as uncertain
+/// with the hash, never as a failure, so the user looks it up instead of
+/// paying a second time.
+fn submit_transaction(
+    qp_client: &ckb_node::QpClient,
+    signed_tx: &ckb_types::core::TransactionView,
+) -> Result<ckb_types::H256, String> {
+    use ckb_node::tx_builder::SendOutcome;
+    use ckb_types::prelude::*;
+
+    let hash: ckb_types::H256 = signed_tx.hash().unpack();
+    let mut outcome = ckb_node::tx_builder::send_transaction(qp_client, signed_tx);
+    for _ in 0..SETTLE_ATTEMPTS {
+        let SendOutcome::Uncertain(e) = &outcome else {
+            break;
+        };
+        println!(
+            "No answer from the node ({}). Checking transaction {:#x}...",
+            e, hash
+        );
+        std::thread::sleep(ckb_node::tx_builder::SETTLE_WAIT);
+        outcome = ckb_node::tx_builder::settle_transaction(qp_client, signed_tx);
+    }
+    match outcome {
+        SendOutcome::Accepted => Ok(hash),
+        SendOutcome::Rejected(e) => Err(format!("Failed to send transaction: {}", e)),
+        SendOutcome::Uncertain(e) => Err(format!(
+            "The send result is uncertain: {}. Look up transaction {:#x} before sending again.",
+            e, hash
+        )),
+    }
+}
+
 fn handle_dao_deposit(
     wallet_id: u32,
     lock_args: &str,
@@ -821,8 +859,7 @@ fn handle_dao_deposit(
     };
 
     println!("Submitting transaction...");
-    let tx_hash = ckb_node::tx_builder::send_transaction(&qp_client, &signed_tx)
-        .map_err(|e| format!("Failed to send transaction: {}", e))?;
+    let tx_hash = submit_transaction(&qp_client, &signed_tx)?;
     println!("DAO deposit submitted: {:#x}", tx_hash);
     Ok(())
 }
@@ -882,8 +919,7 @@ fn handle_dao_prepare(
     };
 
     println!("Submitting transaction...");
-    let tx_hash = ckb_node::tx_builder::send_transaction(&qp_client, &signed_tx)
-        .map_err(|e| format!("Failed to send transaction: {}", e))?;
+    let tx_hash = submit_transaction(&qp_client, &signed_tx)?;
     println!("DAO prepare submitted: {:#x}", tx_hash);
     Ok(())
 }
@@ -943,8 +979,7 @@ fn handle_dao_withdraw(
     };
 
     println!("Submitting transaction...");
-    let tx_hash = ckb_node::tx_builder::send_transaction(&qp_client, &signed_tx)
-        .map_err(|e| format!("Failed to send transaction: {}", e))?;
+    let tx_hash = submit_transaction(&qp_client, &signed_tx)?;
     println!("DAO withdraw submitted: {:#x}", tx_hash);
     Ok(())
 }
@@ -1024,8 +1059,7 @@ fn handle_transfer(
     };
 
     println!("Submitting transaction...");
-    let tx_hash = ckb_node::tx_builder::send_transaction(&qp_client, &signed_tx)
-        .map_err(|e| format!("Failed to send transaction: {}", e))?;
+    let tx_hash = submit_transaction(&qp_client, &signed_tx)?;
 
     println!("Transaction submitted: {:#x}", tx_hash);
     Ok(())
@@ -1454,8 +1488,7 @@ fn handle_msig_submit(
     let qp_client = make_qp_client(network, rpc_url)?;
 
     println!("Submitting transaction...");
-    let tx_hash = ckb_node::tx_builder::send_transaction(&qp_client, &signed_tx)
-        .map_err(|e| format!("Failed to send transaction: {}", e))?;
+    let tx_hash = submit_transaction(&qp_client, &signed_tx)?;
 
     println!("Transaction submitted: {:#x}", tx_hash);
     Ok(())

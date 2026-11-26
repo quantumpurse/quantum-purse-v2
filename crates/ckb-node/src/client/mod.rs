@@ -32,6 +32,16 @@ use ckb_types::H256;
 use crate::config::{NetworkType, NodeConfig, NodeType};
 use crate::error::NodeManagerError;
 
+/// Maps the error of a `send_transaction` call. An error reply means the
+/// node refused the transaction; any other failure left its fate uncertain,
+/// since the node may have received it before the answer was lost.
+pub(crate) fn send_error(e: ckb_sdk::RpcError) -> NodeManagerError {
+    match e {
+        ckb_sdk::RpcError::Rpc(_) => NodeManagerError::RpcError(e.to_string()),
+        _ => NodeManagerError::NoAck(e.to_string()),
+    }
+}
+
 mod full;
 mod light;
 

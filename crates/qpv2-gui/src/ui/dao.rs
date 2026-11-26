@@ -215,10 +215,13 @@ impl App {
             return;
         }
 
-        // A multisig deposit pauses for co-signatures; the coordination
-        // panel lives on the DAO screen behind this modal, so close the
-        // modal to reveal it.
-        if matches!(self.tx_status, TransactionStatus::AwaitingCoSigners { .. }) {
+        // A multisig deposit pauses for co-signatures, and a send that got
+        // no answer is checked with a way to stop; both live on the DAO
+        // screen behind this modal, so close the modal to reveal them.
+        if matches!(
+            self.tx_status,
+            TransactionStatus::AwaitingCoSigners { .. } | TransactionStatus::Uncertain { .. }
+        ) {
             self.dao_view = DaoView::Overview;
             return;
         }

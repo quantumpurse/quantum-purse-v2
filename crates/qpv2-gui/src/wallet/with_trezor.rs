@@ -204,7 +204,7 @@ impl App {
             // Signing shares its channel with the other auth methods, so it
             // only implies device work on a device-backed wallet.
             || (matches!(self.auth_method, Some(AuthMethod::Trezor { .. }))
-                && self.transaction_send_rx.is_some())
+                && self.transaction_submission_rx.is_some())
     }
 
     /// Refresh the Trezor link status if the cadence is due.

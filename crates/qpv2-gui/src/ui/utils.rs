@@ -146,7 +146,7 @@ impl App {
     /// the status slot is shared, and a DAO transaction's progress must
     /// not read as a transfer's (or vice versa). A finished transaction's
     /// result shows in the status bar instead (`report_finished_tx_status`).
-    pub(crate) fn draw_tx_status_log(&self, ui: &mut egui::Ui, dao_screen: bool) {
+    pub(crate) fn draw_tx_status_log(&mut self, ui: &mut egui::Ui, dao_screen: bool) {
         let owns = self
             .active_tx_kind
             .is_some_and(|k| k.is_dao() == dao_screen);
@@ -159,6 +159,7 @@ impl App {
         }
         let c = &self.colors;
         ui.add_space(10.0);
+        let mut stop_checking = false;
 
         match &self.tx_status {
             TransactionStatus::Idle
@@ -233,6 +234,14 @@ impl App {
                 c.text,
                 true,
             ),
+            TransactionStatus::Uncertain { hash, .. } => {
+                let message = format!("Send result uncertain. Checking 0x{}...", hash);
+                stop_checking = log_line_with_stop(ui, c, "[SEND ]", c.warn, &message, "Stop");
+            }
+        }
+
+        if stop_checking {
+            self.stop_checking_send();
         }
     }
 }
@@ -854,47 +863,53 @@ pub(crate) fn fido2_waiting_line(ui: &mut egui::Ui, colors: &AppColors) {
         if !keychain::fido2::cancellable() {
             return;
         }
-        // A hairline glyph in a 16 px hit area, like the copy icon, rather
-        // than a framed button, which read as a second main action beside
-        // the panel's own. Always red: it is the line's stop action. A faint
-        // red square behind it on hover says it can be clicked.
         ui.add_space(4.0);
-        let (rect, response) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::click());
-        let red = colors.danger;
-        if response.hovered() {
-            ui.painter().rect_filled(
-                rect,
-                0.0,
-                egui::Color32::from_rgba_unmultiplied(red.r(), red.g(), red.b(), 32),
-            );
-        }
-        let stroke = egui::Stroke::new(1.4, red);
-        let centre = rect.center();
-        let arm = 4.0;
-        ui.painter().line_segment(
-            [
-                centre + egui::vec2(-arm, -arm),
-                centre + egui::vec2(arm, arm),
-            ],
-            stroke,
-        );
-        ui.painter().line_segment(
-            [
-                centre + egui::vec2(-arm, arm),
-                centre + egui::vec2(arm, -arm),
-            ],
-            stroke,
-        );
-        if response
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .on_hover_text("Cancel")
-            .clicked()
-        {
+        if stop_cross(ui, colors, "Cancel") {
             if let Err(e) = keychain::fido2::cancel() {
                 tracing::error!("{}", e);
             }
         }
     });
+}
+
+/// A small red ✕ for a line's stop action, with `hover` as its tooltip.
+/// Returns whether it was clicked.
+///
+/// A hairline glyph in a 16 px hit area, like the copy icon, rather than a
+/// framed button, which read as a second main action beside the panel's
+/// own. Always red: it is the line's stop action. A faint red square behind
+/// it on hover says it can be clicked.
+pub(crate) fn stop_cross(ui: &mut egui::Ui, colors: &AppColors, hover: &str) -> bool {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::click());
+    let red = colors.danger;
+    if response.hovered() {
+        ui.painter().rect_filled(
+            rect,
+            0.0,
+            egui::Color32::from_rgba_unmultiplied(red.r(), red.g(), red.b(), 32),
+        );
+    }
+    let stroke = egui::Stroke::new(1.4, red);
+    let centre = rect.center();
+    let arm = 4.0;
+    ui.painter().line_segment(
+        [
+            centre + egui::vec2(-arm, -arm),
+            centre + egui::vec2(arm, arm),
+        ],
+        stroke,
+    );
+    ui.painter().line_segment(
+        [
+            centre + egui::vec2(-arm, arm),
+            centre + egui::vec2(arm, -arm),
+        ],
+        stroke,
+    );
+    response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(hover)
+        .clicked()
 }
 
 /// Bloomberg-style change flash: remembers `value` under `id` and
@@ -994,22 +1009,49 @@ fn log_line(
     // Top-aligned so the tag hugs the first line when a long message
     // (e.g. a node rejection) wraps onto several lines.
     ui.horizontal_top(|ui| {
-        ui.label(
-            egui::RichText::new(tag)
-                .font(label_font(10.0))
-                .color(tag_color),
-        );
-        if live {
-            let t = ui.input(|i| i.time) as f32;
-            let (r, _) = ui.allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());
-            breathing_dot(ui.painter(), r.center(), tag_color, t, false);
-            ui.ctx()
-                .request_repaint_after(std::time::Duration::from_millis(50));
-        }
+        log_line_tag(ui, tag, tag_color, live);
         // Wrap instead of running off-screen: the user must be able to
         // read the entire error.
         ui.add(egui::Label::new(egui::RichText::new(msg).size(11.5).color(msg_color)).wrap());
     });
+}
+
+/// A live `log_line` on one line, never wrapped, with a red ✕
+/// (`stop_cross`) right after its message, `hover` as the ✕'s tooltip.
+/// Returns whether the ✕ was clicked. For a message that must stay in one
+/// piece, such as a full transaction hash, and is short enough to fit the
+/// window's minimum width.
+fn log_line_with_stop(
+    ui: &mut egui::Ui,
+    colors: &AppColors,
+    tag: &str,
+    tag_color: egui::Color32,
+    msg: &str,
+    hover: &str,
+) -> bool {
+    ui.horizontal_top(|ui| {
+        log_line_tag(ui, tag, tag_color, true);
+        ui.add(egui::Label::new(egui::RichText::new(msg).size(11.5).color(colors.text)).extend());
+        stop_cross(ui, colors, hover)
+    })
+    .inner
+}
+
+/// The `[TAG ]` that starts a log line, followed by a breathing dot when
+/// `live`.
+fn log_line_tag(ui: &mut egui::Ui, tag: &str, tag_color: egui::Color32, live: bool) {
+    ui.label(
+        egui::RichText::new(tag)
+            .font(label_font(10.0))
+            .color(tag_color),
+    );
+    if live {
+        let t = ui.input(|i| i.time) as f32;
+        let (r, _) = ui.allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());
+        breathing_dot(ui.painter(), r.center(), tag_color, t, false);
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(50));
+    }
 }
 
 /// `text` part-way between noise and legible, for the dashboard's decode

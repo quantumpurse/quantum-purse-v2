@@ -300,9 +300,7 @@ impl UnifiedClient for LightClient {
         &self,
         tx: ckb_jsonrpc_types::Transaction,
     ) -> Result<H256, NodeManagerError> {
-        self.client
-            .send_transaction(tx)
-            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
+        self.client.send_transaction(tx).map_err(super::send_error)
     }
 
     fn get_transaction(&self, hash: H256) -> Result<Option<TransactionStatus>, NodeManagerError> {

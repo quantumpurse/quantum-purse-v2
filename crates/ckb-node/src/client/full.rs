@@ -244,7 +244,7 @@ impl UnifiedClient for FullNodeClient {
     ) -> Result<H256, NodeManagerError> {
         self.client
             .send_transaction(tx, None)
-            .map_err(|e| NodeManagerError::RpcError(e.to_string()))
+            .map_err(super::send_error)
     }
 
     fn get_transaction(&self, hash: H256) -> Result<Option<TransactionStatus>, NodeManagerError> {

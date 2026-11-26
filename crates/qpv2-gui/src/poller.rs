@@ -1,8 +1,8 @@
 //! Async polling for background operations (balances, transactions).
 
 use crate::types::{
-    BalanceResult, DaoQueryEvent, Fido2WalletFlow, QrLockDepWarmup, Status, TransactionKind,
-    TransactionStatus, TxHistoryEvent, TxKind,
+    BalanceResult, DaoQueryEvent, Fido2WalletFlow, QrLockDepWarmup, Status, SubmissionResult,
+    TransactionKind, TransactionStatus, TxHistoryEvent, TxKind,
 };
 use crate::App;
 use qpv2_core::types::AuthMethod;
@@ -74,16 +74,15 @@ impl App {
     }
 
     /// Poll the shared transaction send channel and dispatch follow-up work by kind.
-    pub(crate) fn poll_transaction_send(&mut self) {
-        let rx = match &self.transaction_send_rx {
+    pub(crate) fn poll_transaction_submission(&mut self) {
+        let rx = match &self.transaction_submission_rx {
             Some(rx) => rx,
             None => return,
         };
 
         match rx.try_recv() {
-            Ok((kind, Ok(tx_hash))) => {
-                self.transaction_send_rx = None;
-                let hash = tx_hash.trim_start_matches("0x").to_string();
+            Ok((kind, SubmissionResult::Sent(hash))) => {
+                self.transaction_submission_rx = None;
                 self.tx_status = TransactionStatus::Success(hash);
 
                 match kind {
@@ -100,20 +99,38 @@ impl App {
                     }
                 }
             }
-            Ok((_, Err(e))) => {
-                self.transaction_send_rx = None;
+            Ok((_, SubmissionResult::Failed(e))) => {
+                self.transaction_submission_rx = None;
                 tracing::error!("Transaction send failed: {}", e);
                 self.tx_status = TransactionStatus::Error(e);
             }
+            // Not a failure: the node may have the transaction. It stays
+            // held, and is looked up again after a wait.
+            Ok((kind, SubmissionResult::Uncertain { tx, hash, reason })) => {
+                self.transaction_submission_rx = None;
+                tracing::warn!(
+                    "Send result uncertain for transaction 0x{}: {}",
+                    hash,
+                    reason
+                );
+                self.tx_status = TransactionStatus::Uncertain {
+                    kind,
+                    tx,
+                    hash,
+                    retry_at: std::time::Instant::now() + ckb_node::tx_builder::SETTLE_WAIT,
+                };
+            }
             Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => {
-                self.transaction_send_rx = None;
+                self.transaction_submission_rx = None;
                 if matches!(self.tx_status, TransactionStatus::Sending) {
                     tracing::error!("Send thread terminated unexpectedly.");
                     self.tx_status = TransactionStatus::Error(
                         "Send thread terminated unexpectedly.".to_string(),
                     );
                 }
+                // A lookup that died leaves `Uncertain` as it was, so the
+                // next one starts after its wait.
             }
         }
     }

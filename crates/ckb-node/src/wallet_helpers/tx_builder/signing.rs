@@ -253,13 +253,77 @@ pub fn fill_witness(
     Ok(tx.as_advanced_builder().set_witnesses(witnesses).build())
 }
 
+/// What a send attempt says about a signed transaction.
+#[derive(Debug)]
+pub enum SendOutcome {
+    /// The node has the transaction: it accepted it, or already had it.
+    Accepted,
+    /// The node refused the transaction.
+    Rejected(String),
+    /// No usable answer: the node may or may not have the transaction.
+    Uncertain(String),
+}
+
 /// Sends a signed transaction via RPC.
-///
-/// Returns the transaction hash on success.
-pub fn send_transaction(
-    qp_client: &QpClient,
-    tx: &TransactionView,
-) -> Result<H256, NodeManagerError> {
+pub fn send_transaction(qp_client: &QpClient, tx: &TransactionView) -> SendOutcome {
     let json_tx: ckb_jsonrpc_types::Transaction = tx.data().into();
-    qp_client.send_transaction(json_tx)
+    match qp_client.send_transaction(json_tx) {
+        Ok(_) => SendOutcome::Accepted,
+        // No usable answer from the node.
+        Err(NodeManagerError::NoAck(e)) => SendOutcome::Uncertain(e),
+        // The node answered with an error.
+        Err(e) => {
+            let reason = e.to_string();
+            // The pool already holds this very transaction: an earlier send
+            // reached the node and only its answer was lost.
+            if reason.contains("PoolRejectedDuplicatedTransaction") {
+                SendOutcome::Accepted
+            } else {
+                SendOutcome::Rejected(reason)
+            }
+        }
+    }
+}
+
+/// How long to wait before each [`settle_transaction`] call on the same
+/// transaction.
+pub const SETTLE_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Settles a transaction whose send got no usable answer: asks the node for
+/// it by hash, and sends it again when the node doesn't have it. Sending
+/// again is safe, because the same transaction has the same hash and so
+/// can't pay twice.
+pub fn settle_transaction(qp_client: &QpClient, tx: &TransactionView) -> SendOutcome {
+    if let Some(outcome) = look_up_transaction(qp_client, tx) {
+        return outcome;
+    }
+    match send_transaction(qp_client, tx) {
+        // It may have been committed between the lookup and this send, and
+        // the node refuses a committed transaction as spending spent cells.
+        // Ask again before calling it refused.
+        SendOutcome::Rejected(e) => {
+            look_up_transaction(qp_client, tx).unwrap_or(SendOutcome::Rejected(e))
+        }
+        outcome => outcome,
+    }
+}
+
+/// What the node knows of `tx` by its hash, or `None` when it doesn't know it.
+fn look_up_transaction(qp_client: &QpClient, tx: &TransactionView) -> Option<SendOutcome> {
+    let status = match qp_client.get_transaction(tx.hash().unpack()) {
+        Ok(Some(status)) => status,
+        // Not reached with CKB nodes: they answer an unknown hash with a
+        // record whose status is `unknown`, never an empty result. Kept
+        // because the client's result type allows one.
+        Ok(None) => return None,
+        Err(e) => return Some(SendOutcome::Uncertain(e.to_string())),
+    };
+    // A full node names the status `Committed`, a light client `committed`.
+    match status.status.to_ascii_lowercase().as_str() {
+        "pending" | "proposed" | "committed" => Some(SendOutcome::Accepted),
+        "rejected" => Some(SendOutcome::Rejected(
+            "The node rejected the transaction.".to_string(),
+        )),
+        _ => None,
+    }
 }

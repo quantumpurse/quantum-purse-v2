@@ -20,6 +20,11 @@ pub enum NodeManagerError {
     #[error("RPC error: {0}")]
     RpcError(String),
 
+    /// A request got no usable answer: the connection failed or timed out,
+    /// or the reply could not be read. The node may still have acted on it.
+    #[error("No answer from the node: {0}")]
+    NoAck(String),
+
     /// Operation requires a running node but none is active.
     #[error("No node is currently running")]
     NotRunning,

@@ -67,8 +67,46 @@ pub(crate) type TxBuildResult = Result<
     String,
 >;
 
+/// Result of sending a signed transaction, from a background thread.
+pub(crate) enum SubmissionResult {
+    /// The node has the transaction; holds its hash without the `0x`.
+    Sent(String),
+    /// Nothing was sent, or the node refused the transaction.
+    Failed(String),
+    /// No usable answer: the node may or may not have the transaction.
+    /// The transaction comes back so it can be looked up and sent again.
+    Uncertain {
+        tx: Box<ckb_types::core::TransactionView>,
+        /// The hash without the `0x`.
+        hash: String,
+        reason: String,
+    },
+}
+
+impl SubmissionResult {
+    /// Turns what a send says about `tx` into the result the poller reads.
+    pub(crate) fn new(
+        outcome: ckb_node::tx_builder::SendOutcome,
+        tx: ckb_types::core::TransactionView,
+    ) -> Self {
+        use ckb_node::tx_builder::SendOutcome;
+        use ckb_types::prelude::Unpack;
+
+        let hash: ckb_types::H256 = tx.hash().unpack();
+        match outcome {
+            SendOutcome::Accepted => Self::Sent(format!("{:x}", hash)),
+            SendOutcome::Rejected(e) => Self::Failed(format!("Failed to send transaction: {}", e)),
+            SendOutcome::Uncertain(reason) => Self::Uncertain {
+                tx: Box::new(tx),
+                hash: format!("{:x}", hash),
+                reason,
+            },
+        }
+    }
+}
+
 /// Result type for sending a signed transaction.
-pub(crate) type TransactionSendResult = (TransactionKind, Result<String, String>);
+pub(crate) type TransactionSendResult = (TransactionKind, SubmissionResult);
 
 /// Result type for DAO cell queries across all accounts.
 pub(crate) type DaoQueryResult = Result<DaoQueryEvent, String>;
@@ -393,6 +431,18 @@ pub(crate) enum TransactionStatus {
     },
     /// Sending the signed transaction.
     Sending,
+    /// The send got no usable answer, so the node may or may not have the
+    /// transaction. It is looked up by hash, and sent again when the node
+    /// doesn't have it, until the outcome is known. Meanwhile no other
+    /// transaction can start, so a lost answer can't lead to paying twice.
+    Uncertain {
+        kind: TransactionKind,
+        tx: Box<ckb_types::core::TransactionView>,
+        /// The hash without the `0x`, shown so the user can look it up.
+        hash: String,
+        /// When the next lookup may start.
+        retry_at: std::time::Instant,
+    },
     /// Transaction sent successfully.
     Success(String),
     /// An error occurred.
