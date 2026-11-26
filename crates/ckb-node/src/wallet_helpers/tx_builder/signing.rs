@@ -5,6 +5,7 @@
 //! 2. Fill a signed witness into a transaction.
 //! 3. Send a signed transaction via RPC.
 
+use super::{HardwareSigningContext, SendOutcome};
 use crate::client::{QpClient, TransactionStatus};
 use crate::error::NodeManagerError;
 use ckb_mock_tx_types::MockInput;
@@ -15,17 +16,6 @@ use ckb_types::{
     prelude::*,
     H256,
 };
-
-/// Chain data a hardware signer needs to verify transaction inputs and DAO
-/// header dependencies without trusting host-supplied capacities.
-pub struct HardwareSigningContext {
-    /// Full transaction for every input's previous-output transaction hash.
-    pub prev_txs: std::collections::HashMap<H256, TransactionView>,
-    /// Block that committed each previous transaction, when available.
-    pub prev_tx_block_hashes: std::collections::HashMap<H256, H256>,
-    /// Full headers in exactly the same order as the transaction's header deps.
-    pub headers: Vec<HeaderView>,
-}
 
 /// TODO optimize
 /// `QpClient::get_transaction` with a short retry backoff. A lost RPC
@@ -251,17 +241,6 @@ pub fn fill_witness(
     witnesses[script_group_index] = updated_witness.as_bytes().pack();
 
     Ok(tx.as_advanced_builder().set_witnesses(witnesses).build())
-}
-
-/// What a send attempt says about a signed transaction.
-#[derive(Debug)]
-pub enum SendOutcome {
-    /// The node has the transaction: it accepted it, or already had it.
-    Accepted,
-    /// The node refused the transaction.
-    Rejected(String),
-    /// No usable answer: the node may or may not have the transaction.
-    Uncertain(String),
 }
 
 /// Sends a signed transaction via RPC.
