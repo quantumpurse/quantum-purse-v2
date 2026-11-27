@@ -1,7 +1,8 @@
 //! App chrome (telemetry strip, module rail, status line) and the
 //! Setup and cover screens.
 
-use crate::types::{label_font, Status, Tab};
+use crate::palette;
+use crate::types::{label_font, AppColors, Status, Tab};
 use crate::ui::cover::{draw_cover, letters_bottom, reserve_stage, restart_cover};
 use crate::ui::utils::{
     breathing_dot, draw_qp_logo_chip, ghost_button, hold_button, panel_frame, value_flash,
@@ -338,6 +339,7 @@ impl App {
             if ui.add_enabled(!locked, hide).clicked() {
                 self.hide_wallet();
             }
+            self.draw_theme_toggle(ui);
             ui.add_space(10.0);
 
             let wallet_text = self.wallet_name.to_uppercase();
@@ -375,6 +377,33 @@ impl App {
                 self.device_popup_open = false;
             }
         });
+    }
+
+    /// Square button that swaps the light and dark themes, showing the one it
+    /// switches to: a moon on a light background, a sun on a dark one. It
+    /// reads the background rather than matching a theme, so custom colors
+    /// switch the right way too, and are replaced like a theme picked in
+    /// Settings. A click also stops following the system's mode.
+    fn draw_theme_toggle(&mut self, ui: &mut egui::Ui) {
+        let bg = self.colors.bg;
+        let light = palette::contrast(bg, egui::Color32::BLACK)
+            > palette::contrast(bg, egui::Color32::WHITE);
+        let (next, hover) = if light {
+            (AppColors::default(), "Dark theme")
+        } else {
+            (AppColors::light(), "Light theme")
+        };
+        let button = ui
+            .add(ghost_button(&self.colors, "", egui::vec2(22.0, 22.0)))
+            .on_hover_text(hover);
+        let icon = egui::Rect::from_center_size(button.rect.center(), egui::vec2(14.0, 14.0));
+        paint_theme_icon(ui.painter(), icon, self.colors.accent, light);
+        if button.clicked() {
+            self.colors = next;
+            self.follow_system = false;
+            crate::apply_visuals(ui.ctx(), &next);
+            self.save_colors();
+        }
     }
 
     /// Trezor link segment — only for device-backed wallets.
@@ -880,6 +909,43 @@ fn type_on(
         text.chars().take(shown).collect()
     } else {
         text.to_string()
+    }
+}
+
+/// The theme toggle's icon on the rail icons' 24-unit grid: a crescent moon
+/// (`moon`) or a sun. The crescent is a 9-radius circle with a 7-radius one
+/// bitten out of its top right; the two meet at 5° and 265° on the first.
+fn paint_theme_icon(painter: &egui::Painter, rect: egui::Rect, color: egui::Color32, moon: bool) {
+    let scale = rect.width() / 24.0;
+    let at = |x: f32, y: f32| rect.min + egui::vec2(x, y) * scale;
+    let stroke = egui::Stroke::new(1.5 * scale, color);
+    // Points along a circle, from one angle to the other in degrees.
+    let arc = |x: f32, y: f32, r: f32, from: f32, to: f32| {
+        (0..=24).map(move |i| {
+            let a = (from + (to - from) * i as f32 / 24.0).to_radians();
+            at(x + r * a.cos(), y + r * a.sin())
+        })
+    };
+
+    if moon {
+        // Two open curves, not one closed outline: egui joins a closed
+        // outline's corners with a miter, and at the crescent's thin tips
+        // that miter shoots out as a long spike.
+        let outer = arc(12.0, 12.0, 9.0, 5.0, 265.0).collect();
+        let inner = arc(16.85, 7.15, 7.0, 216.0, 54.0).collect();
+        painter.add(egui::Shape::line(outer, stroke));
+        painter.add(egui::Shape::line(inner, stroke));
+    } else {
+        painter.circle_stroke(at(12.0, 12.0), 4.5 * scale, stroke);
+        for ray in 0..8 {
+            let a = (ray as f32 * 45.0).to_radians();
+            let (dx, dy) = (a.cos(), a.sin());
+            let points = vec![
+                at(12.0 + 7.5 * dx, 12.0 + 7.5 * dy),
+                at(12.0 + 10.5 * dx, 12.0 + 10.5 * dy),
+            ];
+            painter.add(egui::Shape::line(points, stroke));
+        }
     }
 }
 

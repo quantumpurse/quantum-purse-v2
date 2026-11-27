@@ -230,29 +230,34 @@ impl App {
 
     // ── Colors ───────────────────────────────────────────────
 
-    /// The wallet's colors: LIGHT and DARK, then a row per named
-    /// color with a swatch that opens a picker and the hex code, which can
-    /// be typed or pasted. A change shows at once across the app and is
-    /// saved when it settles.
+    /// The wallet's colors: LIGHT, DARK and SYSTEM, which follows the
+    /// system's light or dark mode, then a row per named color with a swatch
+    /// that opens a picker and the hex code, which can be typed or pasted. A
+    /// change shows at once across the app and is saved when it settles.
     fn draw_colors_section(&mut self, ui: &mut egui::Ui, code: &str) {
         section_header(ui, &self.colors, code, "Colors");
         ui.add_space(6.0);
         let mut colors = self.colors;
+        let mut follow_system = self.follow_system;
         setting_row(ui, &self.colors, "Palette", |ui| {
-            // A theme is marked as chosen only while every color is its
-            // own: one changed by hand makes it neither.
-            let chosen = if colors == AppColors::light() {
+            // LIGHT or DARK is marked as chosen only while every color is
+            // its own: one changed by hand makes it neither.
+            let chosen = if follow_system {
+                Some(2)
+            } else if colors == AppColors::light() {
                 Some(0)
             } else if colors == AppColors::default() {
                 Some(1)
             } else {
                 None
             };
-            if let Some(i) = text_choice(ui, &self.colors, &["LIGHT", "DARK"], chosen) {
-                colors = if i == 0 {
-                    AppColors::light()
-                } else {
-                    AppColors::default()
+            let options = ["LIGHT", "DARK", "SYSTEM"];
+            if let Some(i) = text_choice(ui, &self.colors, &options, chosen) {
+                follow_system = i == 2;
+                colors = match i {
+                    0 => AppColors::light(),
+                    1 => AppColors::default(),
+                    _ => palette::system_colors(ui.ctx()),
                 };
             }
         });
@@ -260,6 +265,8 @@ impl App {
             setting_row(ui, &self.colors, role.label(), |ui| {
                 if let Some(c) = color_control(ui, &self.colors, role, role.get(&colors)) {
                     role.set(&mut colors, c);
+                    // A color set by hand stops following the system.
+                    follow_system = false;
                 }
             });
         }
@@ -281,17 +288,27 @@ impl App {
             self.colors = colors;
             crate::apply_visuals(ui.ctx(), &colors);
         }
-        // While a picker is dragged every frame is a change, so save once
-        // the pointer lets go.
-        if self.colors != self.saved_colors && !ui.input(|i| i.pointer.any_down()) {
-            if let Err(e) = palette::save_colors(&self.colors) {
-                let msg = format!("Couldn't save the colors: {e}");
-                tracing::error!("{}", msg);
-                self.status = Status::Error(msg);
-            }
-            // Not retried every frame after a failure: the next change is.
-            self.saved_colors = self.colors;
+        if follow_system != self.follow_system {
+            // Following starts or stops once per click or drag, so it is
+            // saved at once.
+            self.follow_system = follow_system;
+            self.save_colors();
+        } else if self.colors != self.saved_colors && !ui.input(|i| i.pointer.any_down()) {
+            // While a picker is dragged every frame is a change, so save
+            // once the pointer lets go.
+            self.save_colors();
         }
+    }
+
+    /// Saves the colors in use and whether they follow the system. Not
+    /// retried every frame after a failure: the next change is.
+    pub(crate) fn save_colors(&mut self) {
+        if let Err(e) = palette::save_colors(&self.colors, self.follow_system) {
+            let msg = format!("Couldn't save the colors: {e}");
+            tracing::error!("{}", msg);
+            self.status = Status::Error(msg);
+        }
+        self.saved_colors = self.colors;
     }
 
     /// Detects a node QPV2 did not start answering on its port: a local

@@ -1,8 +1,8 @@
 //! The wallet's colors: the eight the Settings page lets users set by name,
-//! and saving them between runs in `colors.json`, next to
-//! `last_wallet.json`.
+//! the themes that follow the system's light or dark mode, and saving them
+//! between runs in `colors.json`, next to `last_wallet.json`.
 
-use eframe::egui::Color32;
+use eframe::egui::{Color32, Context, Theme};
 
 use crate::types::AppColors;
 
@@ -271,19 +271,34 @@ fn saved_fields(colors: &mut AppColors) -> [(&'static str, &mut Color32); 13] {
     ]
 }
 
-fn to_json(colors: &AppColors) -> String {
+/// The theme for the system's light or dark mode: the light one, or the
+/// factory dark one when the system is dark or doesn't say.
+pub(crate) fn system_colors(ctx: &Context) -> AppColors {
+    match ctx.system_theme() {
+        Some(Theme::Light) => AppColors::light(),
+        _ => AppColors::default(),
+    }
+}
+
+/// Saved file key: whether the colors follow the system's light or dark mode.
+const FOLLOW_SYSTEM: &str = "follow_system";
+
+fn to_json(colors: &AppColors, follow_system: bool) -> String {
     let mut colors = *colors;
-    let saved: serde_json::Map<String, serde_json::Value> = saved_fields(&mut colors)
+    let mut saved: serde_json::Map<String, serde_json::Value> = saved_fields(&mut colors)
         .into_iter()
         .map(|(name, color)| (name.to_string(), to_hex(*color).into()))
         .collect();
+    saved.insert(FOLLOW_SYSTEM.to_string(), follow_system.into());
     format!("{:#}", serde_json::Value::Object(saved))
 }
 
-/// Colors from a saved file. A color the file leaves out stays factory, as
-/// in a file from before that color existed; one that isn't `#RRGGBB` fails
-/// the whole file, by name.
-fn from_json(json: &str) -> Result<AppColors, String> {
+/// Colors from a saved file, and whether they follow the system. A color
+/// the file leaves out stays factory, as in a file from before that color
+/// existed, and a file without `follow_system` doesn't follow. A color that
+/// isn't `#RRGGBB`, or a `follow_system` that isn't true or false, fails the
+/// whole file, by name.
+fn from_json(json: &str) -> Result<(AppColors, bool), String> {
     let saved: serde_json::Map<String, serde_json::Value> =
         serde_json::from_str(json).map_err(|e| format!("not a JSON object of colors: {e}"))?;
     let mut colors = AppColors::default();
@@ -297,7 +312,13 @@ fn from_json(json: &str) -> Result<AppColors, String> {
     }
     colors.accent_tint = accent_tint(colors.accent);
     colors.warn_tint = warn_tint(colors.warn);
-    Ok(colors)
+    let follow_system = match saved.get(FOLLOW_SYSTEM) {
+        Some(value) => value
+            .as_bool()
+            .ok_or_else(|| format!("{FOLLOW_SYSTEM} is {value}, not true or false"))?,
+        None => false,
+    };
+    Ok((colors, follow_system))
 }
 
 fn colors_path() -> Result<std::path::PathBuf, String> {
@@ -306,10 +327,10 @@ fn colors_path() -> Result<std::path::PathBuf, String> {
         .map_err(|e| format!("no data directory: {e}"))
 }
 
-/// The saved colors, or the factory palette when there are none. A file
-/// that can't be used is logged and passed over, so it never stops the
-/// wallet from opening.
-pub(crate) fn load_colors() -> AppColors {
+/// The saved colors and whether they follow the system, or the factory
+/// palette, not following, when there are none. A file that can't be used is
+/// logged and passed over, so it never stops the wallet from opening.
+pub(crate) fn load_colors() -> (AppColors, bool) {
     let loaded = colors_path().and_then(|path| match std::fs::read_to_string(&path) {
         Ok(json) => from_json(&json)
             .map(Some)
@@ -318,17 +339,18 @@ pub(crate) fn load_colors() -> AppColors {
         Err(e) => Err(format!("can't read {}: {e}", path.display())),
     });
     match loaded {
-        Ok(colors) => colors.unwrap_or_default(),
+        Ok(Some(saved)) => saved,
+        Ok(None) => (AppColors::default(), false),
         Err(e) => {
             tracing::warn!("Using the factory colors. Saved colors unusable: {e}");
-            AppColors::default()
+            (AppColors::default(), false)
         }
     }
 }
 
-pub(crate) fn save_colors(colors: &AppColors) -> Result<(), String> {
+pub(crate) fn save_colors(colors: &AppColors, follow_system: bool) -> Result<(), String> {
     let path = colors_path()?;
-    std::fs::write(&path, to_json(colors))
+    std::fs::write(&path, to_json(colors, follow_system))
         .map_err(|e| format!("can't write {}: {e}", path.display()))
 }
 
@@ -387,13 +409,18 @@ mod tests {
     #[test]
     fn saved_colors_load_back_unchanged() {
         let colors = AppColors::light();
-        assert_eq!(from_json(&to_json(&colors)), Ok(colors));
+        for follow_system in [false, true] {
+            assert_eq!(
+                from_json(&to_json(&colors, follow_system)),
+                Ok((colors, follow_system))
+            );
+        }
     }
 
     #[test]
     fn a_color_the_file_leaves_out_stays_factory() {
         let factory = AppColors::default();
-        let colors = from_json(r##"{"accent": "#112233"}"##).unwrap();
+        let (colors, _) = from_json(r##"{"accent": "#112233"}"##).unwrap();
         assert_eq!(colors.accent, Color32::from_rgb(0x11, 0x22, 0x33));
         assert_eq!(colors.accent_tint, accent_tint(colors.accent));
         assert_eq!(colors.bg, factory.bg);

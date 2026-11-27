@@ -1,4 +1,4 @@
-//! Accounts tab rendering — single-sig account registry.
+//! Accounts tab rendering — single-sig accounts.
 
 use eframe::egui;
 use qpv2_core::KeyVault;
@@ -141,7 +141,7 @@ impl App {
                                     ui,
                                     &self.colors,
                                     "01",
-                                    &format!("Account Registry // {}", rows.len()),
+                                    &format!("Account // {}", rows.len()),
                                 );
                             },
                         );

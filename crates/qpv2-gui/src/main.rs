@@ -55,6 +55,8 @@ pub(crate) struct App {
     pub(crate) screen: Screen,
     pub(crate) status: Status,
     pub(crate) colors: AppColors,
+    // The colors follow the system's light or dark mode, live.
+    pub(crate) follow_system: bool,
     // The colors last saved to `colors.json`, so a change is saved once it
     // settles rather than on every frame of a drag.
     pub(crate) saved_colors: AppColors,
@@ -280,7 +282,7 @@ pub(crate) struct App {
 
 /// Flight Deck visuals from `colors`: dark instrument panel, sharp corners,
 /// the accent as the signal color. Run at startup, and again whenever the
-/// Settings page changes the colors, since egui's own widgets read these.
+/// colors change, since egui's own widgets read these.
 pub(crate) fn apply_visuals(ctx: &egui::Context, colors: &AppColors) {
     let mut visuals = egui::Visuals::dark();
 
@@ -337,12 +339,13 @@ pub(crate) fn apply_visuals(ctx: &egui::Context, colors: &AppColors) {
 
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let colors = palette::load_colors();
+        let (colors, follow_system) = palette::load_colors();
 
-        // The Flight Deck theme is the app's only theme: never follow
-        // the OS light/dark preference. Without this pin, egui swaps in
-        // its stock white widget visuals (combo boxes, text fields,
-        // dropdown popups) whenever the system is in light mode.
+        // egui's own theme stays dark: the wallet lays its own colors, light
+        // ones included, over egui's dark visuals, and follows the system's
+        // mode itself. Without this pin, egui swaps in its stock white
+        // widget visuals (combo boxes, text fields, dropdown popups)
+        // whenever the system is in light mode.
         cc.egui_ctx.set_theme(egui::ThemePreference::Dark);
         apply_visuals(&cc.egui_ctx, &colors);
 
@@ -490,6 +493,7 @@ impl App {
             screen,
             status: startup_status,
             colors,
+            follow_system,
             saved_colors: colors,
             wallet_id,
             wallet_name,
@@ -634,6 +638,14 @@ impl App {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        // egui repaints when the system's mode changes, so the swap is live.
+        if self.follow_system {
+            let colors = palette::system_colors(&ctx);
+            if colors != self.colors {
+                self.colors = colors;
+                apply_visuals(&ctx, &colors);
+            }
+        }
         // First fetch for a wallet just opened: the one App::new starts on,
         // behind the cover, or one switched to. Runs on any screen, so the
         // data is ready by the time the cover is lifted.

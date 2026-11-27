@@ -550,9 +550,9 @@ impl AppColors {
             accent2: egui::Color32::from_rgb(61, 146, 214),  // #3d92d6
             accent3: egui::Color32::from_rgb(0, 0, 0),       // #000000
             accent_tint: egui::Color32::from_rgba_unmultiplied(0, 38, 86, 22),
-            warn_tint: egui::Color32::from_rgba_unmultiplied(191, 161, 40, 26),
+            warn_tint: egui::Color32::from_rgba_unmultiplied(220, 165, 0, 26),
             danger: egui::Color32::from_rgb(255, 84, 62), // #ff543e
-            warn: egui::Color32::from_rgb(191, 161, 40),  // #bfa128
+            warn: egui::Color32::from_rgb(220, 165, 0),   // #dca500
             text: egui::Color32::from_rgb(27, 27, 27),    // #1b1b1b
             text_muted: egui::Color32::from_rgb(109, 125, 130), // #6d7d82
             signal: egui::Color32::from_rgb(158, 90, 218), // #9e5ada
