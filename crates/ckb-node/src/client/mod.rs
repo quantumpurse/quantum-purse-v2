@@ -481,13 +481,10 @@ impl QpClient {
     }
 
     /// Full node IBD progress and phase (header sync / block download /
-    /// verifying / synced). `Ok(None)` for `LightClient` (no analogue)
-    /// and `PublicRpc` (remote endpoint's sync isn't *our* sync, same
-    /// policy as `peer_count`). `Some(_)` only for `FullNode`.
+    /// verifying / synced), for `FullNode` and for the remote node behind
+    /// `PublicRpc`, which can refuse the query. `Ok(None)` for `LightClient`
+    /// (no analogue).
     pub fn sync_state(&self) -> Result<Option<ckb_jsonrpc_types::SyncState>, NodeManagerError> {
-        if self.config.node_type != NodeType::FullNode {
-            return Ok(None);
-        }
         let Some(full) = self
             .unified_client
             .as_any()

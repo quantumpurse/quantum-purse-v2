@@ -7,8 +7,9 @@ use eframe::egui;
 use crate::palette::{self, ColorRole};
 use crate::types::{display_font, label_font, AppColors, Status};
 use crate::ui::utils::{
-    data_row, data_row_colored, ghost_button, group_thousands, lerp_color, panel_frame, row_hover,
-    section_header, truncate_middle_to, truncate_tail, value_flash, SectionCounter,
+    data_row, data_row_colored, ghost_button, group_thousands, lerp_color, paint_sync_meter,
+    panel_frame, row_hover, section_header, sync_meter_width, truncate_middle_to, truncate_tail,
+    value_flash, SectionCounter,
 };
 use crate::App;
 
@@ -202,8 +203,9 @@ impl App {
                     _ => 0.0,
                 }
             }
-            NodeType::FullNode => full_node_sync_pct(self.node_status.sync_state.as_ref()),
-            NodeType::PublicRpc => 0.0,
+            NodeType::FullNode | NodeType::PublicRpc => {
+                full_node_sync_pct(self.node_status.sync_state.as_ref())
+            }
         }
     }
 
@@ -753,8 +755,6 @@ impl App {
     /// fully synced (the one semantic green).
     fn draw_sync_bar(&self, ui: &mut egui::Ui, backend: NodeType) {
         const SEGS: usize = 20;
-        const SEG_W: f32 = 6.0;
-        const SEG_GAP: f32 = 2.0;
 
         let pct = self.sync_pct(backend);
         let fill = if pct >= 0.999 {
@@ -778,19 +778,11 @@ impl App {
                         .color(fill),
                 );
                 ui.add_space(6.0);
-                let meter_w = SEGS as f32 * (SEG_W + SEG_GAP) - SEG_GAP;
-                let (meter, _) =
-                    ui.allocate_exact_size(egui::vec2(meter_w, 9.0), egui::Sense::hover());
-                let painter = ui.painter();
-                let lit = ((pct * SEGS as f32).round() as usize).min(SEGS);
-                for s in 0..SEGS {
-                    let x = meter.left() + s as f32 * (SEG_W + SEG_GAP);
-                    let cell = egui::Rect::from_min_size(
-                        egui::pos2(x, meter.top()),
-                        egui::vec2(SEG_W, meter.height()),
-                    );
-                    painter.rect_filled(cell, 0.0, if s < lit { fill } else { c_off });
-                }
+                let (meter, _) = ui.allocate_exact_size(
+                    egui::vec2(sync_meter_width(SEGS), 9.0),
+                    egui::Sense::hover(),
+                );
+                paint_sync_meter(ui.painter(), meter, SEGS, pct, fill, c_off);
             });
         });
     }

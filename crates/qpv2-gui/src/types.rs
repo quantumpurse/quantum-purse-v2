@@ -278,8 +278,8 @@ pub(crate) struct NodeStatus {
     /// `None` for PublicRpc/FullNode and when no scripts are registered.
     pub synced_block: Option<u64>,
     /// Full node IBD state — phase (header sync / block download /
-    /// verifying / synced) and the network's best-known tip. `None`
-    /// outside `FullNode`.
+    /// verifying / synced) and the network's best-known tip, also from a
+    /// remote node that answers the query. `None` for the light client.
     pub sync_state: Option<ckb_jsonrpc_types::SyncState>,
     /// Chain-level metadata (chain name, difficulty, IBD flag, median time).
     /// `None` for light client (RPC not available).

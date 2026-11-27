@@ -5,7 +5,8 @@ use crate::palette;
 use crate::types::{label_font, AppColors, Status, Tab};
 use crate::ui::cover::{draw_cover, letters_bottom, reserve_stage, restart_cover};
 use crate::ui::utils::{
-    breathing_dot, draw_qp_logo_chip, ghost_button, hold_button, panel_frame, value_flash,
+    breathing_dot, draw_qp_logo_chip, ghost_button, hold_button, paint_sync_meter, panel_frame,
+    sync_meter_width, value_flash,
 };
 use crate::ui::wallet_modal::WALLET_FORM_W;
 use crate::App;
@@ -148,7 +149,7 @@ impl App {
 
             self.draw_ident_block(ui);
             self.strip_divider(ui);
-            self.draw_node_segment(ui, t);
+            self.draw_sync_segment(ui, t);
             self.strip_divider(ui);
             self.draw_tip_block(ui);
             // Draws its own leading divider, and only when peers are reported.
@@ -172,26 +173,15 @@ impl App {
         );
     }
 
-    /// Node segment — clickable, opens the node selector.
-    fn draw_node_segment(&mut self, ui: &mut egui::Ui, t: f32) {
-        let c_muted = self.colors.text_muted;
-        let node_name = match self.qp_client.config().node_type {
-            NodeType::PublicRpc => "REMOTE",
-            NodeType::LightClient => "LIGHT",
-            NodeType::FullNode => "FULL",
-        };
-        let network = match self.qp_client.config().network {
-            ckb_node::NetworkType::Mainnet => "MAIN",
-            ckb_node::NetworkType::Testnet => "TEST",
-        };
-        let network_color = if self.qp_client.is_mainnet() {
-            self.colors.accent
-        } else {
-            self.colors.warn
-        };
-        // A foreign node on the port is named as what it is, and the
-        // selector is locked: the network it would offer to change is not
-        // the one the wallet is reading from. See `foreign_node`.
+    /// Sync segment: the node's status dot, a compact sync meter with its
+    /// percentage, and the network. A click opens the Settings tab, where the
+    /// node and the network are chosen.
+    fn draw_sync_segment(&mut self, ui: &mut egui::Ui, t: f32) {
+        /// Half the Settings page's meter.
+        const CELLS: usize = 10;
+
+        // A foreign node on the port is named as what it is: the network
+        // shown is the one the wallet is reading from. See `foreign_node`.
         let foreign_node = self.foreign_node();
         let online = self.node_status.online;
         let dot_color = if foreign_node.is_some() {
@@ -201,23 +191,7 @@ impl App {
         } else {
             self.colors.danger
         };
-
-        // Sync percentage rides along for local backends — this is
-        // its home; the Settings tab's backend cards show state only.
-        // Green once fully synced, accent while catching up.
-        let node_type = self.qp_client.config().node_type;
-        let sync_suffix = if online && node_type != NodeType::PublicRpc {
-            let pct = self.sync_pct(node_type);
-            let color = if pct >= 0.999 {
-                self.colors.accent2
-            } else {
-                self.colors.accent
-            };
-            Some((format!("{:.1}%", pct * 100.0), color))
-        } else {
-            None
-        };
-        let node_text = match &foreign_node {
+        let network_text = match &foreign_node {
             Some((backend, network)) => {
                 let backend = match backend {
                     NodeType::LightClient => "LIGHT",
@@ -231,54 +205,89 @@ impl App {
                 };
                 format!("FOREIGN {} {}", backend, network)
             }
-            None => format!("{} / {}", node_name, network),
+            None => match self.qp_client.config().network {
+                ckb_node::NetworkType::Mainnet => "MAIN".to_string(),
+                ckb_node::NetworkType::Testnet => "TEST".to_string(),
+            },
         };
-        let seg = self.strip_segment(
-            ui,
-            "NODE",
-            &node_text,
-            sync_suffix.as_ref().map(|(s, c)| (s.as_str(), *c)),
-            Some((dot_color, !online && foreign_node.is_none())),
-            t,
-        );
-        if foreign_node.is_some() {
-            // No dropdown: the Settings tab is where the foreign node is
-            // explained and where the way out (another node type) lives.
-            if seg.clicked() && !self.device_task_in_flight() {
-                self.active_tab = Tab::Settings;
-            }
-            seg.on_hover_text(
-                "Another process holds this node's port, so QPV2 is reading that node \
-                 instead of running its own. Click to open the Settings tab.",
-            );
-            ui.add_space(10.0);
-            self.node_selector_open = false;
-            if !online {
-                ui.ctx().request_repaint();
-            }
-            return;
+        // No meter while offline, or for a remote node that doesn't answer
+        // the sync query. Green once fully synced, accent while catching up.
+        let node_type = self.qp_client.config().node_type;
+        let known = node_type != NodeType::PublicRpc || self.node_status.sync_state.is_some();
+        let sync = (online && known).then(|| {
+            let pct = self.sync_pct(node_type);
+            let color = if pct >= 0.999 {
+                self.colors.accent2
+            } else {
+                self.colors.accent
+            };
+            (pct, format!("{:.1}%", pct * 100.0), color)
+        });
+
+        const LABEL_W: f32 = 24.0;
+        const DOT_W: f32 = 12.0;
+        const GAP: f32 = 6.0;
+        let text_w = |text: &str| text.len() as f32 * 7.2;
+        let meter_w = sync_meter_width(CELLS);
+        let sync_w = sync.as_ref().map_or(0.0, |(_, pct_text, _)| {
+            meter_w + GAP + text_w(pct_text) + GAP
+        });
+        let w = LABEL_W + 4.0 + DOT_W + sync_w + text_w(&network_text) + 10.0;
+        let (rect, seg) =
+            ui.allocate_exact_size(egui::vec2(w, TELEMETRY_H - 10.0), egui::Sense::click());
+        let painter = ui.painter();
+        if seg.hovered() {
+            painter.rect_filled(rect, 0.0, self.colors.accent_tint);
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
-        ui.painter().text(
-            seg.rect.right_center() + egui::vec2(2.0, 2.0),
+
+        let y = rect.center().y;
+        let mut x = rect.left() + 2.0;
+        painter.text(
+            egui::pos2(x, y),
             egui::Align2::LEFT_CENTER,
-            "▾",
-            egui::FontId::proportional(16.0),
-            c_muted,
+            "SYNC",
+            label_font(9.0),
+            self.colors.text_muted,
         );
-        ui.add_space(10.0);
-        self.node_selector_rect = Some(seg.rect);
-        if seg.clicked() {
-            self.node_selector_open = !self.node_selector_open;
-            self.wallet_selector_open = false;
-            self.device_popup_open = false;
+        x += LABEL_W + 4.0;
+        let urgent = !online && foreign_node.is_none();
+        breathing_dot(painter, egui::pos2(x + 3.0, y), dot_color, t, urgent);
+        x += DOT_W;
+        if let Some((pct, pct_text, color)) = &sync {
+            let meter = egui::Rect::from_min_size(egui::pos2(x, y - 4.5), egui::vec2(meter_w, 9.0));
+            paint_sync_meter(painter, meter, CELLS, *pct, *color, self.colors.border);
+            x += meter_w + GAP;
+            painter.text(
+                egui::pos2(x, y),
+                egui::Align2::LEFT_CENTER,
+                pct_text,
+                egui::FontId::proportional(11.5),
+                *color,
+            );
+            x += text_w(pct_text) + GAP;
         }
-        // Recolor of the network half happens via badge color below
-        // the generic segment; repaint while offline so the dot
-        // breathes.
+        painter.text(
+            egui::pos2(x, y),
+            egui::Align2::LEFT_CENTER,
+            &network_text,
+            egui::FontId::proportional(11.5),
+            self.colors.text,
+        );
+
+        if seg.clicked() && !self.device_task_in_flight() {
+            self.active_tab = Tab::Settings;
+        }
+        seg.on_hover_text(if foreign_node.is_some() {
+            "Another process holds this node's port, so QPV2 is reading that node \
+             instead of running its own. Click to open the Settings tab."
+        } else {
+            "Click to open the Settings tab, where the node and the network are chosen."
+        });
+        // Repaint while offline so the dot breathes.
         if !online {
             ui.ctx().request_repaint();
         }
-        let _ = network_color;
     }
 
     /// Tip block, flashing bright on each new block.
@@ -343,15 +352,15 @@ impl App {
             ui.add_space(10.0);
 
             let wallet_text = self.wallet_name.to_uppercase();
-            // Dropdown arrow, mirroring the node selector's. RTL
+            // Dropdown arrow, mirroring the device segment's. RTL
             // flow: allocated before the segment so it renders to
             // the segment's right, clear of the LOCK button.
             //
-            // Unlike the other two this arrow is a real allocation, because
+            // Unlike the device's this arrow is a real allocation, because
             // RTL leaves no room to its right to paint into. That means
             // egui's 8px item spacing lands between it and the label, which
-            // is what made this gap the widest of the three. Scoped to zero
-            // so the caret sits the same 2px off the label as the others,
+            // is what made this gap the wider of the two. Scoped to zero
+            // so the caret sits the same 2px off the label as the other,
             // without disturbing the LOCK gap or the right margin outside.
             let seg = ui
                 .scope(|ui| {
@@ -367,13 +376,12 @@ impl App {
                         egui::FontId::proportional(16.0),
                         c_muted,
                     );
-                    self.strip_segment(ui, "WALLET", &wallet_text, None, None, t)
+                    self.strip_segment(ui, "WALLET", &wallet_text, None, t)
                 })
                 .inner;
             self.wallet_selector_rect = Some(seg.rect);
             if seg.clicked() {
                 self.wallet_selector_open = !self.wallet_selector_open;
-                self.node_selector_open = false;
                 self.device_popup_open = false;
             }
         });
@@ -408,7 +416,7 @@ impl App {
 
     /// Trezor link segment — only for device-backed wallets.
     ///
-    /// Speaks the same grammar as the node segment beside it: breathing dot,
+    /// Speaks the same grammar as the sync segment beside it: breathing dot,
     /// condensed label, clickable. It reports *availability*, not readiness —
     /// whether the device is unlocked cannot be known without starting a
     /// handshake, which would prompt the user and so cannot be polled.
@@ -445,7 +453,7 @@ impl App {
             ),
         };
 
-        let seg = self.strip_segment(ui, "TREZOR", value, None, Some((dot_color, urgent)), t);
+        let seg = self.strip_segment(ui, "TREZOR", value, Some((dot_color, urgent)), t);
         ui.painter().text(
             seg.rect.right_center() + egui::vec2(2.0, 2.0),
             egui::Align2::LEFT_CENTER,
@@ -460,7 +468,6 @@ impl App {
         self.device_popup_rect = Some(seg.rect);
         if seg.clicked() {
             self.device_popup_open = !self.device_popup_open;
-            self.node_selector_open = false;
             self.wallet_selector_open = false;
         }
         if urgent || connecting {
@@ -476,15 +483,13 @@ impl App {
         ui: &mut egui::Ui,
         label: &str,
         value: &str,
-        suffix: Option<(&str, egui::Color32)>,
         dot: Option<(egui::Color32, bool)>,
         t: f32,
     ) -> egui::Response {
         let label_w = label.len() as f32 * 6.0;
         let value_w = value.len() as f32 * 7.2;
-        let suffix_w = suffix.map_or(0.0, |(s, _)| s.len() as f32 * 7.2 + 6.0);
         let dot_w = if dot.is_some() { 12.0 } else { 0.0 };
-        let w = label_w + dot_w + value_w + suffix_w + 10.0;
+        let w = label_w + dot_w + value_w + 10.0;
         let (rect, response) =
             ui.allocate_exact_size(egui::vec2(w, TELEMETRY_H - 10.0), egui::Sense::click());
         let painter = ui.painter();
@@ -513,22 +518,13 @@ impl App {
             );
             x += dot_w;
         }
-        let value_rect = painter.text(
+        painter.text(
             egui::pos2(x, rect.center().y),
             egui::Align2::LEFT_CENTER,
             value,
             egui::FontId::proportional(11.5),
             self.colors.text,
         );
-        if let Some((text, color)) = suffix {
-            painter.text(
-                egui::pos2(value_rect.right() + 6.0, rect.center().y),
-                egui::Align2::LEFT_CENTER,
-                text,
-                egui::FontId::proportional(11.5),
-                color,
-            );
-        }
 
         response
     }

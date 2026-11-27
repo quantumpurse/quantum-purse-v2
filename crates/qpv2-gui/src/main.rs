@@ -110,10 +110,6 @@ pub(crate) struct App {
     // Receives balance results from background thread.
     pub(crate) balance_receiver: Option<mpsc::Receiver<BalanceResult>>,
 
-    // Node selector popup state.
-    pub(crate) node_selector_open: bool,
-    pub(crate) node_selector_rect: Option<egui::Rect>,
-
     // Transaction state shared by both transfer and DAO flows.
     pub(crate) tx_status: TransactionStatus,
     /// Which flow owns the in-flight `tx_status`. Most status variants
@@ -514,8 +510,6 @@ impl App {
             local_node,
             qp_client,
             balance_receiver: None,
-            node_selector_open: false,
-            node_selector_rect: None,
             transfer_recipient: String::new(),
             transfer_amount: String::new(),
             transfer_fee_rate: "1000".to_string(),
@@ -721,7 +715,6 @@ impl eframe::App for App {
         }
 
         // Show popups / modals if open.
-        self.show_node_selector_popup(&ctx);
         self.show_device_popup(&ctx);
         self.show_wallet_selector_popup(&ctx);
         self.show_wallet_modal(&ctx);

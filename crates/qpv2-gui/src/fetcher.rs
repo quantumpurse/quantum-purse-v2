@@ -824,7 +824,7 @@ impl App {
                 Err(_) => cached.tracked_scripts,
             };
 
-            // Sync state — `Ok(None)` outside FullNode (legit).
+            // Sync state — `Ok(None)` for the light client (legit).
             let sync_state = match qp_client.sync_state() {
                 Ok(v) => v,
                 Err(_) => cached.sync_state,

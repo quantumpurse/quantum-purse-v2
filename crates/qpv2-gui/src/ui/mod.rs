@@ -9,7 +9,6 @@ mod hw_dropdown;
 mod main_stages;
 mod multisig;
 mod multisig_modal;
-mod node_selector;
 mod settings;
 mod transfer;
 mod utils;

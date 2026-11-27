@@ -801,6 +801,35 @@ pub(crate) fn ghost_button(
     .min_size(size)
 }
 
+const SYNC_CELL_W: f32 = 6.0;
+const SYNC_CELL_GAP: f32 = 2.0;
+
+/// Width of a sync meter of `cells` cells.
+pub(crate) fn sync_meter_width(cells: usize) -> f32 {
+    cells as f32 * (SYNC_CELL_W + SYNC_CELL_GAP) - SYNC_CELL_GAP
+}
+
+/// Segmented sync meter (htop idiom) filling `rect`, `cells` cells wide: the
+/// share `pct` of them lit in `fill`, the rest in `off`.
+pub(crate) fn paint_sync_meter(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    cells: usize,
+    pct: f32,
+    fill: egui::Color32,
+    off: egui::Color32,
+) {
+    let lit = ((pct * cells as f32).round() as usize).min(cells);
+    for cell in 0..cells {
+        let x = rect.left() + cell as f32 * (SYNC_CELL_W + SYNC_CELL_GAP);
+        let cell_rect = egui::Rect::from_min_size(
+            egui::pos2(x, rect.top()),
+            egui::vec2(SYNC_CELL_W, rect.height()),
+        );
+        painter.rect_filled(cell_rect, 0.0, if cell < lit { fill } else { off });
+    }
+}
+
 /// Breathing status dot: alpha oscillates slowly around full strength.
 /// Pass `urgent` to double the breathing rate (e.g. offline/red).
 pub(crate) fn breathing_dot(

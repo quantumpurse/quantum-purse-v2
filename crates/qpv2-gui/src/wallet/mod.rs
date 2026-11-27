@@ -324,7 +324,6 @@ impl App {
     /// the cover, and the status line clears so it reveals nothing.
     pub(crate) fn hide_wallet(&mut self) {
         self.wallet_selector_open = false;
-        self.node_selector_open = false;
         self.device_popup_open = false;
         self.screen = Screen::Locked;
         self.status = Status::None;
