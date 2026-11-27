@@ -14,6 +14,10 @@ use crate::ui::utils::{
 use crate::App;
 
 const DASH: &str = "\u{2014}";
+/// Height of a row in the tracked scripts table.
+const SCRIPTS_ROW_H: f32 = 22.0;
+/// Most tracked scripts shown at once; more scroll.
+const SCRIPTS_MAX_ROWS: usize = 10;
 
 impl App {
     pub(crate) fn show_settings_tab(&mut self, ui: &mut egui::Ui) {
@@ -459,59 +463,75 @@ impl App {
             egui::Stroke::new(1.0, c_border),
         );
 
-        let mut prev_wallet = String::new();
-        for entry in &flat {
-            let (rr, resp) = ui.allocate_exact_size(egui::vec2(w, 22.0), egui::Sense::hover());
-            let painter = ui.painter();
-            if resp.hovered() {
-                row_hover(painter, rr, &self.colors);
-            }
-            let cy = rr.center().y;
+        // At most `SCRIPTS_MAX_ROWS` rows show at once, so many scripts
+        // don't stretch the page; the rest scroll under the header, which
+        // stays in place. Inside the page's own scroll area egui would size
+        // this one to the page's visible space left below it, often its
+        // 64 px minimum, so the height is also set as that minimum; a
+        // shorter list still shrinks to fit.
+        let row_pitch = SCRIPTS_ROW_H + ui.spacing().item_spacing.y;
+        let list_h = SCRIPTS_MAX_ROWS as f32 * row_pitch;
+        egui::ScrollArea::vertical()
+            .id_salt("tracked-scripts")
+            .max_height(list_h)
+            .min_scrolled_height(list_h)
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                let mut prev_wallet = String::new();
+                for entry in &flat {
+                    let (rr, resp) =
+                        ui.allocate_exact_size(egui::vec2(w, SCRIPTS_ROW_H), egui::Sense::hover());
+                    let painter = ui.painter();
+                    if resp.hovered() {
+                        row_hover(painter, rr, &self.colors);
+                    }
+                    let cy = rr.center().y;
 
-            let wallet_label = if entry.wallet_name != prev_wallet {
-                prev_wallet = entry.wallet_name.clone();
-                entry.wallet_name.clone()
-            } else {
-                "\u{2502}".to_string()
-            };
-            painter.text(
-                egui::pos2(rr.left() + 6.0, cy),
-                egui::Align2::LEFT_CENTER,
-                wallet_label,
-                egui::FontId::proportional(10.5),
-                entry.wallet_color,
-            );
-            let idx_str = match entry.account_idx {
-                Some(idx) => format!("#{}", idx),
-                None => "?".to_string(),
-            };
-            painter.text(
-                egui::pos2(rr.left() + col_acct, cy),
-                egui::Align2::LEFT_CENTER,
-                idx_str,
-                egui::FontId::proportional(10.5),
-                self.colors.text,
-            );
-            painter.text(
-                egui::pos2(rr.left() + col_args, cy),
-                egui::Align2::LEFT_CENTER,
-                truncate_middle_to(&entry.args, args_chars),
-                egui::FontId::proportional(10.5),
-                c_muted,
-            );
-            painter.text(
-                egui::pos2(rr.right(), cy),
-                egui::Align2::RIGHT_CENTER,
-                format!("#{}", group_thousands(entry.block_number)),
-                egui::FontId::proportional(10.5),
-                self.colors.text,
-            );
-            painter.hline(
-                rr.x_range(),
-                rr.bottom() - 0.5,
-                egui::Stroke::new(1.0, c_border),
-            );
-        }
+                    let wallet_label = if entry.wallet_name != prev_wallet {
+                        prev_wallet = entry.wallet_name.clone();
+                        entry.wallet_name.clone()
+                    } else {
+                        "\u{2502}".to_string()
+                    };
+                    painter.text(
+                        egui::pos2(rr.left() + 6.0, cy),
+                        egui::Align2::LEFT_CENTER,
+                        wallet_label,
+                        egui::FontId::proportional(10.5),
+                        entry.wallet_color,
+                    );
+                    let idx_str = match entry.account_idx {
+                        Some(idx) => format!("#{}", idx),
+                        None => "?".to_string(),
+                    };
+                    painter.text(
+                        egui::pos2(rr.left() + col_acct, cy),
+                        egui::Align2::LEFT_CENTER,
+                        idx_str,
+                        egui::FontId::proportional(10.5),
+                        self.colors.text,
+                    );
+                    painter.text(
+                        egui::pos2(rr.left() + col_args, cy),
+                        egui::Align2::LEFT_CENTER,
+                        truncate_middle_to(&entry.args, args_chars),
+                        egui::FontId::proportional(10.5),
+                        c_muted,
+                    );
+                    painter.text(
+                        egui::pos2(rr.right(), cy),
+                        egui::Align2::RIGHT_CENTER,
+                        format!("#{}", group_thousands(entry.block_number)),
+                        egui::FontId::proportional(10.5),
+                        self.colors.text,
+                    );
+                    painter.hline(
+                        rr.x_range(),
+                        rr.bottom() - 0.5,
+                        egui::Stroke::new(1.0, c_border),
+                    );
+                }
+            });
     }
 
     // ── Node metrics ─────────────────────────────────────────
