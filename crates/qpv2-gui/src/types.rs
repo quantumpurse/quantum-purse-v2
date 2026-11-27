@@ -537,14 +537,14 @@ impl Default for AppColors {
 
 impl AppColors {
     /// The light theme the Settings page offers next to the factory one: a
-    /// pale blue-gray canvas, near-black text and a navy accent. The two
+    /// pale gray canvas, near-black text and a navy accent. The two
     /// see-through fills keep the factory's opacity.
     pub(crate) fn light() -> Self {
         Self {
-            bg: egui::Color32::from_rgb(201, 210, 214),      // #c9d2d6
-            surface: egui::Color32::from_rgb(209, 219, 225), // #d1dbe1
-            surface2: egui::Color32::from_rgb(219, 232, 239), // #dbe8ef
-            border: egui::Color32::from_rgb(243, 252, 255),  // #f3fcff
+            bg: egui::Color32::from_rgb(227, 227, 227),      // #e3e3e3
+            surface: egui::Color32::from_rgb(236, 236, 236), // #ececec
+            surface2: egui::Color32::from_rgb(249, 249, 249), // #f9f9f9
+            border: egui::Color32::from_rgb(255, 255, 255),  // #ffffff
             border2: egui::Color32::from_rgb(255, 255, 255), // #ffffff
             accent: egui::Color32::from_rgb(0, 38, 86),      // #002656
             accent2: egui::Color32::from_rgb(61, 146, 214),  // #3d92d6
@@ -553,7 +553,7 @@ impl AppColors {
             warn_tint: egui::Color32::from_rgba_unmultiplied(191, 161, 40, 26),
             danger: egui::Color32::from_rgb(255, 84, 62), // #ff543e
             warn: egui::Color32::from_rgb(191, 161, 40),  // #bfa128
-            text: egui::Color32::from_rgb(33, 36, 37),    // #212425
+            text: egui::Color32::from_rgb(27, 27, 27),    // #1b1b1b
             text_muted: egui::Color32::from_rgb(109, 125, 130), // #6d7d82
             signal: egui::Color32::from_rgb(158, 90, 218), // #9e5ada
         }
