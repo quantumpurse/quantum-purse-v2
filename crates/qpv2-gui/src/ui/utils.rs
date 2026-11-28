@@ -141,6 +141,16 @@ impl App {
         }
     }
 
+    /// True from the moment a transaction starts until its result is known.
+    /// The status slot is shared, so no other transaction can start
+    /// meanwhile.
+    pub(crate) fn tx_in_flight(&self) -> bool {
+        !matches!(
+            self.tx_status,
+            TransactionStatus::Idle | TransactionStatus::Success(_) | TransactionStatus::Error(_)
+        )
+    }
+
     /// TransactionStatus progression rendered as terminal log lines.
     /// `dao_screen` scopes the log to the calling screen's own flow —
     /// the status slot is shared, and a DAO transaction's progress must
@@ -150,11 +160,7 @@ impl App {
         let owns = self
             .active_tx_kind
             .is_some_and(|k| k.is_dao() == dao_screen);
-        let finished = matches!(
-            self.tx_status,
-            TransactionStatus::Idle | TransactionStatus::Success(_) | TransactionStatus::Error(_)
-        );
-        if finished || !owns {
+        if !self.tx_in_flight() || !owns {
             return;
         }
         let c = &self.colors;

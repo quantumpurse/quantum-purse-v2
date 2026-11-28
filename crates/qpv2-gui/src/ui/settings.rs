@@ -18,6 +18,9 @@ const DASH: &str = "\u{2014}";
 const SCRIPTS_ROW_H: f32 = 22.0;
 /// Most tracked scripts shown at once; more scroll.
 const SCRIPTS_MAX_ROWS: usize = 10;
+/// `data_row`'s value font. A choice in a settings row is drawn in it, so
+/// it reads like the values below it.
+const SETTINGS_SWITCHER_FONT: egui::FontId = egui::FontId::proportional(12.5);
 
 impl App {
     pub(crate) fn show_settings_tab(&mut self, ui: &mut egui::Ui) {
@@ -89,9 +92,9 @@ impl App {
                     // A foreign node decides the network, so there is none
                     // to choose; picking another backend is the way out.
                     if foreign_node.is_none() {
-                        self.draw_network_row(ui);
+                        self.draw_network_switchers(ui);
                     }
-                    switch_to = self.draw_backend_row(ui);
+                    switch_to = self.draw_node_backend_switchers(ui);
                 });
 
                 let backend = self.qp_client.config().node_type;
@@ -153,7 +156,7 @@ impl App {
                 ui.add_space(12.0);
                 panel_frame(&self.colors).show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = 6.0;
-                    self.draw_colors_section(ui, &sec.next_code());
+                    self.draw_color_theme_switchers(ui, &sec.next_code());
                 });
 
                 // Applied after rendering so the frame draws against the
@@ -179,7 +182,7 @@ impl App {
     // ── Connection rows ──────────────────────────────────────
 
     /// NETWORK: Mainnet or Testnet, as a row of the Connection panel.
-    fn draw_network_row(&mut self, ui: &mut egui::Ui) {
+    fn draw_network_switchers(&mut self, ui: &mut egui::Ui) {
         let current_network = self.qp_client.config().network;
         let networks = [NetworkType::Mainnet, NetworkType::Testnet];
         let mut selected = current_network;
@@ -188,7 +191,13 @@ impl App {
                 .iter()
                 .position(|&n| n == current_network)
                 .unwrap_or(0);
-            if let Some(i) = text_choice(ui, &self.colors, &["MAINNET", "TESTNET"], Some(chosen)) {
+            if let Some(i) = draw_switchers(
+                ui,
+                &self.colors,
+                &["MAINNET", "TESTNET"],
+                Some(chosen),
+                SETTINGS_SWITCHER_FONT,
+            ) {
                 selected = networks[i];
             }
         });
@@ -216,7 +225,7 @@ impl App {
     /// BACKEND: which node the wallet talks to, as a row of the Connection
     /// panel. Returns the one picked this frame, applied by the caller after
     /// the frame is drawn.
-    fn draw_backend_row(&self, ui: &mut egui::Ui) -> Option<NodeType> {
+    fn draw_node_backend_switchers(&self, ui: &mut egui::Ui) -> Option<NodeType> {
         let current = self.qp_client.config().node_type;
         let backends = [
             NodeType::LightClient,
@@ -227,7 +236,13 @@ impl App {
         setting_row(ui, &self.colors, "Backend", |ui| {
             let chosen = backends.iter().position(|&b| b == current).unwrap_or(0);
             let labels = backends.map(Self::backend_label);
-            if let Some(i) = text_choice(ui, &self.colors, &labels, Some(chosen)) {
+            if let Some(i) = draw_switchers(
+                ui,
+                &self.colors,
+                &labels,
+                Some(chosen),
+                SETTINGS_SWITCHER_FONT,
+            ) {
                 switch_to = Some(backends[i]);
             }
         });
@@ -240,7 +255,7 @@ impl App {
     /// system's light or dark mode, then a row per named color with a swatch
     /// that opens a picker and the hex code, which can be typed or pasted. A
     /// change shows at once across the app and is saved when it settles.
-    fn draw_colors_section(&mut self, ui: &mut egui::Ui, code: &str) {
+    fn draw_color_theme_switchers(&mut self, ui: &mut egui::Ui, code: &str) {
         section_header(ui, &self.colors, code, "Colors");
         ui.add_space(6.0);
         let mut colors = self.colors;
@@ -258,7 +273,9 @@ impl App {
                 None
             };
             let options = ["LIGHT", "DARK", "SYSTEM"];
-            if let Some(i) = text_choice(ui, &self.colors, &options, chosen) {
+            if let Some(i) =
+                draw_switchers(ui, &self.colors, &options, chosen, SETTINGS_SWITCHER_FONT)
+            {
                 follow_system = i == 2;
                 colors = match i {
                     0 => AppColors::light(),
@@ -964,21 +981,15 @@ fn setting_row(
     });
 }
 
-/// A choice drawn as text, so it reads like the values below it: the
-/// options in a row with "·" between them, in the values' font. The chosen
-/// one is in the accent and underlined; the others are muted until hovered.
-/// With `chosen` None, no option is chosen, so the options work as plain
-/// links, for actions. Returns the option clicked this frame, if it isn't
-/// the chosen one.
-fn text_choice(
+/// A row of options with "·" between them, the chosen one underlined. Returns the one clicked.
+pub(crate) fn draw_switchers(
     ui: &mut egui::Ui,
     colors: &AppColors,
     options: &[&str],
     chosen: Option<usize>,
+    font: egui::FontId,
 ) -> Option<usize> {
-    // `data_row`'s value font. Laid out without a colour, so each option can
-    // be painted in its own.
-    let font = egui::FontId::proportional(12.5);
+    // Laid out without a colour, so each option can be painted in its own.
     let layout = |text: &str| {
         ui.painter()
             .layout_no_wrap(text.to_string(), font.clone(), egui::Color32::PLACEHOLDER)

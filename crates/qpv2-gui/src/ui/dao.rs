@@ -1,14 +1,19 @@
-//! Nervos DAO module: position-summary readout, action row, and a
-//! hairline positions table in the Flight Deck instrument style.
+//! Nervos DAO module in the Flight Deck instrument style: a
+//! position-summary readout, then a choice that switches the rest of the
+//! page between the positions (action row and hairline table) and
+//! governance (`ui/governance.rs`).
 
 use eframe::egui;
 
+use super::settings::draw_switchers;
 use super::utils::{
     badge, ckb_split, device_waiting_line, extract_ar, fido2_waiting_line, format_duration_ms,
     ghost_button, panel_frame, pin_popup_above_modal, row_hover, section_header, truncate_middle,
     TREZOR_WAITING_TEXT,
 };
-use crate::types::{display_font, label_font, AppColors, DaoView, Status, TransactionStatus};
+use crate::types::{
+    display_font, label_font, AppColors, DaoSection, DaoView, Status, TransactionStatus,
+};
 use crate::utils::{format_ckb, format_ckb_balance};
 use crate::App;
 
@@ -29,7 +34,7 @@ impl App {
                 );
                 ui.add_space(2.0);
                 ui.label(
-                    egui::RichText::new("Deposit, withdraw, and manage DAO deposit positions.")
+                    egui::RichText::new("Deposit positions and DAO v2 governance.")
                         .size(11.0)
                         .color(self.colors.text_muted),
                 );
@@ -77,69 +82,103 @@ impl App {
 
                 ui.add_space(14.0);
 
-                // ── Action row ──
-                let is_busy = !matches!(self.tx_status, TransactionStatus::Idle)
-                    && !matches!(self.tx_status, TransactionStatus::Success(_))
-                    && !matches!(self.tx_status, TransactionStatus::Error(_));
-
-                ui.horizontal(|ui| {
-                    let size = egui::vec2(180.0, 32.0);
-                    // All three render as equal ghosts: a solid button
-                    // in a row of same-sized siblings reads as a
-                    // selected segment, not an action.
-                    if ui
-                        .add(ghost_button(&self.colors, "DEPOSIT", size))
-                        .clicked()
-                        && !is_busy
-                    {
-                        self.dao_view = DaoView::Deposit;
-                        self.tx_status = TransactionStatus::Idle;
-                    }
-                    ui.add_space(6.0);
-                    // TODO: enable later when figure out their UX.
-                    ui.add_enabled(
-                        false,
-                        ghost_button(&self.colors, "REQUEST WITHDRAWAL", size),
-                    )
-                    .on_disabled_hover_text(
-                        "Use the REQUEST action on a deposited position in the table below.",
-                    );
-                    ui.add_space(6.0);
-                    ui.add_enabled(false, ghost_button(&self.colors, "WITHDRAW", size))
-                        .on_disabled_hover_text(
-                            "Use the WITHDRAW action on a prepared position in the table below.",
-                        );
-                });
-
-                // The in-flight transaction status, and — when a multisig
-                // DAO operation pauses for co-signatures — the same
-                // coordination panel the transfer screen uses. Without
-                // this the flow is alive but invisible from this tab.
-                // While the deposit dialog is open it reports its own
-                // progress, so the log would only repeat it behind it.
-                if self.dao_view != DaoView::Deposit {
-                    self.draw_tx_status_log(ui, true);
-                }
-                if matches!(
-                    &self.tx_status,
-                    TransactionStatus::AwaitingCoSigners { kind, .. } if kind.is_dao()
-                ) {
-                    self.show_cosigner_panel(ui);
-                }
+                // The summary above stays for both sections: the deposits
+                // it totals are the voting power that governance binds.
+                self.draw_dao_tab_switchers(ui);
 
                 ui.add_space(14.0);
 
-                // ── 02 // Positions ──
-                panel_frame(&self.colors).show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    section_header(ui, &self.colors, "02", "Positions");
-                    ui.add_space(10.0);
-                    self.show_dao_positions_table(ui);
-                });
+                match self.dao_section {
+                    DaoSection::Positions => self.draw_positions_section(ui),
+                    DaoSection::Governance => self.draw_governance_section(ui),
+                }
 
                 ui.add_space(20.0);
             }); // vertical
         }); // horizontal
+    }
+
+    /// The choice that switches the page below the summary between the
+    /// positions and governance, drawn like the settings screen's choices.
+    fn draw_dao_tab_switchers(&mut self, ui: &mut egui::Ui) {
+        let sections = [DaoSection::Positions, DaoSection::Governance];
+        let chosen = sections.iter().position(|&s| s == self.dao_section);
+        // The user stays on this section while a device task waits on
+        // them, as on the module rail: see `device_task_in_flight`.
+        let locked = self.device_task_in_flight();
+        // In the label font, as the section headers around it are.
+        let clicked = draw_switchers(
+            ui,
+            &self.colors,
+            &["POSITIONS", "GOVERNANCE"],
+            chosen,
+            label_font(10.5),
+        );
+        if let Some(i) = clicked.filter(|_| !locked) {
+            self.dao_section = sections[i];
+        }
+    }
+
+    /// The positions section: the action row, the in-flight transaction's
+    /// status, and the positions table.
+    fn draw_positions_section(&mut self, ui: &mut egui::Ui) {
+        // ── Action row ──
+        let is_busy = self.tx_in_flight();
+
+        ui.horizontal(|ui| {
+            let size = egui::vec2(180.0, 32.0);
+            // All three render as equal ghosts: a solid button
+            // in a row of same-sized siblings reads as a
+            // selected segment, not an action.
+            if ui
+                .add(ghost_button(&self.colors, "DEPOSIT", size))
+                .clicked()
+                && !is_busy
+            {
+                self.dao_view = DaoView::Deposit;
+                self.tx_status = TransactionStatus::Idle;
+            }
+            ui.add_space(6.0);
+            // TODO: enable later when figure out their UX.
+            ui.add_enabled(
+                false,
+                ghost_button(&self.colors, "REQUEST WITHDRAWAL", size),
+            )
+            .on_disabled_hover_text(
+                "Use the REQUEST action on a deposited position in the table below.",
+            );
+            ui.add_space(6.0);
+            ui.add_enabled(false, ghost_button(&self.colors, "WITHDRAW", size))
+                .on_disabled_hover_text(
+                    "Use the WITHDRAW action on a prepared position in the table below.",
+                );
+        });
+
+        // The in-flight transaction status, and — when a multisig
+        // DAO operation pauses for co-signatures — the same
+        // coordination panel the transfer screen uses. Without
+        // this the flow is alive but invisible from this tab.
+        // While the deposit dialog is open it reports its own
+        // progress, so the log would only repeat it behind it.
+        if self.dao_view != DaoView::Deposit {
+            self.draw_tx_status_log(ui, true);
+        }
+        if matches!(
+            &self.tx_status,
+            TransactionStatus::AwaitingCoSigners { kind, .. } if kind.is_dao()
+        ) {
+            self.show_cosigner_panel(ui);
+        }
+
+        ui.add_space(14.0);
+
+        // ── 02 // Positions ──
+        panel_frame(&self.colors).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            section_header(ui, &self.colors, "02", "Positions");
+            ui.add_space(10.0);
+            self.show_dao_positions_table(ui);
+        });
     }
 
     /// Four-column instrument readout separated by vertical hairlines.
@@ -229,10 +268,7 @@ impl App {
         // A finished deposit, sent or failed, closes this modal and reports
         // in the status bar: see `report_finished_tx_status`.
 
-        let is_busy = !matches!(
-            self.tx_status,
-            TransactionStatus::Idle | TransactionStatus::Success(_) | TransactionStatus::Error(_)
-        );
+        let is_busy = self.tx_in_flight();
 
         // Semi-transparent backdrop that consumes clicks.
         let screen_rect = ctx.input(|i| i.viewport_rect());
@@ -580,9 +616,7 @@ impl App {
     /// Transaction results are reported by `draw_tx_status_log` above
     /// the panel, not here.
     pub(crate) fn show_dao_positions_table(&mut self, ui: &mut egui::Ui) {
-        let is_busy = !matches!(self.tx_status, TransactionStatus::Idle)
-            && !matches!(self.tx_status, TransactionStatus::Success(_))
-            && !matches!(self.tx_status, TransactionStatus::Error(_));
+        let is_busy = self.tx_in_flight();
 
         if self.dao_deposited_cells.is_empty() && self.dao_prepared_cells.is_empty() {
             let text = if self.dao_cells_query_rx.is_some() {

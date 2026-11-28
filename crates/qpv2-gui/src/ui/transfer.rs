@@ -62,12 +62,7 @@ impl App {
 
                 ui.add_space(16.0);
 
-                let is_busy = !matches!(
-                    self.tx_status,
-                    TransactionStatus::Idle
-                        | TransactionStatus::Success(_)
-                        | TransactionStatus::Error(_)
-                );
+                let is_busy = self.tx_in_flight();
 
                 self.draw_order_ticket(ui, is_busy);
                 self.draw_tx_status_log(ui, false);

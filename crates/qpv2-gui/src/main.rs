@@ -4,8 +4,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod cosign;
+mod daov2;
 mod fetcher;
-mod governance;
 mod palette;
 mod poller;
 mod qr_adoption;
@@ -45,11 +45,11 @@ pub(crate) const QR_ADOPTION_RETRY: Duration = Duration::from_secs(300);
 pub(crate) const QR_LOCK_DEP_WARMUP_RETRY: Duration = Duration::from_secs(5);
 
 use types::{
-    AppColors, BalanceChartCache, BalanceResult, DaoQueryResult, DaoView, Fido2AccountCreate,
-    Fido2SignResult, Fido2WalletUpdate, NodeStatus, NodeStatusUpdate, QrAdoptionUpdate,
-    QrLockDepWarmup, Screen, Series, Status, Tab, TransactionKind, TransactionSendResult,
-    TransactionStatus, TrezorAccountCreate, TrezorConnectUpdate, TxBuildResult, TxHistoryEvent,
-    TxRecord,
+    AppColors, BalanceChartCache, BalanceResult, DaoQueryResult, DaoSection, DaoView,
+    Fido2AccountCreate, Fido2SignResult, Fido2WalletUpdate, NodeStatus, NodeStatusUpdate,
+    QrAdoptionUpdate, QrLockDepWarmup, Screen, Series, Status, Tab, TransactionKind,
+    TransactionSendResult, TransactionStatus, TrezorAccountCreate, TrezorConnectUpdate,
+    TxBuildResult, TxHistoryEvent, TxRecord,
 };
 
 pub(crate) struct App {
@@ -131,6 +131,7 @@ pub(crate) struct App {
     // DAO state.
     // Each cell is stored with the lock_args of the account that owns it.
     pub(crate) dao_view: DaoView,
+    pub(crate) dao_section: DaoSection,
     pub(crate) dao_deposited_cells: Vec<(String, ckb_node::queries::DepositedCell)>,
     pub(crate) dao_prepared_cells: Vec<(String, ckb_node::queries::PreparedCell)>,
     // Staging vectors: accumulated during polling, swapped into display on Done.
@@ -234,8 +235,8 @@ pub(crate) struct App {
     // How the seed-export thread tells the main UI thread it is done. Some while
     // that thread owns the pinentry dialog; the overlay locks the wallet meanwhile.
     pub(crate) seed_export_dialog_done_rx: Option<mpsc::Receiver<Result<(), String>>>,
-    // ── DAO v2 address binding (Governance tab) ──
-    pub(crate) governance: governance::Governance,
+    // ── DAO v2 address binding (Nervos DAO tab, Governance section) ──
+    pub(crate) governance: daov2::Governance,
     // ── Trezor link status (device-backed wallets only) ──
     // What the last probe saw. Never a live connection: the host opens a THP
     // session per operation, so this is polled presence, not a held link.
@@ -523,6 +524,7 @@ impl App {
             transaction_build_rx: None,
             transaction_submission_rx: None,
             dao_view: DaoView::Overview,
+            dao_section: DaoSection::Positions,
             dao_deposited_cells: Vec::new(),
             dao_prepared_cells: Vec::new(),
             dao_deposited_staging: Vec::new(),
@@ -565,7 +567,7 @@ impl App {
             fido2_cosign_rx: None,
             fido2_export_rx: None,
             seed_export_dialog_done_rx: None,
-            governance: governance::Governance::new(),
+            governance: daov2::Governance::new(),
             device_status: trezor_connect::DeviceStatus::Working,
             device_status_rx: None,
             device_status_probed_at: None,

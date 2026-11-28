@@ -1,5 +1,6 @@
-//! Governance module: bind this wallet's addresses to a DAO v2 account, and
-//! the address picker that confirms which ones.
+//! Governance section of the Nervos DAO tab, shown from its section choice:
+//! bind this wallet's addresses to a DAO v2 account, and the address picker
+//! that confirms which ones.
 
 use eframe::egui;
 
@@ -11,36 +12,25 @@ use crate::types::{display_font, label_font};
 use crate::App;
 
 impl App {
-    pub(crate) fn show_governance_tab(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.add_space(24.0);
-            ui.vertical(|ui| {
-                ui.set_width(ui.available_width() - 24.0);
-
-                ui.label(
-                    egui::RichText::new("GOVERNANCE")
-                        .font(display_font(16.0))
-                        .color(self.colors.text),
-                );
-                ui.add_space(2.0);
-                ui.label(
-                    egui::RichText::new(
-                        "Bind this wallet's addresses to your DAO v2 account, so their Nervos \
-                         DAO deposits count as your voting power.",
-                    )
-                    .size(11.0)
-                    .color(self.colors.text_muted),
-                );
-                ui.add_space(16.0);
-
-                panel_frame(&self.colors).show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    section_header(ui, &self.colors, "01", "Address Binding");
-                    ui.add_space(10.0);
-                    self.draw_binding_form(ui);
-                    self.draw_receipt_row(ui);
-                });
-            });
+    /// The Nervos DAO tab's governance section. It lives on that tab, not
+    /// on one of its own, because the voting power it binds is the tab's
+    /// deposits.
+    pub(crate) fn draw_governance_section(&mut self, ui: &mut egui::Ui) {
+        panel_frame(&self.colors).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            section_header(ui, &self.colors, "02", "Address Binding");
+            ui.add_space(10.0);
+            ui.label(
+                egui::RichText::new(
+                    "Bind this wallet's addresses to your DAO v2 account, so their Nervos \
+                     DAO deposits count as your voting power.",
+                )
+                .size(11.0)
+                .color(self.colors.text_muted),
+            );
+            ui.add_space(12.0);
+            self.draw_binding_form(ui);
+            self.draw_receipt_row(ui);
         });
     }
 

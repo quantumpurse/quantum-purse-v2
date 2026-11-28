@@ -255,10 +255,10 @@ impl App {
         }
     }
 
-    /// Asks where to save the binding receipt. Cancelling keeps it on the
-    /// tab to save later. `headline` (the binding's result, if this follows
-    /// one) leads the status line, so the result stays readable; `failed`
-    /// marks that result as an error.
+    /// Asks where to save the binding receipt. Cancelling keeps it in the
+    /// governance section to save later. `headline` (the binding's result,
+    /// if this follows one) leads the status line, so the result stays
+    /// readable; `failed` marks that result as an error.
     pub(crate) fn save_governance_receipt(&mut self, headline: &str, failed: bool) {
         let Some(file) = &self.governance.unsaved_receipt else {
             return;
@@ -271,7 +271,8 @@ impl App {
                 (note, false)
             }
             Ok(None) => (
-                "The receipt is not saved yet; save it from the Governance tab.".to_string(),
+                "The receipt is not saved yet; save it under Governance on the Nervos DAO tab."
+                    .to_string(),
                 false,
             ),
             Err(e) => {

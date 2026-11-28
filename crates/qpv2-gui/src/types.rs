@@ -221,7 +221,7 @@ pub(crate) struct CurrentWallet {
 }
 
 /// Navigation modules listed in the left rail. Order here is the rail
-/// order and the 1–8 keyboard shortcut order.
+/// order and the 1–7 keyboard shortcut order.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum Tab {
     Dashboard,
@@ -231,12 +231,11 @@ pub(crate) enum Tab {
     Multisig,
     Wallets,
     Settings,
-    Governance,
 }
 
 impl Tab {
     /// All modules in rail / shortcut order.
-    pub(crate) const ALL: [Tab; 8] = [
+    pub(crate) const ALL: [Tab; 7] = [
         Tab::Dashboard,
         Tab::Transfer,
         Tab::DaoOperations,
@@ -244,7 +243,6 @@ impl Tab {
         Tab::Multisig,
         Tab::Wallets,
         Tab::Settings,
-        Tab::Governance,
     ];
 
     /// Full module name shown under its icon in the rail.
@@ -257,7 +255,6 @@ impl Tab {
             Tab::Multisig => "Multisig",
             Tab::Wallets => "Wallets",
             Tab::Settings => "Settings",
-            Tab::Governance => "Governance",
         }
     }
 }
@@ -467,6 +464,15 @@ pub(crate) enum DaoView {
     Overview,
     /// Deposit form.
     Deposit,
+}
+
+/// Which section the DAO tab shows below its position summary.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum DaoSection {
+    /// The action row and the positions table.
+    Positions,
+    /// DAO v2 address binding.
+    Governance,
 }
 
 /// CKB uses 8 decimal places: 1 CKB = 100,000,000 shannons.
